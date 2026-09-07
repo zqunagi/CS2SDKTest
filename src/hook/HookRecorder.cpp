@@ -14,10 +14,11 @@ HookRecorder& HookRecorder::Get()
 	return instance;
 }
 
-HookRecorder::Entry* HookRecorder::FindOrCreate(const std::string& id)
+HookRecorder::Entry* HookRecorder::FindOrCreate(const char* id)
 {
 	for (Entry& entry : entries_)
 	{
+		// std::string == const char* compares without building a temporary.
 		if (entry.id == id)
 		{
 			return &entry;
@@ -30,13 +31,13 @@ HookRecorder::Entry* HookRecorder::FindOrCreate(const std::string& id)
 	return &entries_.back();
 }
 
-void HookRecorder::Declare(const std::string& id, const std::string& owner)
+void HookRecorder::Declare(const char* id, const char* owner)
 {
 	Entry* entry = FindOrCreate(id);
 	entry->owner = owner;
 }
 
-void HookRecorder::Fire(const std::string& id)
+void HookRecorder::Fire(const char* id)
 {
 	// Runs in the game's own callback, potentially every tick, so this stays a
 	// linear scan and an increment: no allocation on the hot path once the
@@ -45,11 +46,13 @@ void HookRecorder::Fire(const std::string& id)
 	++entry->count;
 }
 
-void HookRecorder::FireWithArgs(const std::string& id, const char* format, ...)
+void HookRecorder::FireWithArgs(const char* id, const char* format, ...)
 {
 	Entry* entry = FindOrCreate(id);
 	++entry->count;
 
+	// Bail before formatting, not after: once the samples are full this runs
+	// every tick and must not do any work it does not have to.
 	if (entry->samples.size() >= kMaxSamples)
 	{
 		return;

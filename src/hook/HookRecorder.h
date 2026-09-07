@@ -40,13 +40,13 @@ public:
 	 * Registers a hook id so it shows up in the dump whether or not it fires.
 	 * Safe to call more than once for the same id.
 	 */
-	void Declare(const std::string& id, const std::string& owner);
+	void Declare(const char* id, const char* owner);
 
 	/** Records one invocation with no argument detail. */
-	void Fire(const std::string& id);
+	void Fire(const char* id);
 
 	/** Records one invocation, keeping the formatted arguments as a sample. */
-	void FireWithArgs(const std::string& id, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
+	void FireWithArgs(const char* id, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
 
 	/** Drops every count and sample, keeping declarations. */
 	void ResetCounts();
@@ -69,7 +69,10 @@ private:
 		std::vector<std::string> samples;
 	};
 
-	Entry* FindOrCreate(const std::string& id);
+	// Takes const char* rather than std::string on purpose: this runs from
+	// inside GameFrame, so a std::string temporary here would be a heap
+	// allocation every tick, per hook, forever.
+	Entry* FindOrCreate(const char* id);
 
 	std::vector<Entry> entries_;
 };
