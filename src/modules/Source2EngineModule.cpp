@@ -10,8 +10,27 @@ namespace cs2st
 namespace
 {
 
-/** CS2's Steam AppID. Both GetAppID and GetStatsAppID should report it. */
+/** The store AppID, which is what GetAppID reports. */
 constexpr unsigned int kCounterStrike2AppId = 730;
+
+/**
+ * GetStatsAppID reports the *content* app instead, not the store app - CS2 is
+ * built out of a separate set of apps from the 730 storefront entry, and the
+ * exact one shifts between branches. Observed: 2347771.
+ */
+const unsigned int kStatsAppIds[] = {2347771, 2347772, 2347773};
+
+bool IsKnownStatsAppId(unsigned int app_id)
+{
+	for (const unsigned int known : kStatsAppIds)
+	{
+		if (app_id == known)
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 /** k_EUniversePublic. Anything else means we are not on a retail build. */
 constexpr int kUniversePublic = 1;
@@ -190,9 +209,10 @@ void Source2EngineModule::ExerciseSource2Engine(TestContext& context)
 	CS2ST_CALL(context, "ISource2Engine::GetStatsAppID", {
 		const uint32 app_id = engine_->GetStatsAppID();
 		context.Detail("-> %u", app_id);
-		if (app_id != kCounterStrike2AppId)
+		if (!IsKnownStatsAppId(app_id))
 		{
-			context.Fail("expected %u", kCounterStrike2AppId);
+			context.Fail("not a known CS2 content app id (expected one of %u-%u)",
+				kStatsAppIds[0], kStatsAppIds[2]);
 		}
 	});
 
@@ -213,11 +233,13 @@ void Source2EngineModule::ExerciseEngineState(TestContext& context)
 	context.Note("[IVEngineServer2] server state");
 
 	CS2ST_CALL(context, "IVEngineServer2::GetAppID", {
+		// The store app, unlike GetStatsAppID above which reports the content
+		// app. Two different numbers from two neighbouring calls is correct.
 		const uint32 app_id = engine_->GetAppID();
 		context.Detail("-> %u", app_id);
-		if (app_id != kCounterStrike2AppId)
+		if (app_id != kCounterStrike2AppId && !IsKnownStatsAppId(app_id))
 		{
-			context.Fail("expected %u", kCounterStrike2AppId);
+			context.Fail("expected the store app %u", kCounterStrike2AppId);
 		}
 	});
 

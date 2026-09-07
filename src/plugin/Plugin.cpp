@@ -42,6 +42,10 @@ bool CS2SDKTestPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxl
 	GET_V_IFACE_CURRENT(GetEngineFactory, g_icvar, ICvar, CVAR_INTERFACE_VERSION);
 	g_pCVar = g_icvar;
 
+	// Probes the console for ANSI support before anything is printed, so a
+	// console that cannot do colour gets plain text rather than escapes.
+	InitLogging();
+
 	tests_ = TestRunner::CreateDefault();
 
 	META_CONVAR_REGISTER(FCVAR_RELEASE | FCVAR_GAMEDLL);

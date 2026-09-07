@@ -21,10 +21,27 @@ std::string FormatToString(const char* format, va_list args)
 	return buffer;
 }
 
-// Width of the target column in the log. Interface::Method names run long, so
-// this is generous; anything past it wraps rather than being cut, because a
-// truncated symbol name is worse than a ragged column.
-constexpr int kTargetColumn = 52;
+// Width of the target column. Wide enough for the longest name in the SDK so
+// far ("IVEngineServer2::GetNumSplitScreenUsersAttachedToEdict", 53).
+constexpr int kTargetColumn = 56;
+
+/**
+ * Forces a name into the column so the outcome column stays vertical.
+ *
+ * "%-56s" does not truncate, so one long name shifts every column after it on
+ * that row - which defeats the purpose of a column you scan down. The tail is
+ * kept rather than the head: the interface prefix repeats on every row, the
+ * method name is what identifies it. A leading '~' marks what was cut.
+ */
+std::string FitTarget(const std::string& target)
+{
+	const std::size_t width = static_cast<std::size_t>(kTargetColumn);
+	if (target.size() <= width)
+	{
+		return target;
+	}
+	return "~" + target.substr(target.size() - (width - 1));
+}
 
 } // namespace
 
@@ -198,9 +215,22 @@ void TestContext::Record(const std::string& target, CallOutcome outcome, const s
 {
 	tally_.Count(outcome);
 
-	LogRaw("  %-*s %-8s %s\n",
+	// Only the two failure outcomes are coloured. Colouring every row would
+	// make none of them stand out, and the job here is spotting the three bad
+	// lines among two hundred good ones.
+	LogColor color = LogColor::kNone;
+	if (outcome == CallOutcome::kCrashed)
+	{
+		color = LogColor::kBrightRed;
+	}
+	else if (outcome == CallOutcome::kFailed)
+	{
+		color = LogColor::kRed;
+	}
+
+	LogRawColored(color, "  %-*s %-8s %s\n",
 		kTargetColumn,
-		target.c_str(),
+		FitTarget(target).c_str(),
 		CallOutcomeName(outcome),
 		detail.c_str());
 }

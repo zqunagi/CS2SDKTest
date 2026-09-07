@@ -2,11 +2,18 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 
 #include <ISmmPlugin.h>
 
 #include "core/FileSystemUtil.h"
 #include "version_gen.h"
+
+#if CS2ST_WINDOWS
+	#define WIN32_LEAN_AND_MEAN
+	#define NOMINMAX
+	#include <Windows.h>
+#endif
 
 // g_SMAPI is defined once by PLUGIN_EXPOSE in Plugin.cpp; every other
 // translation unit only needs the declarations.
@@ -21,6 +28,23 @@ LogLevel g_min_level = LogLevel::kInfo;
 std::FILE* g_log_file = nullptr;
 std::string g_log_path;
 
+bool g_console_color = true;
+bool g_file_color = true;
+
+constexpr const char* kColorReset = "\033[0m";
+
+const char* ColorEscape(LogColor color)
+{
+	switch (color)
+	{
+		case LogColor::kRed:       return "\033[31m";
+		case LogColor::kBrightRed: return "\033[1;31m";
+		case LogColor::kYellow:    return "\033[33m";
+		case LogColor::kNone:
+		default:                   return nullptr;
+	}
+}
+
 const char* LevelPrefix(LogLevel level)
 {
 	switch (level)
@@ -31,6 +55,32 @@ const char* LevelPrefix(LogLevel level)
 		case LogLevel::kInfo:
 		default:                 return "[" PLUGIN_LOGTAG "] ";
 	}
+}
+
+/**
+ * Wraps `line` in a colour escape.
+ *
+ * The reset goes *before* the trailing newline: leaving it after means the
+ * colour is still active while the terminal moves to the next line, which some
+ * terminals render as a coloured gap and which corrupts the next line entirely
+ * if the process dies in between.
+ */
+std::string Colorize(const char* escape, const char* line)
+{
+	const std::size_t length = std::strlen(line);
+	std::size_t body = length;
+	while (body > 0 && (line[body - 1] == '\n' || line[body - 1] == '\r'))
+	{
+		--body;
+	}
+
+	std::string out;
+	out.reserve(length + 16);
+	out.append(escape);
+	out.append(line, body);
+	out.append(kColorReset);
+	out.append(line + body, length - body);
+	return out;
 }
 
 void WriteToFile(const char* text)
@@ -61,7 +111,7 @@ void WriteToConsole(const char* text)
 	}
 }
 
-void Emit(const char* prefix, const char* format, va_list args, bool to_console)
+void Emit(LogColor color, const char* prefix, const char* format, va_list args, bool to_console)
 {
 	char body[4096];
 	if (std::vsnprintf(body, sizeof(body), format, args) < 0)
@@ -79,11 +129,31 @@ void Emit(const char* prefix, const char* format, va_list args, bool to_console)
 		std::snprintf(line, sizeof(line), "%s", body);
 	}
 
+	const char* escape = ColorEscape(color);
+
 	if (to_console)
 	{
-		WriteToConsole(line);
+		if (escape != nullptr && g_console_color)
+		{
+			WriteToConsole(Colorize(escape, line).c_str());
+		}
+		else
+		{
+			WriteToConsole(line);
+		}
 	}
-	WriteToFile(line);
+
+	if (g_log_file != nullptr)
+	{
+		if (escape != nullptr && g_file_color)
+		{
+			WriteToFile(Colorize(escape, line).c_str());
+		}
+		else
+		{
+			WriteToFile(line);
+		}
+	}
 }
 
 } // namespace
@@ -96,6 +166,55 @@ void SetLogLevel(LogLevel level)
 LogLevel GetLogLevel()
 {
 	return g_min_level;
+}
+
+void InitLogging()
+{
+#if CS2ST_WINDOWS
+	// Windows consoles only interpret ANSI escapes once virtual-terminal
+	// processing is enabled, and older ones cannot do it at all. Ask, and fall
+	// back to plain text rather than printing raw escape sequences.
+	bool vt_enabled = false;
+
+	const HANDLE out = ::GetStdHandle(STD_OUTPUT_HANDLE);
+	if (out != nullptr && out != INVALID_HANDLE_VALUE)
+	{
+		DWORD mode = 0;
+		if (::GetConsoleMode(out, &mode) != 0)
+		{
+			if ((mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
+			{
+				vt_enabled = true;
+			}
+			else if (::SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
+			{
+				vt_enabled = true;
+			}
+		}
+	}
+
+	g_console_color = vt_enabled;
+#else
+	g_console_color = true;
+#endif
+
+	g_file_color = true;
+}
+
+void SetColorEnabled(bool console, bool file)
+{
+	g_console_color = console;
+	g_file_color = file;
+}
+
+bool IsConsoleColorEnabled()
+{
+	return g_console_color;
+}
+
+bool IsFileColorEnabled()
+{
+	return g_file_color;
 }
 
 bool OpenSessionLog(const std::string& path, std::string& error)
@@ -143,9 +262,19 @@ void LogMessage(LogLevel level, const char* format, ...)
 		return;
 	}
 
+	LogColor color = LogColor::kNone;
+	if (level == LogLevel::kError)
+	{
+		color = LogColor::kRed;
+	}
+	else if (level == LogLevel::kWarning)
+	{
+		color = LogColor::kYellow;
+	}
+
 	va_list args;
 	va_start(args, format);
-	Emit(LevelPrefix(level), format, args, true);
+	Emit(color, LevelPrefix(level), format, args, true);
 	va_end(args);
 }
 
@@ -153,7 +282,15 @@ void LogRaw(const char* format, ...)
 {
 	va_list args;
 	va_start(args, format);
-	Emit(nullptr, format, args, true);
+	Emit(LogColor::kNone, nullptr, format, args, true);
+	va_end(args);
+}
+
+void LogRawColored(LogColor color, const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	Emit(color, nullptr, format, args, true);
 	va_end(args);
 }
 
@@ -166,7 +303,7 @@ void LogToFile(const char* format, ...)
 
 	va_list args;
 	va_start(args, format);
-	Emit(nullptr, format, args, false);
+	Emit(LogColor::kNone, nullptr, format, args, false);
 	va_end(args);
 }
 

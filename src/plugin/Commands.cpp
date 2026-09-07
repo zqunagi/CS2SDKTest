@@ -57,6 +57,8 @@ void PrintUsage()
 	LogRaw("  meta_test log open [name]         start writing everything to a file\n");
 	LogRaw("  meta_test log close               stop\n");
 	LogRaw("  meta_test log status              where the log is going\n");
+	LogRaw("  meta_test log color <on|off|console>\n");
+	LogRaw("                                    ANSI colour; 'console' keeps it out of files\n");
 	LogRaw("\n  logs are written to %s\n\n", fs::LogDirectory().c_str());
 }
 
@@ -291,17 +293,46 @@ void CommandLog(const CCommand& args)
 		CS2ST_LOG_INFO("closing %s\n", SessionLogPath().c_str());
 		CloseSessionLog();
 	}
+	else if (IsEqual(action, "color") || IsEqual(action, "colour"))
+	{
+		const std::string value = ArgAt(args, 3);
+		if (IsEqual(value, "on"))
+		{
+			SetColorEnabled(true, true);
+		}
+		else if (IsEqual(value, "off"))
+		{
+			SetColorEnabled(false, false);
+		}
+		else if (IsEqual(value, "console"))
+		{
+			// Escape sequences in the file are fine under `less -R` and awful
+			// in an editor that does not interpret them; this is the middle.
+			SetColorEnabled(true, false);
+		}
+		else
+		{
+			CS2ST_LOG_ERROR("usage: meta_test log color <on|off|console>\n");
+			return;
+		}
+		CS2ST_LOG_INFO("colour: console %s, file %s\n",
+			IsConsoleColorEnabled() ? "on" : "off",
+			IsFileColorEnabled() ? "on" : "off");
+	}
 	else if (action.empty() || IsEqual(action, "status"))
 	{
 		if (SessionLogPath().empty())
 		{
 			LogRaw("\n  no session log open; 'run' and 'hooks dump' write their own.\n");
-			LogRaw("  log directory: %s\n\n", fs::LogDirectory().c_str());
+			LogRaw("  log directory: %s\n", fs::LogDirectory().c_str());
 		}
 		else
 		{
-			LogRaw("\n  session log: %s\n\n", SessionLogPath().c_str());
+			LogRaw("\n  session log: %s\n", SessionLogPath().c_str());
 		}
+		LogRaw("  colour     : console %s, file %s\n\n",
+			IsConsoleColorEnabled() ? "on" : "off",
+			IsFileColorEnabled() ? "on" : "off");
 	}
 	else
 	{
