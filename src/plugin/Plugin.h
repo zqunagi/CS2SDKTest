@@ -2,7 +2,7 @@
  * The Metamod:Source plugin entry point.
  *
  * Deliberately thin: it owns the test runner and nothing else. Everything that
- * actually touches the SDK lives behind ITestModule, so this file should not
+ * actually touches the SDK lives behind ITestSuite, so this file should not
  * need to change as coverage is filled in.
  */
 

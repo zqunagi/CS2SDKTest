@@ -56,7 +56,7 @@ bool CS2SDKTestPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxl
 		PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION, late ? " (late)" : "");
 	CS2ST_LOG_INFO("built against SDK '%s' (SOURCE_ENGINE=%d), Metamod PLAPI %d\n",
 		PLUGIN_SDK_ENGINE, PLUGIN_SDK_ENGINE_CODE, PLUGIN_MM_PLAPI_VERSION);
-	CS2ST_LOG_INFO("%zu test module(s) registered, logs in %s\n",
+	CS2ST_LOG_INFO("%zu test suite(s) registered, logs in %s\n",
 		tests_.size(), fs::LogDirectory().c_str());
 
 	CS2ST_LOG_INFO("fault guard: %s\n", GuardDescription());

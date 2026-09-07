@@ -1,4 +1,4 @@
-#include "modules/Source2EngineModule.h"
+#include "suites/Source2EngineSuite.h"
 
 #include <appframework/IAppSystem.h>
 #include <eiface.h>
@@ -60,7 +60,7 @@ const char* TierName(AppSystemTier_t tier)
 
 } // namespace
 
-bool Source2EngineModule::Acquire(TestContext& context)
+bool Source2EngineSuite::Acquire(TestContext& context)
 {
 	engine_ = static_cast<IVEngineServer2*>(
 		context.QueryInterface("engine2", INTERFACEVERSION_VENGINESERVER));
@@ -88,7 +88,7 @@ bool Source2EngineModule::Acquire(TestContext& context)
 	return true;
 }
 
-void Source2EngineModule::ExerciseCalls(TestContext& context)
+void Source2EngineSuite::ExerciseCalls(TestContext& context)
 {
 	globals_ = nullptr;
 
@@ -104,7 +104,7 @@ void Source2EngineModule::ExerciseCalls(TestContext& context)
 //  IAppSystem - the first 11 slots of the vtable
 // -----------------------------------------------------------------------------
 
-void Source2EngineModule::ExerciseAppSystem(TestContext& context)
+void Source2EngineSuite::ExerciseAppSystem(TestContext& context)
 {
 	context.Note("[IAppSystem] base slots - if these are wrong, nothing below means anything");
 
@@ -187,7 +187,7 @@ void Source2EngineModule::ExerciseAppSystem(TestContext& context)
 //  ISource2Engine
 // -----------------------------------------------------------------------------
 
-void Source2EngineModule::ExerciseSource2Engine(TestContext& context)
+void Source2EngineSuite::ExerciseSource2Engine(TestContext& context)
 {
 	context.Note("[ISource2Engine]");
 
@@ -228,7 +228,7 @@ void Source2EngineModule::ExerciseSource2Engine(TestContext& context)
 //  IVEngineServer2 - server and host state
 // -----------------------------------------------------------------------------
 
-void Source2EngineModule::ExerciseEngineState(TestContext& context)
+void Source2EngineSuite::ExerciseEngineState(TestContext& context)
 {
 	context.Note("[IVEngineServer2] server state");
 
@@ -350,7 +350,7 @@ void Source2EngineModule::ExerciseEngineState(TestContext& context)
 //  IVEngineServer2 - per-player reads
 // -----------------------------------------------------------------------------
 
-void Source2EngineModule::ExercisePlayerQueries(TestContext& context)
+void Source2EngineSuite::ExercisePlayerQueries(TestContext& context)
 {
 	context.Note("[IVEngineServer2] player queries (slot %d)", kProbeSlot);
 
@@ -455,7 +455,7 @@ void Source2EngineModule::ExercisePlayerQueries(TestContext& context)
 //  IVEngineServer2 - spawn groups
 // -----------------------------------------------------------------------------
 
-void Source2EngineModule::ExerciseSpawnGroups(TestContext& context)
+void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 {
 	context.Note("[IVEngineServer2] spawn groups");
 
@@ -491,7 +491,7 @@ void Source2EngineModule::ExerciseSpawnGroups(TestContext& context)
 //  Everything deliberately not called
 // -----------------------------------------------------------------------------
 
-void Source2EngineModule::NoteSideEffectingCalls(TestContext& context)
+void Source2EngineSuite::NoteSideEffectingCalls(TestContext& context)
 {
 	context.Note("[IVEngineServer2] not called - would change server state");
 

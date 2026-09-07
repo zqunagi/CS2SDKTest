@@ -2,9 +2,8 @@
 
 #include "core/Log.h"
 #include "hook/HookRecorder.h"
+#include "suites/Source2EngineSuite.h"
 #include "testkit/CallGuard.h"
-
-#include "modules/Source2EngineModule.h"
 
 namespace cs2st
 {
@@ -13,34 +12,34 @@ TestRunner TestRunner::CreateDefault()
 {
 	TestRunner runner;
 
-	// One line per module. Nothing else in the pipeline needs to know they
+	// One line per suite. Nothing else in the pipeline needs to know they
 	// exist; registration order is the order they appear in a log.
-	runner.Add(std::unique_ptr<ITestModule>(new Source2EngineModule()));
+	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 
 	return runner;
 }
 
-void TestRunner::Add(std::unique_ptr<ITestModule> module)
+void TestRunner::Add(std::unique_ptr<ITestSuite> suite)
 {
-	if (module != nullptr)
+	if (suite != nullptr)
 	{
-		modules_.push_back(std::move(module));
+		suites_.push_back(std::move(suite));
 	}
 }
 
-ITestModule* TestRunner::Find(const std::string& id)
+ITestSuite* TestRunner::Find(const std::string& id)
 {
-	for (const auto& module : modules_)
+	for (const auto& suite : suites_)
 	{
-		if (id == module->Id())
+		if (id == suite->Id())
 		{
-			return module.get();
+			return suite.get();
 		}
 	}
 	return nullptr;
 }
 
-const ITestModule* TestRunner::Find(const std::string& id) const
+const ITestSuite* TestRunner::Find(const std::string& id) const
 {
 	return const_cast<TestRunner*>(this)->Find(id);
 }
@@ -56,26 +55,26 @@ RunTally TestRunner::RunCalls(TestContext& context, const std::string& only)
 		CS2ST_LOG_WARN("fault guard could not be armed; a bad call will crash the server\n");
 	}
 
-	for (const auto& module : modules_)
+	for (const auto& suite : suites_)
 	{
-		if (!only.empty() && only != module->Id())
+		if (!only.empty() && only != suite->Id())
 		{
 			continue;
 		}
 
-		context.BeginSection(module->Id(), module->DisplayName());
+		context.BeginSection(suite->Id(), suite->DisplayName());
 
 		// Acquire failing is a normal outcome, not an error: a client-only
 		// interface is legitimately absent on a dedicated server. Say so once
 		// and move on rather than failing every call underneath it.
-		if (!module->Acquire(context))
+		if (!suite->Acquire(context))
 		{
-			context.Note("skipped: could not acquire the interfaces this module needs");
+			context.Note("skipped: could not acquire the interfaces this suite needs");
 			context.EndSection();
 			continue;
 		}
 
-		module->ExerciseCalls(context);
+		suite->ExerciseCalls(context);
 		context.EndSection();
 	}
 
@@ -86,26 +85,26 @@ int TestRunner::InstallHooks(TestContext& context, const std::string& only)
 {
 	int installed = 0;
 
-	for (const auto& module : modules_)
+	for (const auto& suite : suites_)
 	{
-		if (!only.empty() && only != module->Id())
+		if (!only.empty() && only != suite->Id())
 		{
 			continue;
 		}
-		if (module->HooksInstalled())
+		if (suite->HooksInstalled())
 		{
 			continue;
 		}
-		if (!module->Acquire(context))
+		if (!suite->Acquire(context))
 		{
-			CS2ST_LOG_WARN("%s: cannot install hooks, interfaces unavailable\n", module->Id());
+			CS2ST_LOG_WARN("%s: cannot install hooks, interfaces unavailable\n", suite->Id());
 			continue;
 		}
 
-		const int count = module->InstallHooks(context);
+		const int count = suite->InstallHooks(context);
 		if (count > 0)
 		{
-			CS2ST_LOG_INFO("%s: %d hook(s) installed\n", module->Id(), count);
+			CS2ST_LOG_INFO("%s: %d hook(s) installed\n", suite->Id(), count);
 			installed += count;
 		}
 	}
@@ -117,18 +116,18 @@ int TestRunner::RemoveHooks(TestContext& context, const std::string& only)
 {
 	int touched = 0;
 
-	for (const auto& module : modules_)
+	for (const auto& suite : suites_)
 	{
-		if (!only.empty() && only != module->Id())
+		if (!only.empty() && only != suite->Id())
 		{
 			continue;
 		}
-		if (!module->HooksInstalled())
+		if (!suite->HooksInstalled())
 		{
 			continue;
 		}
 
-		module->RemoveHooks(context);
+		suite->RemoveHooks(context);
 		++touched;
 	}
 

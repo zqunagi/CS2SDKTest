@@ -13,10 +13,10 @@
  * does not implement both.
  */
 
-#ifndef CS2SDKTEST_MODULES_SOURCE2ENGINEMODULE_H_
-#define CS2SDKTEST_MODULES_SOURCE2ENGINEMODULE_H_
+#ifndef CS2SDKTEST_SUITES_SOURCE2ENGINESUITE_H_
+#define CS2SDKTEST_SUITES_SOURCE2ENGINESUITE_H_
 
-#include "testkit/ITestModule.h"
+#include "testkit/ITestSuite.h"
 
 class IVEngineServer2;
 class CGlobalVars;
@@ -24,7 +24,7 @@ class CGlobalVars;
 namespace cs2st
 {
 
-class Source2EngineModule : public ITestModule
+class Source2EngineSuite : public ITestSuite
 {
 public:
 	const char* Id() const override { return "engine"; }
@@ -53,4 +53,4 @@ private:
 
 } // namespace cs2st
 
-#endif /* CS2SDKTEST_MODULES_SOURCE2ENGINEMODULE_H_ */
+#endif /* CS2SDKTEST_SUITES_SOURCE2ENGINESUITE_H_ */

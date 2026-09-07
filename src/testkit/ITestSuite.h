@@ -1,11 +1,15 @@
 /**
- * A test module: one group of SDK surface that gets exercised together.
+ * A test suite: one group of SDK surface that gets exercised together.
  *
  * The natural unit is one engine interface - IVEngineServer2, ISchemaSystem,
  * IFileSystem - because acquiring it is a single step and everything that can
- * be called on it shares that prerequisite. A module that cannot acquire its
+ * be called on it shares that prerequisite. A suite that cannot acquire its
  * interface reports that once and skips its calls, instead of producing a
  * screenful of identical failures.
+ *
+ * Note the vocabulary: a *module* in this codebase is always a loaded shared
+ * library (see core/Module.h and data/GameModules.h), matching how the Source
+ * engine uses the word. What a suite tests lives inside one of those.
  *
  * Lifecycle over one run:
  *
@@ -20,18 +24,18 @@
  * been played for a while.
  */
 
-#ifndef CS2SDKTEST_TESTKIT_ITESTMODULE_H_
-#define CS2SDKTEST_TESTKIT_ITESTMODULE_H_
+#ifndef CS2SDKTEST_TESTKIT_ITESTSUITE_H_
+#define CS2SDKTEST_TESTKIT_ITESTSUITE_H_
 
 #include "testkit/TestContext.h"
 
 namespace cs2st
 {
 
-class ITestModule
+class ITestSuite
 {
 public:
-	virtual ~ITestModule() = default;
+	virtual ~ITestSuite() = default;
 
 	/** Stable short id, used in commands and log sections. */
 	virtual const char* Id() const = 0;
@@ -39,11 +43,11 @@ public:
 	/** Human-readable name for the log section header. */
 	virtual const char* DisplayName() const = 0;
 
-	/** One line on what this module covers. */
+	/** One line on what this suite covers. */
 	virtual const char* Description() const { return ""; }
 
 	/**
-	 * Resolves whatever this module needs before it can call anything.
+	 * Resolves whatever this suite needs before it can call anything.
 	 * Returning false skips ExerciseCalls; log the reason via the context.
 	 */
 	virtual bool Acquire(TestContext& context) = 0;
@@ -53,7 +57,7 @@ public:
 
 	/**
 	 * Installs SourceHook hooks. Returns how many were installed.
-	 * Default is none, so a module that only does calls implements nothing.
+	 * Default is none, so a suite that only does calls implements nothing.
 	 */
 	virtual int InstallHooks(TestContext& context)
 	{
@@ -64,10 +68,10 @@ public:
 	/** Removes whatever InstallHooks installed. Must tolerate being called twice. */
 	virtual void RemoveHooks(TestContext& context) { (void)context; }
 
-	/** True while this module's hooks are installed. */
+	/** True while this suite's hooks are installed. */
 	virtual bool HooksInstalled() const { return false; }
 };
 
 } // namespace cs2st
 
-#endif /* CS2SDKTEST_TESTKIT_ITESTMODULE_H_ */
+#endif /* CS2SDKTEST_TESTKIT_ITESTSUITE_H_ */

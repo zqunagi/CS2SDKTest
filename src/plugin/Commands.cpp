@@ -47,11 +47,11 @@ void PrintUsage()
 {
 	LogRaw("\n%s %s - %s\n\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION, PLUGIN_DESCRIPTION);
 	LogRaw("  meta_test help                    this text\n");
-	LogRaw("  meta_test modules                 test modules this build ships\n");
-	LogRaw("  meta_test targets                 game modules and whether they are loaded\n");
-	LogRaw("  meta_test run [module]            call sweep; writes a log\n");
-	LogRaw("  meta_test hooks install [module]  install hooks and leave them running\n");
-	LogRaw("  meta_test hooks remove [module]   take them back out\n");
+	LogRaw("  meta_test suites                  test suites this build ships\n");
+	LogRaw("  meta_test targets                 game modules (shared libraries) and their state\n");
+	LogRaw("  meta_test run [suite]             call sweep; writes a log\n");
+	LogRaw("  meta_test hooks install [suite]   install hooks and leave them running\n");
+	LogRaw("  meta_test hooks remove [suite]    take them back out\n");
 	LogRaw("  meta_test hooks dump              what has fired so far\n");
 	LogRaw("  meta_test hooks reset             zero the counters, keep the hooks\n");
 	LogRaw("  meta_test log open [name]         start writing everything to a file\n");
@@ -62,24 +62,24 @@ void PrintUsage()
 	LogRaw("\n  logs are written to %s\n\n", fs::LogDirectory().c_str());
 }
 
-void PrintModules()
+void PrintSuites()
 {
 	const TestRunner& runner = g_Plugin.tests();
 
 	if (runner.size() == 0)
 	{
-		LogRaw("\n  no test modules registered in this build.\n");
-		LogRaw("  add one in TestRunner::CreateDefault() - see src/testkit/ITestModule.h\n\n");
+		LogRaw("\n  no test suites registered in this build.\n");
+		LogRaw("  add one in TestRunner::CreateDefault() - see src/testkit/ITestSuite.h\n\n");
 		return;
 	}
 
-	LogRaw("\n  %zu test module(s):\n", runner.size());
-	for (const auto& module : runner.modules())
+	LogRaw("\n  %zu test suite(s):\n", runner.size());
+	for (const auto& suite : runner.suites())
 	{
 		LogRaw("    %-16s %-6s %s\n",
-			module->Id(),
-			module->HooksInstalled() ? "hooked" : "",
-			module->Description());
+			suite->Id(),
+			suite->HooksInstalled() ? "hooked" : "",
+			suite->Description());
 	}
 	LogRaw("\n");
 }
@@ -180,18 +180,18 @@ void CommandRun(const CCommand& args)
 	const std::string only = ArgAt(args, 2);
 	if (!only.empty() && runner.Find(only) == nullptr)
 	{
-		CS2ST_LOG_ERROR("no test module named '%s'; try 'meta_test modules'\n", only.c_str());
+		CS2ST_LOG_ERROR("no test suite named '%s'; try 'meta_test suites'\n", only.c_str());
 		return;
 	}
 
 	if (runner.size() == 0)
 	{
-		CS2ST_LOG_WARN("no test modules registered in this build; nothing to run\n");
+		CS2ST_LOG_WARN("no test suites registered in this build; nothing to run\n");
 		return;
 	}
 
 	const std::string what =
-		only.empty() ? std::string("call sweep (all modules)") : "call sweep: " + only;
+		only.empty() ? std::string("call sweep (all suites)") : "call sweep: " + only;
 
 	ScopedRunLog log("run");
 	WriteLogHeader(what.c_str());
@@ -216,7 +216,7 @@ void CommandHooks(const CCommand& args)
 	{
 		if (!only.empty() && runner.Find(only) == nullptr)
 		{
-			CS2ST_LOG_ERROR("no test module named '%s'\n", only.c_str());
+			CS2ST_LOG_ERROR("no test suite named '%s'\n", only.c_str());
 			return;
 		}
 		const int installed = runner.InstallHooks(context, only);
@@ -226,7 +226,7 @@ void CommandHooks(const CCommand& args)
 	else if (IsEqual(action, "remove"))
 	{
 		const int touched = runner.RemoveHooks(context, only);
-		CS2ST_LOG_INFO("hooks removed from %d module(s)\n", touched);
+		CS2ST_LOG_INFO("hooks removed from %d suite(s)\n", touched);
 	}
 	else if (IsEqual(action, "reset"))
 	{
@@ -354,9 +354,9 @@ void Dispatch(const CCommand& args)
 	{
 		PrintUsage();
 	}
-	else if (IsEqual(command, "modules"))
+	else if (IsEqual(command, "suites"))
 	{
-		PrintModules();
+		PrintSuites();
 	}
 	else if (IsEqual(command, "targets"))
 	{
