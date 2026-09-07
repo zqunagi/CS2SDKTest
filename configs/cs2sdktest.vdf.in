@@ -1,0 +1,5 @@
+"Metamod Plugin"
+{
+	"alias"		"@CS2SDKTEST_ALIAS@"
+	"file"		"addons/@CS2SDKTEST_ALIAS@/bin/@CS2SDKTEST_TARGET_NAME@"
+}

@@ -1,0 +1,62 @@
+# ---- Build output ----
+/build/
+/out/
+/cmake-build-*/
+/install/
+*.dir/
+
+# ---- CMake ----
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+_deps/
+
+# ---- Compiled artifacts ----
+*.obj
+*.o
+*.lo
+*.slo
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.a
+*.la
+*.exp
+*.pdb
+*.ilk
+*.idb
+*.map
+
+# ---- IDE / editor ----
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.user
+*.suo
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+
+# ---- Generated sources ----
+/src/generated/
+version_gen.h
+
+# ---- Plugin runtime output ----
+/package/
+*.vdf
+!configs/*.vdf.in
+
+# ---- Run logs produced at runtime ----
+/logs/
+
+# ---- Misc ----
+*.log
+.DS_Store
+Thumbs.db

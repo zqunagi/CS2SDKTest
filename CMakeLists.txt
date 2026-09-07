@@ -1,0 +1,287 @@
+cmake_minimum_required(VERSION 3.21)
+
+# =============================================================================
+#  CS2SDKTest - a Metamod:Source exercise harness for hl2sdk (cs2 branch)
+#
+#  Behaves like an ordinary plugin, but its job is to use as much of the SDK as
+#  possible: call the engine interfaces, hook the callbacks, and log what
+#  actually happened. After a game update, the log is what tells you which
+#  parts of hl2sdk no longer match the game.
+# =============================================================================
+
+project(cs2sdktest
+  VERSION 0.1.0
+  DESCRIPTION "hl2sdk surface diagnostics for Counter-Strike 2"
+  LANGUAGES CXX
+)
+
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "Source 2 is 64-bit only; configure a x64 toolchain.")
+endif()
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
+endif()
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# -----------------------------------------------------------------------------
+#  Options
+# -----------------------------------------------------------------------------
+set(CS2SDKTEST_HL2SDK_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/hl2sdk"
+    CACHE PATH "Path to the hl2sdk checkout (cs2 branch)")
+set(CS2SDKTEST_METAMOD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/metamod-source"
+    CACHE PATH "Path to the metamod-source checkout")
+set(CS2SDKTEST_GAME_DIR    ""
+    CACHE PATH "Optional: <csgo> directory to install the built plugin into")
+
+# Off by default, and not just for convenience: on MSVC the SDK's
+# memoverride.cpp does not currently link. AlliedModders disabled the
+# _recalloc_base *definition* in it (#if 0, "causes crashes on library unload")
+# but left _recalloc_crt calling it, so the symbol is unresolved. It also
+# redefines malloc/free and collides with the CRT's own copies.
+#
+# This plugin does not need it: it reads from the engine and allocates only for
+# its own containers, so no allocation crosses the module boundary. Turn it on
+# if that ever stops being true - and expect to sort out the MSVC link first.
+option(CS2SDKTEST_USE_MEMOVERRIDE
+       "Route new/delete through tier0's allocator (see comment; MSVC link is broken)" OFF)
+# Not really optional: public/eiface.h includes network_connection.pb.h, and
+# eiface.h is reached from ISmmPlugin.h, so every source file needs it. The
+# switch exists so a future SDK that drops the dependency can turn it off.
+option(CS2SDKTEST_WITH_PROTOBUF
+       "Generate and link the SDK's protobuf sources (required by eiface.h)" ON)
+
+# Protos to run through protoc. network_connection is the one the SDK headers
+# demand; add more here when a probe needs to read actual net messages.
+set(CS2SDKTEST_PROTO_FILES "network_connection"
+    CACHE STRING "hl2sdk/common proto files to generate (without .proto)")
+
+option(CS2SDKTEST_TIER1_KEYVALUES3
+       "Also compile tier1/keyvalues3.cpp into the plugin" OFF)
+option(CS2SDKTEST_TIER1_BITBUF
+       "Also compile tier1/bitbuf.cpp into the plugin" OFF)
+option(CS2SDKTEST_WARNINGS_AS_ERRORS
+       "Treat warnings in this project's own sources as errors" OFF)
+
+# Plugin identity, surfaced through ISmmPlugin and written into every log header.
+set(CS2SDKTEST_DISPLAY_NAME "CS2 SDK Test")
+set(CS2SDKTEST_DESCRIPTION  "${PROJECT_DESCRIPTION}")
+set(CS2SDKTEST_AUTHOR       "unagi")
+set(CS2SDKTEST_URL          "https://github.com/alliedmodders/metamod-source")
+set(CS2SDKTEST_LICENSE      "MIT")
+set(CS2SDKTEST_LOGTAG       "SDKTEST")
+set(CS2SDKTEST_ALIAS        "cs2sdktest")
+set(CS2SDKTEST_TARGET_NAME  "cs2sdktest")
+
+# -----------------------------------------------------------------------------
+#  Dependencies
+# -----------------------------------------------------------------------------
+include(HL2SDK)
+include(Metamod)
+include(PluginVersion)
+if(CS2SDKTEST_WITH_PROTOBUF)
+  include(Protobuf)
+endif()
+
+if(WIN32)
+  set(CS2SDKTEST_PLATFORM "windows")
+else()
+  set(CS2SDKTEST_PLATFORM "linux")
+endif()
+
+cs2sdktest_resolve_git_revision(CS2SDKTEST_GIT_REVISION)
+set(CS2SDKTEST_FULL_VERSION "${PROJECT_VERSION}-${CS2SDKTEST_GIT_REVISION}")
+
+# -----------------------------------------------------------------------------
+#  Generated sources
+# -----------------------------------------------------------------------------
+set(CS2SDKTEST_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/version_gen.h.in"
+  "${CS2SDKTEST_GENERATED_DIR}/version_gen.h"
+  @ONLY
+)
+
+set(CS2SDKTEST_PROTO_SOURCES "")
+if(CS2SDKTEST_WITH_PROTOBUF)
+  cs2sdktest_generate_protobuf(CS2SDKTEST_PROTO_SOURCES ${CS2SDKTEST_PROTO_FILES})
+endif()
+
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/configs/cs2sdktest.vdf.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/package/addons/metamod/${CS2SDKTEST_ALIAS}.vdf"
+  @ONLY
+)
+
+# -----------------------------------------------------------------------------
+#  The plugin
+# -----------------------------------------------------------------------------
+set(CS2SDKTEST_SOURCES
+  src/plugin/Plugin.cpp
+  src/plugin/Commands.cpp
+
+  src/core/Log.cpp
+  src/core/Module.cpp
+  src/core/FileSystemUtil.cpp
+
+  src/data/GameModules.cpp
+
+  src/testkit/CallGuard.cpp
+  src/testkit/TestContext.cpp
+  src/testkit/TestRunner.cpp
+
+  src/hook/HookRecorder.cpp
+
+  # Test modules go here as they land, e.g.:
+  #   src/modules/EngineServerModule.cpp
+)
+
+set(CS2SDKTEST_HEADERS
+  src/plugin/Plugin.h
+
+  src/core/Platform.h
+  src/core/Log.h
+  src/core/Module.h
+  src/core/FileSystemUtil.h
+
+  src/data/GameModules.h
+
+  src/testkit/CallGuard.h
+  src/testkit/ITestModule.h
+  src/testkit/TestContext.h
+  src/testkit/TestRunner.h
+
+  src/hook/HookRecorder.h
+)
+
+# Upstream Source 2 plugins compile these SDK translation units directly:
+# memoverride.cpp hands allocation to tier0 so memory crossing the plugin
+# boundary is freed by the allocator that made it.
+set(CS2SDKTEST_SDK_SOURCES "")
+if(CS2SDKTEST_USE_MEMOVERRIDE)
+  list(APPEND CS2SDKTEST_SDK_SOURCES "${HL2SDK_ROOT}/public/tier0/memoverride.cpp")
+endif()
+
+add_library(cs2sdktest MODULE
+  ${CS2SDKTEST_SOURCES}
+  ${CS2SDKTEST_HEADERS}
+  ${CS2SDKTEST_SDK_SOURCES}
+  ${CS2SDKTEST_PROTO_SOURCES}
+)
+
+# memoverride.cpp and protoc output are both foreign code, and both are noisy.
+# Source-level options are appended after the target's, so a blanket disable
+# here wins over the /W4 set further down without affecting our own files.
+set(_foreign_sources ${CS2SDKTEST_SDK_SOURCES} ${CS2SDKTEST_PROTO_SOURCES})
+if(_foreign_sources)
+  if(MSVC)
+    set(_foreign_warning_flags "/W0")
+  else()
+    set(_foreign_warning_flags "-w")
+  endif()
+  set_source_files_properties(${_foreign_sources} PROPERTIES
+    SKIP_PRECOMPILE_HEADERS ON
+    COMPILE_OPTIONS "${_foreign_warning_flags}"
+  )
+endif()
+
+target_include_directories(cs2sdktest PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CS2SDKTEST_GENERATED_DIR}"
+)
+
+if(CS2SDKTEST_WITH_PROTOBUF)
+  # The SDK includes it as "network_connection.pb.h", unqualified.
+  target_include_directories(cs2sdktest SYSTEM PRIVATE "${CS2SDKTEST_PROTO_OUT_DIR}")
+endif()
+
+target_link_libraries(cs2sdktest PRIVATE
+  metamod::metamod
+  hl2sdk::hl2sdk
+)
+
+target_compile_features(cs2sdktest PRIVATE cxx_std_17)
+
+set_target_properties(cs2sdktest PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  POSITION_INDEPENDENT_CODE ON
+  # Plain cs2sdktest.so / cs2sdktest.dll. Metamod tries "<file>.x64.<ext>"
+  # first and falls back to "<file>.<ext>", which is the one we produce.
+  PREFIX ""
+  OUTPUT_NAME "${CS2SDKTEST_TARGET_NAME}"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/bin"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/bin"
+)
+
+if(WIN32)
+  set_target_properties(cs2sdktest PROPERTIES SUFFIX ".dll")
+else()
+  set_target_properties(cs2sdktest PROPERTIES SUFFIX ".so")
+endif()
+
+# Multi-config generators append the config name to the output directory unless
+# told otherwise; the package layout has to stay stable for the vdf to work.
+foreach(_config IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+  set_target_properties(cs2sdktest PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY_${_config} "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_${_config} "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/bin"
+  )
+endforeach()
+
+# Warnings for our own sources only - the SDK's are silenced in hl2sdk::headers.
+if(MSVC)
+  target_compile_options(cs2sdktest PRIVATE /W4)
+  if(CS2SDKTEST_WARNINGS_AS_ERRORS)
+    target_compile_options(cs2sdktest PRIVATE /WX)
+  endif()
+else()
+  target_compile_options(cs2sdktest PRIVATE -Wall -Wextra)
+  if(CS2SDKTEST_WARNINGS_AS_ERRORS)
+    target_compile_options(cs2sdktest PRIVATE -Werror)
+  endif()
+  # cs2.json sets uses_system_cxxlib=false: the game ships an old libstdc++ and
+  # loading a plugin that expects a newer one crashes on the first std:: symbol.
+  #
+  # Do NOT add -Wl,--exclude-libs,ALL here. It makes every symbol coming from a
+  # static archive local, and CreateInterface - the entry point Metamod looks
+  # for - is defined in the SDK's interfaces.a. Hiding it does not produce a
+  # missing-symbol error: dlsym walks the dependency chain and finds
+  # libtier0.so's CreateInterface instead, which knows nothing about
+  # "ISmmPlugin", so the plugin fails to load with "Failed to get API".
+  target_link_options(cs2sdktest PRIVATE
+    -static-libstdc++
+    -static-libgcc
+  )
+endif()
+
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "src"
+  FILES ${CS2SDKTEST_SOURCES} ${CS2SDKTEST_HEADERS})
+
+# -----------------------------------------------------------------------------
+#  Packaging / installation
+# -----------------------------------------------------------------------------
+install(TARGETS cs2sdktest
+  LIBRARY DESTINATION "addons/${CS2SDKTEST_ALIAS}/bin"
+  RUNTIME DESTINATION "addons/${CS2SDKTEST_ALIAS}/bin"
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/package/addons/metamod/${CS2SDKTEST_ALIAS}.vdf"
+  DESTINATION "addons/metamod"
+)
+
+# `cmake --build . --target deploy` drops the package straight into a server.
+if(CS2SDKTEST_GAME_DIR)
+  add_custom_target(deploy
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${CMAKE_CURRENT_BINARY_DIR}/package"
+            "${CS2SDKTEST_GAME_DIR}"
+    DEPENDS cs2sdktest
+    COMMENT "Deploying ${CS2SDKTEST_ALIAS} to ${CS2SDKTEST_GAME_DIR}"
+    VERBATIM
+  )
+endif()
+
+message(STATUS "cs2sdktest ${CS2SDKTEST_FULL_VERSION} (${CS2SDKTEST_PLATFORM})")
