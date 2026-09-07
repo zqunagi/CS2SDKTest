@@ -44,6 +44,17 @@ enum class CallOutcome
 	kSkipped,        ///< not attempted (prerequisite missing)
 	kUnavailable,    ///< the interface or symbol it needed was not there
 	kFailed,         ///< returned, but the result was not what the SDK implies
+
+	/**
+	 * Outside what the SDK implies, but with a known benign explanation -
+	 * typically a field the engine never writes, left holding whatever the
+	 * allocator had there.
+	 *
+	 * Kept distinct from kOk rather than silenced: the value is still printed
+	 * and still counted, so a field that starts failing for a *new* reason is
+	 * not hidden by the excuse recorded for the old one.
+	 */
+	kSuspect,
 };
 
 const char* CallOutcomeName(CallOutcome outcome);

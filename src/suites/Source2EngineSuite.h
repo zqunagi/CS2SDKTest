@@ -11,6 +11,13 @@
  * CBaseAppSystem problem would show up - IAppSystem is 11 slots on CS2 (with
  * PreShutdown at 5 and GetBuildType at 10) and the SDK's own helper base class
  * does not implement both.
+ *
+ * The suite also inspects CGlobalVars, the one struct this interface hands out.
+ * That is a different kind of check - the calls above test functions, while
+ * CGlobalVars is raw memory read through a layout the SDK only guesses at: five
+ * of its fields are m_unkNNN placeholders standing in for bytes nobody has
+ * identified. Insert a field there and every offset after it silently shifts,
+ * with no crash and no error, just wrong numbers.
  */
 
 #ifndef CS2SDKTEST_SUITES_SOURCE2ENGINESUITE_H_
@@ -43,6 +50,7 @@ private:
 	void ExerciseEngineState(TestContext& context);
 	void ExercisePlayerQueries(TestContext& context);
 	void ExerciseSpawnGroups(TestContext& context);
+	void InspectGlobalVars(TestContext& context);
 	void NoteSideEffectingCalls(TestContext& context);
 
 	IVEngineServer2* engine_ = nullptr;

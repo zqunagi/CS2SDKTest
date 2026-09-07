@@ -1,9 +1,13 @@
 #include "suites/Source2EngineSuite.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include <appframework/IAppSystem.h>
 #include <eiface.h>
 
 #include "core/Log.h"
+#include "testkit/StructInspector.h"
 
 namespace cs2st
 {
@@ -97,6 +101,7 @@ void Source2EngineSuite::ExerciseCalls(TestContext& context)
 	ExerciseEngineState(context);
 	ExercisePlayerQueries(context);
 	ExerciseSpawnGroups(context);
+	InspectGlobalVars(context);
 	NoteSideEffectingCalls(context);
 }
 
@@ -485,6 +490,98 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 	context.SkipCall("IVEngineServer2::SynchronouslySpawnGroup", "spawns entities");
 	context.SkipCall("IVEngineServer2::SynchronizeAndBlockUntilLoaded", "blocks the server");
 	context.SkipCall("IVEngineServer2::SetSpawnGroupDescription", "mutates spawn group state");
+}
+
+// -----------------------------------------------------------------------------
+//  CGlobalVars - the one struct this interface hands out
+// -----------------------------------------------------------------------------
+
+void Source2EngineSuite::InspectGlobalVars(TestContext& context)
+{
+	context.Note("[CGlobalVars] struct layout");
+
+	if (globals_ == nullptr)
+	{
+		context.SkipCall("CGlobalVars", "GetServerGlobals did not return an instance");
+		return;
+	}
+
+	StructInspector inspect(context, "CGlobalVars", globals_, sizeof(CGlobalVars));
+
+	// Fields are listed in declaration order so the log reads down the struct;
+	// that is what makes "the first failure is where it diverged" legible.
+	//
+	// Offsets come from offsetof() on purpose - see StructInspector.h. The
+	// base-class fields are addressed through CGlobalVarsBase so the offsets
+	// stay correct if anything is ever inserted between the two classes.
+
+	inspect.Float ("realtime",       offsetof(CGlobalVarsBase, realtime));
+	inspect.Int32 ("framecount",     offsetof(CGlobalVarsBase, framecount), 0, INT32_MAX);
+	inspect.Float ("absoluteframetime",
+	                                 offsetof(CGlobalVarsBase, absoluteframetime));
+	inspect.Float ("absoluteframestarttimestddev",
+	                                 offsetof(CGlobalVarsBase, absoluteframestarttimestddev));
+	// A client count cannot be negative - that is the type talking, not the
+	// game. No upper bound here: server limits are a policy question, and
+	// encoding one would make this check stop being about layout.
+	inspect.Int32 ("maxClients",     offsetof(CGlobalVarsBase, maxClients), 0, INT32_MAX);
+
+	// The five m_unk fields are reverse-engineering placeholders: somebody knew
+	// how many bytes sat between two identified fields and filled the gap with
+	// ints. Reported, never judged - they have no type to be wrong about, and
+	// this is exactly the region where an inserted field would hide.
+	inspect.Int32 ("m_unk001",       offsetof(CGlobalVarsBase, m_unk001));
+	inspect.Int32 ("m_unk002",       offsetof(CGlobalVarsBase, m_unk002));
+	inspect.Int32 ("m_unk003",       offsetof(CGlobalVarsBase, m_unk003));
+	inspect.Int32 ("m_unk004",       offsetof(CGlobalVarsBase, m_unk004));
+	inspect.Int32 ("m_unk005",       offsetof(CGlobalVarsBase, m_unk005));
+
+	inspect.Pointer("m_pfnWarningFunc",
+	                                 offsetof(CGlobalVarsBase, m_pfnWarningFunc));
+
+	inspect.Float ("curtime",        offsetof(CGlobalVarsBase, curtime));
+	inspect.Float ("frametime",      offsetof(CGlobalVarsBase, frametime));
+	inspect.Float ("m_unk101",       offsetof(CGlobalVarsBase, m_unk101));
+	inspect.Float ("m_unk102",       offsetof(CGlobalVarsBase, m_unk102));
+
+	inspect.Bool  ("m_bInSimulation",
+	                                 offsetof(CGlobalVarsBase, m_bInSimulation));
+	// Observed holding 0xFF on a live server. CGlobalVarsBase's constructor is
+	// empty, so any field the engine never writes keeps whatever the allocator
+	// left there - and a release server has no reason to touch an assertion
+	// switch. The surrounding fields are the evidence that this is stale memory
+	// rather than misalignment: tickcount at 0x44 and mapname at 0x60 both read
+	// correctly, and a layout that had slipped at 0x41 could not repair itself
+	// by 0x44.
+	inspect.Bool  ("m_bEnableAssertions",
+	                                 offsetof(CGlobalVarsBase, m_bEnableAssertions),
+	                                 kMayBeUninitialized);
+
+	inspect.Int32 ("tickcount",      offsetof(CGlobalVarsBase, tickcount), 0, INT32_MAX);
+	inspect.Int32 ("m_unk201",       offsetof(CGlobalVarsBase, m_unk201));
+	inspect.Int32 ("m_unk202",       offsetof(CGlobalVarsBase, m_unk202));
+
+	inspect.Float ("m_flSubtickFraction",
+	                                 offsetof(CGlobalVarsBase, m_flSubtickFraction));
+	inspect.Bool  ("m_unk301",       offsetof(CGlobalVarsBase, m_unk301));
+	inspect.Raw   ("m_nThreadId",    offsetof(CGlobalVarsBase, m_nThreadId),
+	                                 sizeof(ThreadId_t));
+
+	// CGlobalVars' own fields. string_t on this branch is a struct wrapping a
+	// single const char*, so its memory is a pointer and String() applies.
+	inspect.String("mapname",        offsetof(CGlobalVars, mapname));
+	inspect.String("startspot",      offsetof(CGlobalVars, startspot));
+	inspect.Enum  ("eLoadType",      offsetof(CGlobalVars, eLoadType),
+	                                 MapLoad_NewGame, MapLoad_Background);
+	inspect.Bool  ("mp_teamplay",    offsetof(CGlobalVars, mp_teamplay));
+	inspect.Int32 ("maxEntities",    offsetof(CGlobalVars, maxEntities), 0, INT32_MAX);
+	inspect.Int32 ("serverCount",    offsetof(CGlobalVars, serverCount), 0, INT32_MAX);
+
+	inspect.Summarize();
+
+	// Printed last so a reader who saw a failure above has the raw bytes to
+	// work out where the boundary actually moved.
+	inspect.HexDump();
 }
 
 // -----------------------------------------------------------------------------

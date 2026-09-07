@@ -129,6 +129,7 @@ set(CS2SDKTEST_SOURCES
   src/data/GameModules.cpp
 
   src/testkit/CallGuard.cpp
+  src/testkit/StructInspector.cpp
   src/testkit/TestContext.cpp
   src/testkit/TestRunner.cpp
 
@@ -149,6 +150,7 @@ set(CS2SDKTEST_HEADERS
 
   src/testkit/CallGuard.h
   src/testkit/ITestSuite.h
+  src/testkit/StructInspector.h
   src/testkit/TestContext.h
   src/testkit/TestRunner.h
 

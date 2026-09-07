@@ -54,6 +54,7 @@ void RunTally::Count(CallOutcome outcome)
 		case CallOutcome::kSkipped:     ++skipped;     break;
 		case CallOutcome::kUnavailable: ++unavailable; break;
 		case CallOutcome::kFailed:      ++failed;      break;
+		case CallOutcome::kSuspect:     ++suspect;     break;
 	}
 }
 
@@ -154,10 +155,19 @@ void TestContext::Fail(const char* format, ...)
 	va_end(args);
 }
 
+void TestContext::Suspect(const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	pending_suspect_ = FormatToString(format, args);
+	va_end(args);
+}
+
 CallOutcome TestContext::RunCall(const std::string& target, const std::function<void()>& body)
 {
 	pending_detail_.clear();
 	pending_failure_.clear();
+	pending_suspect_.clear();
 	in_call_ = true;
 
 	// Without a guard the call can take the process down, so the target is
@@ -185,6 +195,11 @@ CallOutcome TestContext::RunCall(const std::string& target, const std::function<
 	{
 		outcome = CallOutcome::kFailed;
 		detail = pending_failure_ + (detail.empty() ? "" : " (" + detail + ")");
+	}
+	else if (outcome == CallOutcome::kOk && !pending_suspect_.empty())
+	{
+		outcome = CallOutcome::kSuspect;
+		detail = pending_suspect_ + (detail.empty() ? "" : " (" + detail + ")");
 	}
 
 	Record(target, outcome, detail);
@@ -226,6 +241,10 @@ void TestContext::Record(const std::string& target, CallOutcome outcome, const s
 	else if (outcome == CallOutcome::kFailed)
 	{
 		color = LogColor::kRed;
+	}
+	else if (outcome == CallOutcome::kSuspect)
+	{
+		color = LogColor::kYellow;
 	}
 
 	LogRawColored(color, "  %-*s %-8s %s\n",

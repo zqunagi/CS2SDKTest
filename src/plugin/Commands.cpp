@@ -199,8 +199,9 @@ void CommandRun(const CCommand& args)
 	TestContext context;
 	const RunTally tally = runner.RunCalls(context, only);
 
-	LogRaw("\n  %zu call(s): %zu ok, %zu crashed, %zu failed, %zu unavailable, %zu skipped\n\n",
-		tally.Total(), tally.ok, tally.crashed, tally.failed,
+	LogRaw("\n  %zu call(s): %zu ok, %zu crashed, %zu failed, %zu suspect, "
+	       "%zu unavailable, %zu skipped\n\n",
+		tally.Total(), tally.ok, tally.crashed, tally.failed, tally.suspect,
 		tally.unavailable, tally.skipped);
 }
 

@@ -335,6 +335,7 @@ const char* CallOutcomeName(CallOutcome outcome)
 		case CallOutcome::kSkipped:     return "SKIP";
 		case CallOutcome::kUnavailable: return "N/A";
 		case CallOutcome::kFailed:      return "FAIL";
+		case CallOutcome::kSuspect:     return "SUSPECT";
 		default:                        return "?";
 	}
 }

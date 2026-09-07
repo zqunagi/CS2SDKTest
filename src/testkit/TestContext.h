@@ -39,8 +39,12 @@ struct RunTally
 	std::size_t skipped = 0;
 	std::size_t unavailable = 0;
 	std::size_t failed = 0;
+	std::size_t suspect = 0;
 
-	std::size_t Total() const { return ok + crashed + skipped + unavailable + failed; }
+	std::size_t Total() const
+	{
+		return ok + crashed + skipped + unavailable + failed + suspect;
+	}
 	void Count(CallOutcome outcome);
 };
 
@@ -112,6 +116,16 @@ public:
 	 */
 	void Fail(const char* format, ...) CS2ST_PRINTF_FMT(2, 3);
 
+	/**
+	 * Like Fail, but for a value that is outside what the SDK implies *and*
+	 * has a known benign reason - a field the engine never initialises, say.
+	 *
+	 * Still recorded and still printed, so the same field failing later for a
+	 * different reason is not swallowed by yesterday's excuse. Fail wins if
+	 * both are set.
+	 */
+	void Suspect(const char* format, ...) CS2ST_PRINTF_FMT(2, 3);
+
 	// ---- results -----------------------------------------------------------
 
 	const RunTally& tally() const { return tally_; }
@@ -126,6 +140,7 @@ private:
 	std::string section_;
 	std::string pending_detail_;
 	std::string pending_failure_;
+	std::string pending_suspect_;
 	bool in_call_ = false;
 };
 

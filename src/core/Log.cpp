@@ -29,7 +29,7 @@ std::FILE* g_log_file = nullptr;
 std::string g_log_path;
 
 bool g_console_color = true;
-bool g_file_color = true;
+bool g_file_color = false;
 
 constexpr const char* kColorReset = "\033[0m";
 
@@ -198,7 +198,7 @@ void InitLogging()
 	g_console_color = true;
 #endif
 
-	g_file_color = true;
+	g_file_color = false;
 }
 
 void SetColorEnabled(bool console, bool file)
