@@ -134,8 +134,7 @@ set(CS2SDKTEST_SOURCES
 
   src/hook/HookRecorder.cpp
 
-  # Test modules go here as they land, e.g.:
-  #   src/modules/EngineServerModule.cpp
+  src/modules/Source2EngineModule.cpp
 )
 
 set(CS2SDKTEST_HEADERS
@@ -154,6 +153,8 @@ set(CS2SDKTEST_HEADERS
   src/testkit/TestRunner.h
 
   src/hook/HookRecorder.h
+
+  src/modules/Source2EngineModule.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:

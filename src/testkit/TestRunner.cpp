@@ -4,8 +4,7 @@
 #include "hook/HookRecorder.h"
 #include "testkit/CallGuard.h"
 
-// Test module headers go here as they land, e.g.:
-//   #include "modules/EngineServerModule.h"
+#include "modules/Source2EngineModule.h"
 
 namespace cs2st
 {
@@ -14,10 +13,9 @@ TestRunner TestRunner::CreateDefault()
 {
 	TestRunner runner;
 
-	// Register test modules here. One line each:
-	//   runner.Add(std::unique_ptr<ITestModule>(new EngineServerModule()));
-	//
-	// Nothing else in the pipeline needs to know they exist.
+	// One line per module. Nothing else in the pipeline needs to know they
+	// exist; registration order is the order they appear in a log.
+	runner.Add(std::unique_ptr<ITestModule>(new Source2EngineModule()));
 
 	return runner;
 }
