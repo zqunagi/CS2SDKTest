@@ -55,13 +55,7 @@ bool CS2SDKTestPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxl
 	CS2ST_LOG_INFO("%zu test module(s) registered, logs in %s\n",
 		tests_.size(), fs::LogDirectory().c_str());
 
-	if (!IsGuardAvailable())
-	{
-		// Worth saying out loud: until the guard lands, a call into a moved
-		// virtual takes the whole server with it.
-		CS2ST_LOG_WARN("fault guard is not implemented - a bad call will crash the server\n");
-	}
-
+	CS2ST_LOG_INFO("fault guard: %s\n", GuardDescription());
 	CS2ST_LOG_INFO("type 'meta_test help' in the console to get started\n");
 	return true;
 }

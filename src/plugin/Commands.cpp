@@ -167,8 +167,7 @@ void WriteLogHeader(const char* what)
 		PLUGIN_SDK_ENGINE_CODE, PLUGIN_MM_PLAPI_VERSION);
 	LogToFile("build     : %s (%s, %s)\n",
 		PLUGIN_VERSION, PLUGIN_GIT_REVISION, PLUGIN_BUILD_TYPE);
-	LogToFile("guard     : %s\n",
-		IsGuardAvailable() ? "armed" : "NOT IMPLEMENTED - a bad call crashes the server");
+	LogToFile("guard     : %s\n", GuardDescription());
 	LogToFile("\n");
 }
 

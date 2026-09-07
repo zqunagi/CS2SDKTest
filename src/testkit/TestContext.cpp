@@ -143,21 +143,28 @@ CallOutcome TestContext::RunCall(const std::string& target, const std::function<
 	pending_failure_.clear();
 	in_call_ = true;
 
-	// The line is written *before* the call in the unguarded case, so that if
-	// the call takes the process down the log already names the culprit. It is
-	// then completed with the outcome once the call returns.
+	// Without a guard the call can take the process down, so the target is
+	// written to the log first: the last line in the file then names the
+	// culprit even though the outcome never got written.
 	if (!IsGuardAvailable())
 	{
 		LogToFile("  %-*s ... \n", kTargetColumn, target.c_str());
 	}
 
-	const CallOutcome guard_result = InvokeGuarded(body);
+	FaultInfo fault;
+	const CallOutcome guard_result = InvokeGuarded(body, &fault);
 	in_call_ = false;
 
 	CallOutcome outcome = guard_result;
 	std::string detail = pending_detail_;
 
-	if (outcome == CallOutcome::kOk && !pending_failure_.empty())
+	if (outcome == CallOutcome::kCrashed)
+	{
+		// The fault is the whole finding; anything Detail() managed to set
+		// before the call died is at best half-written.
+		detail = fault.description;
+	}
+	else if (outcome == CallOutcome::kOk && !pending_failure_.empty())
 	{
 		outcome = CallOutcome::kFailed;
 		detail = pending_failure_ + (detail.empty() ? "" : " (" + detail + ")");

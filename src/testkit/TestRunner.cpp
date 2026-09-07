@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "hook/HookRecorder.h"
+#include "testkit/CallGuard.h"
 
 // Test module headers go here as they land, e.g.:
 //   #include "modules/EngineServerModule.h"
@@ -48,6 +49,15 @@ const ITestModule* TestRunner::Find(const std::string& id) const
 
 RunTally TestRunner::RunCalls(TestContext& context, const std::string& only)
 {
+	// One scope around the whole sweep. On Linux this is what installs the
+	// fault handlers, and it takes the engine's own out of the way for as long
+	// as it is alive - so it wraps the sweep, not each call.
+	FaultGuardScope guard;
+	if (!FaultGuardScope::IsActive())
+	{
+		CS2ST_LOG_WARN("fault guard could not be armed; a bad call will crash the server\n");
+	}
+
 	for (const auto& module : modules_)
 	{
 		if (!only.empty() && only != module->Id())
