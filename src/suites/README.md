@@ -1,8 +1,9 @@
 Test suites live here — one per SDK interface being exercised.
 
-  Source2EngineSuite    IVEngineServer2 / ISource2Engine / IAppSystem (calls + CGlobalVars layout)
-  Source2ServerSuite    ISource2Server (= IServerGameDLL)             (calls + 11 hooks)
-  MetamodListenerSuite  ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
+  Source2EngineSuite       IVEngineServer2 / ISource2Engine / IAppSystem (calls + CGlobalVars layout)
+  Source2ServerSuite       ISource2Server (= IServerGameDLL)             (calls + 11 hooks)
+  Source2GameClientsSuite  ISource2GameClients (= IServerGameClients)    (calls + 11 hooks)
+  MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it
 is here because LevelInit/LevelShutdown reach a Source 2 plugin only through
