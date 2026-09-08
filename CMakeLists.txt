@@ -137,6 +137,7 @@ set(CS2SDKTEST_SOURCES
 
   src/suites/Source2EngineSuite.cpp
   src/suites/Source2ServerSuite.cpp
+  src/suites/MetamodListenerSuite.cpp
 )
 
 set(CS2SDKTEST_HEADERS
@@ -155,10 +156,12 @@ set(CS2SDKTEST_HEADERS
   src/testkit/TestContext.h
   src/testkit/TestRunner.h
 
+  src/hook/HookArg.h
   src/hook/HookRecorder.h
 
   src/suites/Source2EngineSuite.h
   src/suites/Source2ServerSuite.h
+  src/suites/MetamodListenerSuite.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:

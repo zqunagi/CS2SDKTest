@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "hook/HookRecorder.h"
+#include "suites/MetamodListenerSuite.h"
 #include "suites/Source2EngineSuite.h"
 #include "suites/Source2ServerSuite.h"
 #include "testkit/CallGuard.h"
@@ -17,6 +18,7 @@ TestRunner TestRunner::CreateDefault()
 	// exist; registration order is the order they appear in a log.
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));
 
 	return runner;
 }

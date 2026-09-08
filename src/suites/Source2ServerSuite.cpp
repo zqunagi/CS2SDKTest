@@ -11,6 +11,7 @@
 #include <tier1/utlvector.h>
 
 #include "core/Log.h"
+#include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
 
 // SH_ADD_HOOK expands to code that reaches g_SHPtr and g_PLID; these are the
@@ -50,50 +51,6 @@ constexpr const char* kHookConVarChanged    = "ISource2Server::ServerConVarChang
 constexpr const char* kHookHostNameChanged  = "ISource2Server::OnHostNameChanged";
 constexpr const char* kHookShouldTimeout    = "ISource2Server::ShouldTimeoutClient";
 constexpr const char* kHookShouldHide       = "ISource2Server::ShouldHideFromMasterServer";
-
-/**
- * Renders a const char* hook argument without risking a fault on a bad one.
- *
- * This is the one genuinely dangerous thing the hook callbacks do, and it is
- * dangerous exactly where it matters most: a changed parameter signature is a
- * primary thing this plugin exists to catch, and when it happens the value
- * arriving in a `const char*` slot is not a pointer at all. A null check does
- * not help - a float's bit pattern is rarely null - so the address is vetted
- * before anything dereferences it.
- *
- * Deliberately not shared with StructInspector's pointer check: that one is
- * about struct layout and requires 8-alignment, which is wrong for strings,
- * and this runs on the tick path where it should stay a handful of compares
- * with no cross-module coupling.
- *
- * Returns something safe to hand to "%s". `scratch` holds the rendering of a
- * rejected pointer, so it must outlive the format call.
- */
-template <std::size_t N>
-const char* SafeStringArg(const char* text, char (&scratch)[N])
-{
-	if (text == nullptr)
-	{
-		return "(null)";
-	}
-
-	const std::uintptr_t value = reinterpret_cast<std::uintptr_t>(text);
-
-	// The first 64 KiB is the null guard region, and user-space addresses on
-	// x86-64 stay under 2^47. No alignment requirement: string literals sit
-	// packed in .rodata on arbitrary bytes.
-	if (value < 0x10000 || value >= (std::uintptr_t(1) << 47))
-	{
-		std::snprintf(scratch, N, "<bad ptr 0x%llx>",
-			static_cast<unsigned long long>(value));
-		return scratch;
-	}
-
-	// A plausible address can still be unmapped, and there is no portable way
-	// to find out short of reading it. Callers cap the length with a precision
-	// specifier so a missing terminator cannot walk off the page.
-	return text;
-}
 
 const char* TierName(AppSystemTier_t tier)
 {

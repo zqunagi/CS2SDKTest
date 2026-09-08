@@ -17,7 +17,12 @@
 namespace cs2st
 {
 
-class CS2SDKTestPlugin : public ISmmPlugin, public IMetamodListener
+// Not an IMetamodListener. The listener callbacks are a thing under test like
+// any other, so they live in MetamodListenerSuite, which registers itself with
+// ISmmAPI::AddListener when that suite's hooks are installed. Inheriting here
+// as well would mean a second listener nobody registers - and a reader would
+// have to check which of the two Metamod is actually calling.
+class CS2SDKTestPlugin : public ISmmPlugin
 {
 public:
 	bool Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool late) override;
