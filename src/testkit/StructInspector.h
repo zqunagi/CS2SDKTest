@@ -132,8 +132,19 @@ public:
 
 	// ---- output ------------------------------------------------------------
 
-	/** Prints the instance as hex plus ASCII, for eyeballing a misalignment. */
-	void HexDump(std::size_t max_bytes = 256);
+	/**
+	 * Prints the instance as hex plus ASCII, for eyeballing a misalignment.
+	 *
+	 * Dumps `extra_bytes` *past* what the SDK thinks sizeof is, on purpose:
+	 * a struct that grew is invisible if you only ever look at the bytes the
+	 * old declaration covers. Those trailing bytes are a deliberate
+	 * out-of-bounds read - they are fetched through the fault guard as a
+	 * separate step, so if the instance really does end there the dump loses
+	 * its tail instead of the server losing its process.
+	 *
+	 * The boundary is marked in the output; rows past it carry a suffix.
+	 */
+	void HexDump(std::size_t extra_bytes = 64, std::size_t max_bytes = 1024);
 
 	/** Prints the tally and points at the first failing offset. */
 	void Summarize();

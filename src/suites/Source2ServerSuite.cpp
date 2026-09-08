@@ -51,6 +51,50 @@ constexpr const char* kHookHostNameChanged  = "ISource2Server::OnHostNameChanged
 constexpr const char* kHookShouldTimeout    = "ISource2Server::ShouldTimeoutClient";
 constexpr const char* kHookShouldHide       = "ISource2Server::ShouldHideFromMasterServer";
 
+/**
+ * Renders a const char* hook argument without risking a fault on a bad one.
+ *
+ * This is the one genuinely dangerous thing the hook callbacks do, and it is
+ * dangerous exactly where it matters most: a changed parameter signature is a
+ * primary thing this plugin exists to catch, and when it happens the value
+ * arriving in a `const char*` slot is not a pointer at all. A null check does
+ * not help - a float's bit pattern is rarely null - so the address is vetted
+ * before anything dereferences it.
+ *
+ * Deliberately not shared with StructInspector's pointer check: that one is
+ * about struct layout and requires 8-alignment, which is wrong for strings,
+ * and this runs on the tick path where it should stay a handful of compares
+ * with no cross-module coupling.
+ *
+ * Returns something safe to hand to "%s". `scratch` holds the rendering of a
+ * rejected pointer, so it must outlive the format call.
+ */
+template <std::size_t N>
+const char* SafeStringArg(const char* text, char (&scratch)[N])
+{
+	if (text == nullptr)
+	{
+		return "(null)";
+	}
+
+	const std::uintptr_t value = reinterpret_cast<std::uintptr_t>(text);
+
+	// The first 64 KiB is the null guard region, and user-space addresses on
+	// x86-64 stay under 2^47. No alignment requirement: string literals sit
+	// packed in .rodata on arbitrary bytes.
+	if (value < 0x10000 || value >= (std::uintptr_t(1) << 47))
+	{
+		std::snprintf(scratch, N, "<bad ptr 0x%llx>",
+			static_cast<unsigned long long>(value));
+		return scratch;
+	}
+
+	// A plausible address can still be unmapped, and there is no portable way
+	// to find out short of reading it. Callers cap the length with a precision
+	// specifier so a missing terminator cannot walk off the page.
+	return text;
+}
+
 const char* TierName(AppSystemTier_t tier)
 {
 	switch (tier)
@@ -433,31 +477,27 @@ int Source2ServerSuite::InstallHooks(TestContext& context)
 	recorder.Declare(kHookShouldTimeout, Id());
 	recorder.Declare(kHookShouldHide, Id());
 
-	// All post-hooks (the trailing `true`): a pre-hook that returned anything
-	// other than MRES_IGNORED could change what the game does, and this plugin
-	// observes rather than participates.
-	SH_ADD_HOOK(ISource2Server, GameFrame, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_GameFrame), true);
-	SH_ADD_HOOK(ISource2Server, PreWorldUpdate, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_PreWorldUpdate), true);
-	SH_ADD_HOOK(ISource2Server, UpdateWhenNotInGame, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_UpdateWhenNotInGame), true);
-	SH_ADD_HOOK(ISource2Server, ServerHibernationUpdate, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ServerHibernationUpdate), true);
-	SH_ADD_HOOK(ISource2Server, GameServerSteamAPIActivated, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_GameServerSteamAPIActivated), true);
-	SH_ADD_HOOK(ISource2Server, GameServerSteamAPIDeactivated, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_GameServerSteamAPIDeactivated), true);
-	SH_ADD_HOOK(ISource2Server, ApplyGameSettings, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ApplyGameSettings), true);
-	SH_ADD_HOOK(ISource2Server, ServerConVarChanged, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ServerConVarChanged), true);
-	SH_ADD_HOOK(ISource2Server, OnHostNameChanged, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_OnHostNameChanged), true);
-	SH_ADD_HOOK(ISource2Server, ShouldTimeoutClient, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ShouldTimeoutClient), true);
-	SH_ADD_HOOK(ISource2Server, ShouldHideFromMasterServer, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ShouldHideFromMasterServer), true);
+	// Each one twice: pre (false) records the entry, post (true) records the
+	// return. See the header for why both.
+#define CS2ST_ADD_PAIR(method) \
+	SH_ADD_HOOK(ISource2Server, method, server_, \
+		SH_MEMBER(this, &Source2ServerSuite::Pre_##method), false); \
+	SH_ADD_HOOK(ISource2Server, method, server_, \
+		SH_MEMBER(this, &Source2ServerSuite::Post_##method), true)
+
+	CS2ST_ADD_PAIR(GameFrame);
+	CS2ST_ADD_PAIR(PreWorldUpdate);
+	CS2ST_ADD_PAIR(UpdateWhenNotInGame);
+	CS2ST_ADD_PAIR(ServerHibernationUpdate);
+	CS2ST_ADD_PAIR(GameServerSteamAPIActivated);
+	CS2ST_ADD_PAIR(GameServerSteamAPIDeactivated);
+	CS2ST_ADD_PAIR(ApplyGameSettings);
+	CS2ST_ADD_PAIR(ServerConVarChanged);
+	CS2ST_ADD_PAIR(OnHostNameChanged);
+	CS2ST_ADD_PAIR(ShouldTimeoutClient);
+	CS2ST_ADD_PAIR(ShouldHideFromMasterServer);
+
+#undef CS2ST_ADD_PAIR
 
 	hooks_installed_ = true;
 	(void)context;
@@ -471,28 +511,25 @@ void Source2ServerSuite::RemoveHooks(TestContext& context)
 		return;
 	}
 
-	SH_REMOVE_HOOK(ISource2Server, GameFrame, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_GameFrame), true);
-	SH_REMOVE_HOOK(ISource2Server, PreWorldUpdate, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_PreWorldUpdate), true);
-	SH_REMOVE_HOOK(ISource2Server, UpdateWhenNotInGame, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_UpdateWhenNotInGame), true);
-	SH_REMOVE_HOOK(ISource2Server, ServerHibernationUpdate, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ServerHibernationUpdate), true);
-	SH_REMOVE_HOOK(ISource2Server, GameServerSteamAPIActivated, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_GameServerSteamAPIActivated), true);
-	SH_REMOVE_HOOK(ISource2Server, GameServerSteamAPIDeactivated, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_GameServerSteamAPIDeactivated), true);
-	SH_REMOVE_HOOK(ISource2Server, ApplyGameSettings, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ApplyGameSettings), true);
-	SH_REMOVE_HOOK(ISource2Server, ServerConVarChanged, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ServerConVarChanged), true);
-	SH_REMOVE_HOOK(ISource2Server, OnHostNameChanged, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_OnHostNameChanged), true);
-	SH_REMOVE_HOOK(ISource2Server, ShouldTimeoutClient, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ShouldTimeoutClient), true);
-	SH_REMOVE_HOOK(ISource2Server, ShouldHideFromMasterServer, server_,
-		SH_MEMBER(this, &Source2ServerSuite::Hook_ShouldHideFromMasterServer), true);
+#define CS2ST_REMOVE_PAIR(method) \
+	SH_REMOVE_HOOK(ISource2Server, method, server_, \
+		SH_MEMBER(this, &Source2ServerSuite::Pre_##method), false); \
+	SH_REMOVE_HOOK(ISource2Server, method, server_, \
+		SH_MEMBER(this, &Source2ServerSuite::Post_##method), true)
+
+	CS2ST_REMOVE_PAIR(GameFrame);
+	CS2ST_REMOVE_PAIR(PreWorldUpdate);
+	CS2ST_REMOVE_PAIR(UpdateWhenNotInGame);
+	CS2ST_REMOVE_PAIR(ServerHibernationUpdate);
+	CS2ST_REMOVE_PAIR(GameServerSteamAPIActivated);
+	CS2ST_REMOVE_PAIR(GameServerSteamAPIDeactivated);
+	CS2ST_REMOVE_PAIR(ApplyGameSettings);
+	CS2ST_REMOVE_PAIR(ServerConVarChanged);
+	CS2ST_REMOVE_PAIR(OnHostNameChanged);
+	CS2ST_REMOVE_PAIR(ShouldTimeoutClient);
+	CS2ST_REMOVE_PAIR(ShouldHideFromMasterServer);
+
+#undef CS2ST_REMOVE_PAIR
 
 	hooks_installed_ = false;
 	(void)context;
@@ -508,79 +545,152 @@ void Source2ServerSuite::RemoveHooks(TestContext& context)
 //  hands control back.
 // -----------------------------------------------------------------------------
 
-void Source2ServerSuite::Hook_GameFrame(bool simulating, bool first_tick, bool last_tick)
+void Source2ServerSuite::Pre_GameFrame(bool simulating, bool first_tick, bool last_tick)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookGameFrame, "simulating=%d first=%d last=%d",
+	CS2ST_HOOK_ENTER_ARGS(kHookGameFrame, "simulating=%d first=%d last=%d",
 		simulating ? 1 : 0, first_tick ? 1 : 0, last_tick ? 1 : 0);
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_PreWorldUpdate(bool simulating)
+void Source2ServerSuite::Post_GameFrame(bool, bool, bool)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookPreWorldUpdate, "simulating=%d", simulating ? 1 : 0);
+	CS2ST_HOOK_LEAVE(kHookGameFrame);
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_UpdateWhenNotInGame(float frame_time)
+void Source2ServerSuite::Pre_PreWorldUpdate(bool simulating)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookUpdateNotInGame, "frametime=%.4f",
+	CS2ST_HOOK_ENTER_ARGS(kHookPreWorldUpdate, "simulating=%d", simulating ? 1 : 0);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Post_PreWorldUpdate(bool)
+{
+	CS2ST_HOOK_LEAVE(kHookPreWorldUpdate);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Pre_UpdateWhenNotInGame(float frame_time)
+{
+	CS2ST_HOOK_ENTER_ARGS(kHookUpdateNotInGame, "frametime=%.4f",
 		static_cast<double>(frame_time));
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_ServerHibernationUpdate(bool hibernating)
+void Source2ServerSuite::Post_UpdateWhenNotInGame(float)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookHibernation, "hibernating=%d", hibernating ? 1 : 0);
+	CS2ST_HOOK_LEAVE(kHookUpdateNotInGame);
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_GameServerSteamAPIActivated()
+void Source2ServerSuite::Pre_ServerHibernationUpdate(bool hibernating)
 {
-	CS2ST_HOOK_FIRED(kHookSteamActivated);
+	CS2ST_HOOK_ENTER_ARGS(kHookHibernation, "hibernating=%d", hibernating ? 1 : 0);
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_GameServerSteamAPIDeactivated()
+void Source2ServerSuite::Post_ServerHibernationUpdate(bool)
 {
-	CS2ST_HOOK_FIRED(kHookSteamDeactivated);
+	CS2ST_HOOK_LEAVE(kHookHibernation);
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_ApplyGameSettings(KeyValues* settings)
+void Source2ServerSuite::Pre_GameServerSteamAPIActivated()
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookApplyGameSettings, "kv=%p",
+	CS2ST_HOOK_ENTER(kHookSteamActivated);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Post_GameServerSteamAPIActivated()
+{
+	CS2ST_HOOK_LEAVE(kHookSteamActivated);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Pre_GameServerSteamAPIDeactivated()
+{
+	CS2ST_HOOK_ENTER(kHookSteamDeactivated);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Post_GameServerSteamAPIDeactivated()
+{
+	CS2ST_HOOK_LEAVE(kHookSteamDeactivated);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Pre_ApplyGameSettings(KeyValues* settings)
+{
+	// Only the pointer value - walking into a KeyValues tree from a hook is
+	// exactly the kind of thing that turns a diagnostic into an outage.
+	CS2ST_HOOK_ENTER_ARGS(kHookApplyGameSettings, "kv=%p",
 		static_cast<void*>(settings));
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_ServerConVarChanged(const char* name, const char* value)
+void Source2ServerSuite::Post_ApplyGameSettings(KeyValues*)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookConVarChanged, "%s = \"%s\"",
-		name != nullptr ? name : "(null)",
-		value != nullptr ? value : "(null)");
+	CS2ST_HOOK_LEAVE(kHookApplyGameSettings);
 	RETURN_META(MRES_IGNORED);
 }
 
-void Source2ServerSuite::Hook_OnHostNameChanged(const char* hostname)
+void Source2ServerSuite::Pre_ServerConVarChanged(const char* name, const char* value)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookHostNameChanged, "hostname=\"%s\"",
-		hostname != nullptr ? hostname : "(null)");
+	// Both arguments are vetted before anything dereferences them, and the
+	// lengths are capped so a missing terminator cannot walk off a page.
+	char name_scratch[32];
+	char value_scratch[32];
+	CS2ST_HOOK_ENTER_ARGS(kHookConVarChanged, "%.63s = \"%.63s\"",
+		SafeStringArg(name, name_scratch),
+		SafeStringArg(value, value_scratch));
 	RETURN_META(MRES_IGNORED);
 }
 
-bool Source2ServerSuite::Hook_ShouldTimeoutClient(int user_id, float time_since_last_received)
+void Source2ServerSuite::Post_ServerConVarChanged(const char*, const char*)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookShouldTimeout, "userID=%d since=%.2f",
+	CS2ST_HOOK_LEAVE(kHookConVarChanged);
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Pre_OnHostNameChanged(const char* hostname)
+{
+	char scratch[32];
+	CS2ST_HOOK_ENTER_ARGS(kHookHostNameChanged, "hostname=\"%.63s\"",
+		SafeStringArg(hostname, scratch));
+	RETURN_META(MRES_IGNORED);
+}
+
+void Source2ServerSuite::Post_OnHostNameChanged(const char*)
+{
+	CS2ST_HOOK_LEAVE(kHookHostNameChanged);
+	RETURN_META(MRES_IGNORED);
+}
+
+bool Source2ServerSuite::Pre_ShouldTimeoutClient(int user_id, float time_since_last_received)
+{
+	CS2ST_HOOK_ENTER_ARGS(kHookShouldTimeout, "userID=%d since=%.2f",
 		user_id, static_cast<double>(time_since_last_received));
 	// MRES_IGNORED means the value here is discarded and the game's own result
 	// stands - which is what makes this observation rather than interference.
 	RETURN_META_VALUE(MRES_IGNORED, false);
 }
 
-bool Source2ServerSuite::Hook_ShouldHideFromMasterServer(bool server_has_password)
+bool Source2ServerSuite::Post_ShouldTimeoutClient(int, float)
 {
-	CS2ST_HOOK_FIRED_ARGS(kHookShouldHide, "hasPassword=%d",
+	CS2ST_HOOK_LEAVE(kHookShouldTimeout);
+	RETURN_META_VALUE(MRES_IGNORED, false);
+}
+
+bool Source2ServerSuite::Pre_ShouldHideFromMasterServer(bool server_has_password)
+{
+	CS2ST_HOOK_ENTER_ARGS(kHookShouldHide, "hasPassword=%d",
 		server_has_password ? 1 : 0);
+	RETURN_META_VALUE(MRES_IGNORED, false);
+}
+
+bool Source2ServerSuite::Post_ShouldHideFromMasterServer(bool)
+{
+	CS2ST_HOOK_LEAVE(kHookShouldHide);
 	RETURN_META_VALUE(MRES_IGNORED, false);
 }
 

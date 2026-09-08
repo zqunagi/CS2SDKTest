@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "core/Log.h"
 
@@ -425,17 +426,60 @@ void StructInspector::Raw(const char* field, std::size_t offset, std::size_t wid
 //  Output
 // -----------------------------------------------------------------------------
 
-void StructInspector::HexDump(std::size_t max_bytes)
+void StructInspector::HexDump(std::size_t extra_bytes, std::size_t max_bytes)
 {
 	if (base_ == nullptr)
 	{
 		return;
 	}
 
-	const std::size_t count = size_ < max_bytes ? size_ : max_bytes;
+	const std::size_t body = size_ < max_bytes ? size_ : max_bytes;
 
-	LogRaw("    %s @ %p, sizeof = %zu%s\n", type_name_, base_, size_,
-		count < size_ ? " (dump truncated)" : "");
+	// Copied out through the guard rather than read straight from the printer
+	// loop, so a bad base pointer produces one recorded line instead of a
+	// half-written dump and a dead process.
+	std::vector<unsigned char> bytes(body, 0);
+	bool body_read = false;
+	context_.RunCall(Target("<hexdump>"), [&]() {
+		std::memcpy(bytes.data(), BytesAt(0), body);
+		body_read = true;
+		context_.Detail("%zu byte(s) of %s", body, type_name_);
+	});
+
+	if (!body_read)
+	{
+		return;
+	}
+
+	// The bytes past sizeof are the point of the exercise: a field appended by
+	// the game is invisible from inside the SDK's declaration. Reading them is
+	// knowingly out of bounds, so it gets its own guarded step - the instance
+	// really might end exactly there.
+	std::size_t tail = 0;
+	if (extra_bytes > 0 && body == size_)
+	{
+		std::vector<unsigned char> extra(extra_bytes, 0);
+		bool tail_read = false;
+		context_.RunCall(Target("<hexdump past end>"), [&]() {
+			std::memcpy(extra.data(), BytesAt(size_), extra_bytes);
+			tail_read = true;
+			context_.Detail("%zu byte(s) beyond sizeof - compare after an update",
+				extra_bytes);
+		});
+
+		if (tail_read)
+		{
+			bytes.insert(bytes.end(), extra.begin(), extra.end());
+			tail = extra_bytes;
+		}
+	}
+
+	const std::size_t count = bytes.size();
+
+	LogRaw("    %s @ %p, sizeof = %zu (0x%zx)%s%s\n",
+		type_name_, base_, size_, size_,
+		body < size_ ? ", dump truncated" : "",
+		tail > 0 ? ", plus bytes past the end" : "");
 
 	for (std::size_t row = 0; row < count; row += 16)
 	{
@@ -453,13 +497,22 @@ void StructInspector::HexDump(std::size_t max_bytes)
 				continue;
 			}
 
-			const unsigned char byte = BytesAt(row + i)[0];
+			const unsigned char byte = bytes[row + i];
 			hex_written += static_cast<std::size_t>(std::snprintf(
 				hex + hex_written, sizeof(hex) - hex_written, "%02x ", byte));
 			ascii[i] = IsPrintable(byte) ? static_cast<char>(byte) : '.';
 		}
 
-		LogRaw("    %04zx  %s %s\n", row, hex, ascii);
+		// Marked per row rather than with a divider line: sizeof is rarely a
+		// multiple of 16, so a divider would sit in the middle of a row and
+		// imply a boundary that is not there.
+		const char* marker = "";
+		if (tail > 0 && row + 16 > body)
+		{
+			marker = (row >= body) ? "  << past sizeof" : "  << crosses sizeof";
+		}
+
+		LogRaw("    %04zx  %s %s%s\n", row, hex, ascii, marker);
 	}
 }
 

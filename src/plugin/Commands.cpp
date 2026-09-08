@@ -220,6 +220,28 @@ void CommandHooks(const CCommand& args)
 			CS2ST_LOG_ERROR("no test suite named '%s'\n", only.c_str());
 			return;
 		}
+
+		// Entry/exit tracing goes to the session log and nowhere else, so
+		// without one the most valuable thing hooks produce - the last line
+		// before a fault - is thrown away. Open one rather than let that
+		// happen silently.
+		if (SessionLogPath().empty())
+		{
+			const std::string path = fs::Join(fs::LogDirectory(),
+				"hooks-" + fs::TimestampForFileName() + ".log");
+			std::string error;
+			if (OpenSessionLog(path, error))
+			{
+				WriteLogHeader("hook session");
+				CS2ST_LOG_INFO("tracing to %s\n", path.c_str());
+			}
+			else
+			{
+				CS2ST_LOG_WARN("no log file (%s); entry/exit tracing will be lost\n",
+					error.c_str());
+			}
+		}
+
 		const int installed = runner.InstallHooks(context, only);
 		CS2ST_LOG_INFO("%d hook(s) installed; play a round, then 'meta_test hooks dump'\n",
 			installed);
@@ -242,8 +264,20 @@ void CommandHooks(const CCommand& args)
 		HookRecorder& recorder = HookRecorder::Get();
 		LogRaw("\n");
 		recorder.Dump();
-		LogRaw("\n  %zu of %zu declared hook(s) have fired\n\n",
+		LogRaw("\n  %zu of %zu declared hook(s) have fired\n",
 			recorder.fired(), recorder.declared());
+
+		const std::size_t unbalanced = recorder.unbalanced();
+		if (unbalanced > 0)
+		{
+			// Entered more often than returned. Either the original function
+			// faulted, or another plugin superseded the call so the post-hook
+			// chain never ran - both worth chasing, and neither visible from
+			// a single count.
+			CS2ST_LOG_WARN("%zu hook(s) entered more often than they returned\n",
+				unbalanced);
+		}
+		LogRaw("\n");
 	}
 	else
 	{

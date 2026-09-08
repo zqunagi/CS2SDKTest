@@ -44,19 +44,49 @@ public:
 	// ---- hook handlers -----------------------------------------------------
 	//
 	// Public because SH_MEMBER takes their addresses from outside the class.
-	// Every one of these must end in RETURN_META / RETURN_META_VALUE.
+	// Every one must end in RETURN_META / RETURN_META_VALUE.
+	//
+	// Each hook is installed twice, pre and post. The pre handler records the
+	// entry and the arguments; the post handler records that the call came
+	// back. Counts that do not match mean the original function did not
+	// return - it faulted, or another plugin superseded it - and the pair is
+	// what makes those two distinguishable from "the engine stopped calling".
+	//
+	// Neither side ever returns anything but MRES_IGNORED. A pre-hook *can*
+	// suppress the original call; this plugin observes and must not.
 
-	void Hook_GameFrame(bool simulating, bool first_tick, bool last_tick);
-	void Hook_PreWorldUpdate(bool simulating);
-	void Hook_UpdateWhenNotInGame(float frame_time);
-	void Hook_ServerHibernationUpdate(bool hibernating);
-	void Hook_GameServerSteamAPIActivated();
-	void Hook_GameServerSteamAPIDeactivated();
-	void Hook_ApplyGameSettings(KeyValues* settings);
-	void Hook_ServerConVarChanged(const char* name, const char* value);
-	void Hook_OnHostNameChanged(const char* hostname);
-	bool Hook_ShouldTimeoutClient(int user_id, float time_since_last_received);
-	bool Hook_ShouldHideFromMasterServer(bool server_has_password);
+	void Pre_GameFrame(bool simulating, bool first_tick, bool last_tick);
+	void Post_GameFrame(bool simulating, bool first_tick, bool last_tick);
+
+	void Pre_PreWorldUpdate(bool simulating);
+	void Post_PreWorldUpdate(bool simulating);
+
+	void Pre_UpdateWhenNotInGame(float frame_time);
+	void Post_UpdateWhenNotInGame(float frame_time);
+
+	void Pre_ServerHibernationUpdate(bool hibernating);
+	void Post_ServerHibernationUpdate(bool hibernating);
+
+	void Pre_GameServerSteamAPIActivated();
+	void Post_GameServerSteamAPIActivated();
+
+	void Pre_GameServerSteamAPIDeactivated();
+	void Post_GameServerSteamAPIDeactivated();
+
+	void Pre_ApplyGameSettings(KeyValues* settings);
+	void Post_ApplyGameSettings(KeyValues* settings);
+
+	void Pre_ServerConVarChanged(const char* name, const char* value);
+	void Post_ServerConVarChanged(const char* name, const char* value);
+
+	void Pre_OnHostNameChanged(const char* hostname);
+	void Post_OnHostNameChanged(const char* hostname);
+
+	bool Pre_ShouldTimeoutClient(int user_id, float time_since_last_received);
+	bool Post_ShouldTimeoutClient(int user_id, float time_since_last_received);
+
+	bool Pre_ShouldHideFromMasterServer(bool server_has_password);
+	bool Post_ShouldHideFromMasterServer(bool server_has_password);
 
 private:
 	void ExerciseAppSystem(TestContext& context);
