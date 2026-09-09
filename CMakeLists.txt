@@ -138,6 +138,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/Source2EngineSuite.cpp
   src/suites/Source2ServerSuite.cpp
   src/suites/Source2GameClientsSuite.cpp
+  src/suites/ConVarSuite.cpp
   src/suites/SchemaSystemSuite.cpp
   src/suites/GameEntitySystemSuite.cpp
   src/suites/MetamodListenerSuite.cpp
@@ -155,6 +156,7 @@ set(CS2SDKTEST_HEADERS
 
   src/testkit/CallGuard.h
   src/testkit/ITestSuite.h
+  src/testkit/PrivateField.h
   src/testkit/StructInspector.h
   src/testkit/TestContext.h
   src/testkit/TestRunner.h
@@ -165,6 +167,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/Source2EngineSuite.h
   src/suites/Source2ServerSuite.h
   src/suites/Source2GameClientsSuite.h
+  src/suites/ConVarSuite.h
   src/suites/SchemaSystemSuite.h
   src/suites/GameEntitySystemSuite.h
   src/suites/MetamodListenerSuite.h

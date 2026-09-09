@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "hook/HookRecorder.h"
+#include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
 #include "suites/MetamodListenerSuite.h"
 #include "suites/SchemaSystemSuite.h"
@@ -22,6 +23,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2GameClientsSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new ConVarSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));

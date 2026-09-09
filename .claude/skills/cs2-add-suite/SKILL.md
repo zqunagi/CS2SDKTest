@@ -47,3 +47,4 @@ description: 为 CS2SDKTest 新增或审查 SDK 接口测试套件。适用于�
 - [references/patterns.md](references/patterns.md)：调用、布局、列表和 hook 的最小代码形状；需要示例时再读。
 - `scripts/audit-coverage.sh`：检查精确类名的虚方法是否已调用或跳过。
 - `scripts/list-struct-coverage.sh`：列出已有结构体布局的归属。
+- `scripts/check-macro-commas.sh`：检查 `CS2ST_CALL` 宏体内是否有会被当成宏参数分隔符的逗号。
