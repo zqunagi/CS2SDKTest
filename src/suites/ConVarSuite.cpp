@@ -3942,33 +3942,40 @@ void ConVarSuite::InspectCvarObjectLayout(TestContext& context)
 			: "GetCharacterSet disagrees with offsetof - treat every row below "
 			  "as unanchored");
 
-	StructInspector inspect(context, "CCvar", cvar_object, sizeof(CCvar));
-
-	// The base-class region first, because everything below is downstream of
-	// it: if a field were inserted here, every offsetof row after it would be
-	// wrong while still looking individually plausible.
+	// Three classes on the chain, so up to three passes - base first, because a
+	// divergence in a base makes every row after it meaningless.
 	//
+	// IAppSystem is the exception: it declares no data members at all, so there
+	// is nothing to lay out. Its eleven vtable slots are covered as calls in
+	// ExerciseAppSystem instead.
+	context.Note("  IAppSystem declares no data members; its vtable is covered "
+	             "as calls, not as layout");
+
+	// ICvar's own pass. The cast is what names the subobject rather than
+	// assuming it starts at the CCvar base, and sizeof(ICvar) keeps the bounds
+	// checks honest - this pass reads only bytes ICvar declares.
+	StructInspector icvar(context, "ICvar", static_cast<const ICvar*>(cvar_object),
+		sizeof(ICvar));
+
 	// Offset 0 is not a guessed field position - it is where the Itanium ABI
 	// puts the vtable pointer of a polymorphic class, and ICvar is polymorphic
-	// by way of IAppSystem. A vtable pointer is also a good subject for the
-	// pointer check: it has to be canonical, aligned, and point into a mapped
-	// image.
-	inspect.Pointer("__vftable (ABI: offset 0)", 0);
+	// by way of IAppSystem. The vptr row belongs to this pass because ICvar is
+	// where the chain first becomes polymorphic. A vtable pointer is also a
+	// good subject for the pointer check: canonical, aligned, pointing into a
+	// mapped image.
+	icvar.Pointer("__vftable (ABI: offset 0)", 0);
 
-	// ICvar::m_MaxSplitScreenSlots is private, and its offset is captured the
-	// same way ConVarData's fields are - so the compiler computes it from the
+	// m_MaxSplitScreenSlots is private, and its offset is captured the same way
+	// ConVarData's fields are - so the compiler computes it from the
 	// declaration rather than this file assuming "vptr, then the first member".
 	// The assumption happened to be right, but it would have gone quietly wrong
 	// the day IAppSystem grew a data member.
-	//
-	// ICvar is CCvar's primary base, so an offset measured from the ICvar
-	// subobject is also an offset from the CCvar base; the check below is what
-	// makes that explicit instead of assumed.
 	const std::size_t max_slots_offset =
 		PrivateFieldOffset<ICvarMaxSplitScreenSlots>(cvar_);
 
 	CS2ST_CALL(context, "ICvar::m_MaxSplitScreenSlots (captured offset)", {
-		context.Detail("+0x%zx, and the ICvar subobject %s the CCvar base",
+		context.Detail("+0x%zx within ICvar, and the ICvar subobject %s the "
+		               "CCvar base",
 			max_slots_offset,
 			static_cast<const void*>(cvar_) == static_cast<const void*>(cvar_object)
 				? "coincides with" : "is offset from");
@@ -3995,12 +4002,16 @@ void ConVarSuite::InspectCvarObjectLayout(TestContext& context)
 	// the process. What is left is that a slot count must be between one and
 	// MAX_SPLITSCREEN_CLIENTS, and a misread int rarely lands in a range that
 	// narrow.
-	inspect.Int32  ("ICvar::m_MaxSplitScreenSlots (private, captured)",
-				  max_slots_offset, 1, MAX_SPLITSCREEN_CLIENTS);
+	icvar.Int32  ("m_MaxSplitScreenSlots (private, captured)",
+			  max_slots_offset, 1, MAX_SPLITSCREEN_CLIENTS);
 
-	// CCvar's own members, in declaration order. The containers have no fields
-	// this can judge, so they are Raw rows: what they contribute is a fixed
-	// position, which is what makes the judged fields after them meaningful.
+	icvar.Summarize();
+
+	// CCvar's own pass, carrying only what CCvar declares. The containers have
+	// no fields this can judge, so they are Raw rows: what they contribute is a
+	// fixed position, which is what makes the judged fields after them
+	// meaningful.
+	StructInspector inspect(context, "CCvar", cvar_object, sizeof(CCvar));
 	inspect.Raw    ("m_StringsBuffer", offsetof(CCvar, m_StringsBuffer),
 				  sizeof(CUtlVector<char*>));
 	inspect.Raw    ("m_MemoryBuffer", offsetof(CCvar, m_MemoryBuffer),
@@ -4190,18 +4201,27 @@ void ConVarSuite::InspectConVarRefLayout(TestContext& context)
 	// The rows below add one thing the oracles above cannot: a plausibility
 	// verdict on the ConVarData pointer, and a hex record of the 16 bytes a
 	// plugin hands the engine whenever it queues a threaded set.
+	//
+	// Two passes, because ConVarRef declares the two index fields and
+	// ConVarRefAbstract only adds the data pointer. Splitting them is also what
+	// gets ConVarRef into the struct-coverage registry: it is the type every
+	// engine call returns by value, so a future suite has good reason to look
+	// it up.
+	StructInspector base(context, "ConVarRef",
+		static_cast<const ConVarRef*>(&g_probe_int), sizeof(ConVarRef));
+
+	// Neither index has a range the type implies - 0xFFFF is the documented
+	// "invalid" access index, so even that is legal - which is why they are
+	// reported rather than judged. Offsets come from the probe, not a number.
+	base.Raw    ("m_ConVarAccessIndex",
+		ConVarRefAbstractProbe::AccessIndexOffset(), sizeof(uint16));
+	base.Int32  ("m_ConVarRegisteredIndex",
+		ConVarRefAbstractProbe::RegisteredIndexOffset());
+	base.Summarize();
+
 	StructInspector inspect(context, "ConVarRefAbstract",
 		static_cast<const ConVarRefAbstract*>(&g_probe_int),
 		sizeof(ConVarRefAbstract));
-
-	// Declaration order, offsets from the probe rather than from a number.
-	// The two indices have no range the type implies - 0xFFFF is the documented
-	// "invalid" access index, so even that is legal - which is why they are
-	// reported rather than judged.
-	inspect.Raw    ("m_ConVarAccessIndex",
-		ConVarRefAbstractProbe::AccessIndexOffset(), sizeof(uint16));
-	inspect.Int32  ("m_ConVarRegisteredIndex",
-		ConVarRefAbstractProbe::RegisteredIndexOffset());
 	inspect.Pointer("m_ConVarData", ConVarRefAbstractProbe::DataOffset());
 
 	inspect.Summarize();

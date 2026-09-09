@@ -1560,10 +1560,21 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 
 void GameEntitySystemSuite::InspectEntitySystemLayout(TestContext& context)
 {
-	context.Note("[CEntitySystem] struct layout - %zu bytes as the SDK declares it",
+	context.Note("[CEntitySystem] struct layout - %zu bytes as the SDK declares "
+	             "it, the base half of the two passes over this object",
 		sizeof(CEntitySystem));
 
-	StructInspector inspect(context, "CEntitySystem", entity_system_, sizeof(CEntitySystem));
+	// IEntityResourceManifestBuilder, which CEntitySystem derives from, declares
+	// no data members - there is nothing to lay out. Its vtable is covered as
+	// calls instead.
+	context.Note("  IEntityResourceManifestBuilder declares no data members; "
+	             "nothing to inspect above CEntitySystem");
+
+	// Cast rather than passing entity_system_ straight through: same address
+	// today, and the cast is what stays correct if the chain ever grows a base
+	// that is not primary.
+	StructInspector inspect(context, "CEntitySystem",
+		static_cast<const CEntitySystem*>(entity_system_), sizeof(CEntitySystem));
 
 	// m_pCurrentManifest is private, so offsetof cannot name it. Its address is
 	// still computed rather than written down: it is the pointer immediately
@@ -1684,8 +1695,9 @@ void GameEntitySystemSuite::InspectEntitySystemLayout(TestContext& context)
 	inspect.Raw("m_EntityMaterialAttributes",
 		offsetof(CEntitySystem, m_EntityMaterialAttributes), 32);
 
+	// No HexDump here. This object is really a CGameEntitySystem, so the dump
+	// belongs to that pass, where it covers the whole thing instead of a prefix.
 	inspect.Summarize();
-	inspect.HexDump(64, 256);
 
 	CS2ST_CALL(context, "CEntitySystem::m_Accessors (all slots)", {
 		int populated = 0;
@@ -1755,6 +1767,9 @@ void GameEntitySystemSuite::InspectGameEntitySystemLayout(TestContext& context)
 		offsetof(CGameEntitySystem, m_pEntity2Networkables));
 
 	inspect.Summarize();
+
+	// The most-derived pass owns the dump, so it covers the base half too.
+	inspect.HexDump(64, 256);
 
 	CS2ST_CALL(context, "CGameEntitySystem::m_entityListeners (bounds)", {
 		// The vector InstallHooks writes into. Checked here so the hooks path

@@ -498,7 +498,9 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 
 void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 {
-	context.Note("[CGlobalVars] struct layout");
+	context.Note("[CGlobalVars] struct layout - two passes, one per declaring "
+	             "class: %zu bytes of CGlobalVarsBase then %zu of CGlobalVars",
+		sizeof(CGlobalVarsBase), sizeof(CGlobalVars));
 
 	if (globals_ == nullptr)
 	{
@@ -506,45 +508,52 @@ void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 		return;
 	}
 
-	StructInspector inspect(context, "CGlobalVars", globals_, sizeof(CGlobalVars));
+	// One inspector per declaring class, base first. Splitting them is what
+	// puts CGlobalVarsBase in the struct-coverage registry under its own name -
+	// merged into the derived pass it is invisible there, and the next suite to
+	// need it cannot tell it is already covered.
+	//
+	// The base pass is aimed at the CGlobalVarsBase subobject through a cast
+	// rather than at globals_ directly. Same address here (single inheritance,
+	// primary base), but the cast is what stays correct if the chain ever grows
+	// a second base.
+	StructInspector base(context, "CGlobalVarsBase",
+		static_cast<const CGlobalVarsBase*>(globals_), sizeof(CGlobalVarsBase));
 
 	// Fields are listed in declaration order so the log reads down the struct;
 	// that is what makes "the first failure is where it diverged" legible.
-	//
-	// Offsets come from offsetof() on purpose - see StructInspector.h. The
-	// base-class fields are addressed through CGlobalVarsBase so the offsets
-	// stay correct if anything is ever inserted between the two classes.
+	// Offsets come from offsetof() on purpose - see StructInspector.h.
 
-	inspect.Float ("realtime",       offsetof(CGlobalVarsBase, realtime));
-	inspect.Int32 ("framecount",     offsetof(CGlobalVarsBase, framecount), 0, INT32_MAX);
-	inspect.Float ("absoluteframetime",
+	base.Float ("realtime",       offsetof(CGlobalVarsBase, realtime));
+	base.Int32 ("framecount",     offsetof(CGlobalVarsBase, framecount), 0, INT32_MAX);
+	base.Float ("absoluteframetime",
 	                                 offsetof(CGlobalVarsBase, absoluteframetime));
-	inspect.Float ("absoluteframestarttimestddev",
+	base.Float ("absoluteframestarttimestddev",
 	                                 offsetof(CGlobalVarsBase, absoluteframestarttimestddev));
 	// A client count cannot be negative - that is the type talking, not the
 	// game. No upper bound here: server limits are a policy question, and
 	// encoding one would make this check stop being about layout.
-	inspect.Int32 ("maxClients",     offsetof(CGlobalVarsBase, maxClients), 0, INT32_MAX);
+	base.Int32 ("maxClients",     offsetof(CGlobalVarsBase, maxClients), 0, INT32_MAX);
 
 	// The five m_unk fields are reverse-engineering placeholders: somebody knew
 	// how many bytes sat between two identified fields and filled the gap with
 	// ints. Reported, never judged - they have no type to be wrong about, and
 	// this is exactly the region where an inserted field would hide.
-	inspect.Int32 ("m_unk001",       offsetof(CGlobalVarsBase, m_unk001));
-	inspect.Int32 ("m_unk002",       offsetof(CGlobalVarsBase, m_unk002));
-	inspect.Int32 ("m_unk003",       offsetof(CGlobalVarsBase, m_unk003));
-	inspect.Int32 ("m_unk004",       offsetof(CGlobalVarsBase, m_unk004));
-	inspect.Int32 ("m_unk005",       offsetof(CGlobalVarsBase, m_unk005));
+	base.Int32 ("m_unk001",       offsetof(CGlobalVarsBase, m_unk001));
+	base.Int32 ("m_unk002",       offsetof(CGlobalVarsBase, m_unk002));
+	base.Int32 ("m_unk003",       offsetof(CGlobalVarsBase, m_unk003));
+	base.Int32 ("m_unk004",       offsetof(CGlobalVarsBase, m_unk004));
+	base.Int32 ("m_unk005",       offsetof(CGlobalVarsBase, m_unk005));
 
-	inspect.Pointer("m_pfnWarningFunc",
+	base.Pointer("m_pfnWarningFunc",
 	                                 offsetof(CGlobalVarsBase, m_pfnWarningFunc));
 
-	inspect.Float ("curtime",        offsetof(CGlobalVarsBase, curtime));
-	inspect.Float ("frametime",      offsetof(CGlobalVarsBase, frametime));
-	inspect.Float ("m_unk101",       offsetof(CGlobalVarsBase, m_unk101));
-	inspect.Float ("m_unk102",       offsetof(CGlobalVarsBase, m_unk102));
+	base.Float ("curtime",        offsetof(CGlobalVarsBase, curtime));
+	base.Float ("frametime",      offsetof(CGlobalVarsBase, frametime));
+	base.Float ("m_unk101",       offsetof(CGlobalVarsBase, m_unk101));
+	base.Float ("m_unk102",       offsetof(CGlobalVarsBase, m_unk102));
 
-	inspect.Bool  ("m_bInSimulation",
+	base.Bool  ("m_bInSimulation",
 	                                 offsetof(CGlobalVarsBase, m_bInSimulation));
 	// Observed holding 0xFF on a live server. CGlobalVarsBase's constructor is
 	// empty, so any field the engine never writes keeps whatever the allocator
@@ -553,22 +562,26 @@ void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 	// rather than misalignment: tickcount at 0x44 and mapname at 0x60 both read
 	// correctly, and a layout that had slipped at 0x41 could not repair itself
 	// by 0x44.
-	inspect.Bool  ("m_bEnableAssertions",
+	base.Bool  ("m_bEnableAssertions",
 	                                 offsetof(CGlobalVarsBase, m_bEnableAssertions),
 	                                 kMayBeUninitialized);
 
-	inspect.Int32 ("tickcount",      offsetof(CGlobalVarsBase, tickcount), 0, INT32_MAX);
-	inspect.Int32 ("m_unk201",       offsetof(CGlobalVarsBase, m_unk201));
-	inspect.Int32 ("m_unk202",       offsetof(CGlobalVarsBase, m_unk202));
+	base.Int32 ("tickcount",      offsetof(CGlobalVarsBase, tickcount), 0, INT32_MAX);
+	base.Int32 ("m_unk201",       offsetof(CGlobalVarsBase, m_unk201));
+	base.Int32 ("m_unk202",       offsetof(CGlobalVarsBase, m_unk202));
 
-	inspect.Float ("m_flSubtickFraction",
+	base.Float ("m_flSubtickFraction",
 	                                 offsetof(CGlobalVarsBase, m_flSubtickFraction));
-	inspect.Bool  ("m_unk301",       offsetof(CGlobalVarsBase, m_unk301));
-	inspect.Raw   ("m_nThreadId",    offsetof(CGlobalVarsBase, m_nThreadId),
+	base.Bool  ("m_unk301",       offsetof(CGlobalVarsBase, m_unk301));
+	base.Raw   ("m_nThreadId",    offsetof(CGlobalVarsBase, m_nThreadId),
 	                                 sizeof(ThreadId_t));
 
-	// CGlobalVars' own fields. string_t on this branch is a struct wrapping a
-	// single const char*, so its memory is a pointer and String() applies.
+	base.Summarize();
+
+	// The derived pass carries only what CGlobalVars declares itself. string_t
+	// on this branch is a struct wrapping a single const char*, so its memory is
+	// a pointer and String() applies.
+	StructInspector inspect(context, "CGlobalVars", globals_, sizeof(CGlobalVars));
 	inspect.String("mapname",        offsetof(CGlobalVars, mapname));
 	inspect.String("startspot",      offsetof(CGlobalVars, startspot));
 	inspect.Enum  ("eLoadType",      offsetof(CGlobalVars, eLoadType),
@@ -579,8 +592,8 @@ void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 
 	inspect.Summarize();
 
-	// Printed last so a reader who saw a failure above has the raw bytes to
-	// work out where the boundary actually moved.
+	// Printed last, and only here: this dump covers the whole object, so the
+	// base pass has no reason to repeat its prefix.
 	inspect.HexDump();
 }
 

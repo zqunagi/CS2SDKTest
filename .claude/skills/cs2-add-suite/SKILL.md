@@ -17,7 +17,7 @@ description: 为 CS2SDKTest 新增或审查 SDK 接口测试套件。适用于�
 
    只审计本次涉及的类；不要用子串匹配类名。
 
-2. **结构体只登记一次。** 接口能可靠触达的具体类/结构体才做 `StructInspector`。不确定是否已有覆盖时再运行 `list-struct-coverage.sh`；已有覆盖就留注释，不要重复输出。
+2. **结构体只登记一次，且一个声明类一个 `StructInspector`。** 接口能可靠触达的具体类才做。继承链上每个有数据成员的类各发一段，指向 `static_cast` 得到的该类子对象、用该类自己的 `sizeof`；基类字段**不要**塞进派生类那段——塞进去基类就不会出现在 `list-struct-coverage.sh` 里，下一个人查不到、会重复覆盖。不确定是否已有覆盖时先跑该脚本；已有覆盖就留注释。完整规则和形状见 [references/patterns.md](references/patterns.md#结构体)。
 
 3. **断言按类型。** `Fail` 只表示 SDK 声明无法成立的事实；运行时预期放到 `Detail`，有已知不确定性时用 `Suspect`。
 

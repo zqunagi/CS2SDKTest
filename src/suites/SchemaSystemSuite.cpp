@@ -535,6 +535,11 @@ void SchemaSystemSuite::InspectSchemaSystemLayout(TestContext& context)
 		}
 	});
 
+	// ISchemaSystem, the base, declares no data members - nothing to lay out.
+	// Its vtable is covered as calls.
+	context.Note("  ISchemaSystem declares no data members; nothing to inspect "
+	             "above CSchemaSystem");
+
 	StructInspector inspect(context, "CSchemaSystem",
 		schema_concrete_, sizeof(CSchemaSystem));
 
@@ -2080,6 +2085,10 @@ void SchemaSystemSuite::InspectTypeScopeLayout(TestContext& context)
 		}
 	});
 
+	// ISchemaSystemTypeScope, the base, declares no data members.
+	context.Note("  ISchemaSystemTypeScope declares no data members; nothing to "
+	             "inspect above CSchemaSystemTypeScope");
+
 	StructInspector inspect(context, "CSchemaSystemTypeScope",
 		probe_scope_, sizeof(CSchemaSystemTypeScope));
 
@@ -2501,8 +2510,8 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 	inspect.UInt32 ("m_nFlags1",          offsetof(SchemaClassInfoData_t, m_nFlags1));
 	inspect.UInt32 ("m_nFlags2",          offsetof(SchemaClassInfoData_t, m_nFlags2));
 	inspect.Pointer("m_pfnManipulator",   offsetof(SchemaClassInfoData_t, m_pfnManipulator));
-	inspect.HexDump();
 	inspect.Summarize();
+	inspect.HexDump();
 
 	context.SkipCall("SchemaClassInfoData_t::m_pfnManipulator (call)",
 		"every action the manipulator takes - register, allocate, deallocate, "
@@ -2749,8 +2758,8 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 	inspect.Int32  ("m_nStaticMetadataCount", offsetof(SchemaClassFieldData_t, m_nStaticMetadataCount),
 	                                          0, INT32_MAX);
 	inspect.Pointer("m_pStaticMetadata",      offsetof(SchemaClassFieldData_t, m_pStaticMetadata));
-	inspect.HexDump();
 	inspect.Summarize();
+	inspect.HexDump();
 }
 
 // -----------------------------------------------------------------------------
@@ -3087,8 +3096,8 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 	                                       offsetof(SchemaEnumInfoData_t, m_nMinEnumeratorValue));
 	inspect.Int64  ("m_nMaxEnumeratorValue",
 	                                       offsetof(SchemaEnumInfoData_t, m_nMaxEnumeratorValue));
-	inspect.HexDump();
 	inspect.Summarize();
+	inspect.HexDump();
 }
 
 // -----------------------------------------------------------------------------
@@ -3242,8 +3251,8 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 	inspect.Int32  ("m_nStaticMetadataCount", offsetof(SchemaEnumeratorInfoData_t, m_nStaticMetadataCount),
 	                                          0, INT32_MAX);
 	inspect.Pointer("m_pStaticMetadata",      offsetof(SchemaEnumeratorInfoData_t, m_pStaticMetadata));
-	inspect.HexDump();
 	inspect.Summarize();
+	inspect.HexDump();
 }
 
 // -----------------------------------------------------------------------------
