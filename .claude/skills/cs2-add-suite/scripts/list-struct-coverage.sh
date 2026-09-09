@@ -1,34 +1,21 @@
 #!/bin/sh
-# List every struct already inspected by a suite, and which suite owns it.
-#
-# Struct layout checks are expensive to read, not to run: a second suite
-# re-inspecting CGlobalVars adds thirty lines to the log and zero information,
-# because a layout either holds or it does not - it cannot hold in one suite
-# and fail in another. So each struct is inspected exactly once, by the suite
-# that most naturally reaches it, and every other suite that touches it leaves
-# a comment pointing at the owner.
-#
-# Run this before adding StructInspector calls to a new suite, to find out
-# whether the struct is already somebody else's job.
-#
-# Usage:
+# 列出已由 suite 检查的结构体及其归属。
+# 用法：
 #   list-struct-coverage.sh [suites-dir]        # default: src/suites
 
 set -u
 DIR=${1:-src/suites}
 
-[ -d "$DIR" ] || { echo "no such directory: $DIR" >&2; exit 2; }
+[ -d "$DIR" ] || { echo "目录不存在: $DIR" >&2; exit 2; }
 
-# The type_name argument to StructInspector's constructor is the log label, and
-# by convention it is the struct's real name (sometimes with an "[0]" suffix
-# where the instance is an array element). That makes it a reliable index.
+# StructInspector 的 type_name 按约定是结构体名，可作为登记键。
 awk '
     FNR == 1 {
         suite = FILENAME
         gsub(/^.*\//, "", suite)
         sub(/\.cpp$/, "", suite)
     }
-    # Match the constructor and capture the first string literal after it.
+    # 获取构造函数中 context 后的第一个字符串。
     /StructInspector[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*\([ \t]*context[ \t]*,/ {
         line = $0
         sub(/^.*context[ \t]*,[ \t]*"/, "", line)
@@ -40,7 +27,7 @@ awk '
         n = 0
         for (s in owner) { n++ }
         if (n == 0) { print "  (none found)"; exit }
-        printf "%-34s  %s\n", "struct", "owning suite"
+        printf "%-34s  %s\n", "结构体", "负责的 suite"
         printf "%-34s  %s\n", "----------------------------------", "------------------------"
         for (s in owner) { printf "%-34s  %s\n", s, owner[s] }
     }
@@ -48,10 +35,7 @@ awk '
 
 cat <<'NOTE'
 
-A struct listed above is already covered. In a new suite, reference it with a
-comment instead of a second StructInspector block:
+以上结构体已有覆盖。新 suite 只需注释其归属，不要重复添加 StructInspector：
 
-  // CGlobalVars' layout is inspected in Source2EngineSuite. A layout either
-  // holds or it does not - it cannot hold there and fail here - so repeating
-  // the check would add log noise and no evidence.
+  // CGlobalVars 的布局由 Source2EngineSuite 检查，此处不重复输出。
 NOTE

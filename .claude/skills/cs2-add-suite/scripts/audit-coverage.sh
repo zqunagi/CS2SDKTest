@@ -1,24 +1,12 @@
 #!/bin/sh
-# Report which methods of an SDK class a suite has neither called nor SkipCall'd.
-#
-# The whole point of this project is that a silently missing method is
-# indistinguishable from a method somebody checked and found fine. This is the
-# mechanical check for that: it reads the class out of the SDK header and asks,
-# for each method, whether the suite source mentions it at all.
-#
-# Usage:
-#   audit-coverage.sh <header> <ClassName> <suite.cpp> [<suite2.cpp> ...]
-#
-# Exit status is the number of unaccounted methods, so it composes:
-#   audit-coverage.sh ... || echo "gaps found"
-#
-# POSIX sh + awk on purpose - no python, no perl. This has to run in whatever
-# shell the build happens in, including a bare WSL container.
+# 检查 SDK 类的虚方法是否在 suite 中调用或 SkipCall。
+# 用法：audit-coverage.sh <header> <ClassName> <suite.cpp> [more.cpp ...]
+# 退出码为未覆盖方法数量。
 
 set -u
 
 if [ $# -lt 3 ]; then
-    echo "usage: $0 <header> <ClassName> <suite.cpp> [more.cpp ...]" >&2
+    echo "用法: $0 <header> <ClassName> <suite.cpp> [more.cpp ...]" >&2
     exit 2
 fi
 
@@ -26,21 +14,13 @@ HEADER=$1
 CLASS=$2
 shift 2
 
-[ -r "$HEADER" ] || { echo "cannot read header: $HEADER" >&2; exit 2; }
+[ -r "$HEADER" ] || { echo "无法读取头文件: $HEADER" >&2; exit 2; }
 for f in "$@"; do
-    [ -r "$f" ] || { echo "cannot read source: $f" >&2; exit 2; }
+    [ -r "$f" ] || { echo "无法读取源文件: $f" >&2; exit 2; }
 done
 
-# ---- extract the class's method names -------------------------------------
-#
-# Anchored on an EXACT class name. This matters more than it looks: matching
-# "ISchemaSystem" as a substring also hits "ISchemaSystemTypeScope", which
-# silently audits the wrong class and reports everything as covered. That bug
-# cost a full review cycle, hence the exact comparison on the parsed name.
+# 精确匹配类名，并在提取前去掉注释。
 METHODS=$(awk -v cls="$CLASS" '
-    # Strip comments first. A commented-out declaration is not in the vtable,
-    # so reporting it as "untested" sends someone hunting for a method that
-    # does not exist - eiface.h has exactly one of these (SetCommandClient).
     {
         if (inblock) {
             if (match($0, /\*\//)) { $0 = substr($0, RSTART + RLENGTH); inblock = 0 }
@@ -49,7 +29,7 @@ METHODS=$(awk -v cls="$CLASS" '
         while (match($0, /\/\*.*\*\//)) { $0 = substr($0, 1, RSTART - 1) substr($0, RSTART + RLENGTH) }
         if (match($0, /\/\*/)) { $0 = substr($0, 1, RSTART - 1); inblock = 1 }
         sub(/\/\/.*$/, "")
-        if ($0 ~ /^[ 	]*$/) next
+        if ($0 ~ /^[ \t]*$/) next
     }
     !inside {
         line = $0
@@ -63,19 +43,13 @@ METHODS=$(awk -v cls="$CLASS" '
         }
         next
     }
-    # A "};" flush against the left margin ends the outer class. Nested structs
-    # in these headers are indented, so their closers do not match this.
     inside && /^};/ { exit }
     inside {
-        # Accumulate a declaration until it has a "(" - Valve wraps long ones
-        # across lines, and the name sits on whichever line reaches the paren.
         buf = buf " " $0
         if (index(buf, "(") == 0) next
         decl = buf
         buf = ""
         if (decl !~ /virtual/) next
-        # Cut from the first "(" and take the trailing identifier, which
-        # survives return types like SchemaMetaInfoHandle_t<CFoo>.
         sub(/\(.*$/, "", decl)
         sub(/[ \t]+$/, "", decl)
         if (match(decl, /~?[A-Za-z_][A-Za-z0-9_]*$/)) {
@@ -86,25 +60,15 @@ METHODS=$(awk -v cls="$CLASS" '
 ' "$HEADER" | sort -u)
 
 if [ -z "$METHODS" ]; then
-    echo "no virtual methods found for '$CLASS' in $HEADER" >&2
-    echo "  (check the exact class name - the anchor is an exact match)" >&2
+    echo "未找到 '$CLASS' 的虚方法: $HEADER" >&2
+    echo "请确认类名完全匹配" >&2
     exit 2
 fi
 
 TOTAL=$(printf '%s\n' "$METHODS" | wc -l | tr -d ' ')
-
-# ---- check each against the suite sources ---------------------------------
-#
-# A method counts as accounted for if the suite names it in a log target
-# ("Class::Method"), calls it through a pointer, or instantiates it as a
-# template. SkipCall lines match the first form, which is deliberate: an
-# explicit skip carrying a reason IS coverage as far as this project is
-# concerned. What we are hunting is the method nobody wrote a line about.
 MISSING=0
 for m in $METHODS; do
     case $m in
-        # A destructor appears as "Class::~Class", so the "::" is followed by a
-        # tilde and the plain-name pattern would miss it.
         '~'*)
             stem=`printf '%s' "$m" | sed 's/^~//'`
             pat="::~${stem}"
@@ -117,16 +81,16 @@ for m in $METHODS; do
         continue
     fi
     if [ "$MISSING" -eq 0 ]; then
-        echo "$CLASS: unaccounted methods"
+        echo "$CLASS: 未覆盖的方法"
     fi
     echo "  $m"
-    MISSING=`expr $MISSING + 1`
+    MISSING=`expr "$MISSING" + 1`
 done
 
 if [ "$MISSING" -eq 0 ]; then
-    echo "$CLASS: all $TOTAL method(s) accounted for"
+    echo "$CLASS: 全部 $TOTAL 个方法已覆盖"
 else
-    echo "$CLASS: $MISSING of $TOTAL unaccounted"
+    echo "$CLASS: $TOTAL 个方法中有 $MISSING 个未覆盖"
 fi
 
 exit "$MISSING"

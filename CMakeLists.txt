@@ -139,6 +139,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/Source2ServerSuite.cpp
   src/suites/Source2GameClientsSuite.cpp
   src/suites/SchemaSystemSuite.cpp
+  src/suites/GameEntitySystemSuite.cpp
   src/suites/MetamodListenerSuite.cpp
 )
 
@@ -165,13 +166,23 @@ set(CS2SDKTEST_HEADERS
   src/suites/Source2ServerSuite.h
   src/suites/Source2GameClientsSuite.h
   src/suites/SchemaSystemSuite.h
+  src/suites/GameEntitySystemSuite.h
   src/suites/MetamodListenerSuite.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:
 # memoverride.cpp hands allocation to tier0 so memory crossing the plugin
 # boundary is freed by the allocator that made it.
-set(CS2SDKTEST_SDK_SOURCES "")
+# entity2/*.cpp are the SDK's own implementations of GetEntityIdentity,
+# FindClassByName and the EntityInstance*Iter_t walkers - pure struct-offset
+# arithmetic with no engine symbol behind it. GameEntitySystemSuite calls them
+# on purpose: they are where a moved field produces a wrong answer rather than
+# a crash. They need a definition of GameEntitySystem(), which the suite
+# supplies.
+set(CS2SDKTEST_SDK_SOURCES
+  "${HL2SDK_ROOT}/entity2/entitysystem.cpp"
+  "${HL2SDK_ROOT}/entity2/entityidentity.cpp"
+)
 if(CS2SDKTEST_USE_MEMOVERRIDE)
   list(APPEND CS2SDKTEST_SDK_SOURCES "${HL2SDK_ROOT}/public/tier0/memoverride.cpp")
 endif()
