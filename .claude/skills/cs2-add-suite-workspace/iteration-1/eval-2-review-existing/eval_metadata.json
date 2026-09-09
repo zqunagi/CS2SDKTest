@@ -1,0 +1,12 @@
+{
+  "eval_id": 2,
+  "eval_name": "review-existing",
+  "prompt": "帮我 review 一下 src/suites/Source2ServerSuite.cpp，看有没有漏测的接口方法或者该测没测的结构体布局。",
+  "assertions": [
+    {"id": "ran_mechanical_check", "text": "Verified method coverage mechanically rather than by eye, and showed the command output"},
+    {"id": "exact_name_matching",  "text": "The coverage check anchors on an exact class name (does not conflate ISource2Server with a longer name)"},
+    {"id": "correct_verdict",      "text": "Correctly reports that ISource2Server's 50 methods are all accounted for (no hallucinated gaps)"},
+    {"id": "respects_struct_dedup","text": "Does not recommend inspecting a struct another suite already owns (e.g. CGlobalVars belongs to Source2EngineSuite)"},
+    {"id": "consulted_registry",   "text": "Consulted the existing struct-layout coverage before recommending new inspections"}
+  ]
+}

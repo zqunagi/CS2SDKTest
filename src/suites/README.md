@@ -3,6 +3,7 @@ Test suites live here — one per SDK interface being exercised.
   Source2EngineSuite       IVEngineServer2 / ISource2Engine / IAppSystem (calls + CGlobalVars layout)
   Source2ServerSuite       ISource2Server (= IServerGameDLL)             (calls + 11 hooks)
   Source2GameClientsSuite  ISource2GameClients (= IServerGameClients)    (calls + 11 hooks)
+  SchemaSystemSuite        ISchemaSystem / CSchemaSystemTypeScope        (93 calls + 9 struct layouts)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it

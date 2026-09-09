@@ -138,6 +138,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/Source2EngineSuite.cpp
   src/suites/Source2ServerSuite.cpp
   src/suites/Source2GameClientsSuite.cpp
+  src/suites/SchemaSystemSuite.cpp
   src/suites/MetamodListenerSuite.cpp
 )
 
@@ -163,6 +164,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/Source2EngineSuite.h
   src/suites/Source2ServerSuite.h
   src/suites/Source2GameClientsSuite.h
+  src/suites/SchemaSystemSuite.h
   src/suites/MetamodListenerSuite.h
 )
 

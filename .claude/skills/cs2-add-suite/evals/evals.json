@@ -1,0 +1,26 @@
+{
+  "skill_name": "cs2-add-suite",
+  "evals": [
+    {
+      "id": 0,
+      "name": "serverconfig-new-suite",
+      "prompt": "按 docs/TEST_TARGETS.md，给 ISource2ServerConfig 写一个 suite。",
+      "expected_output": "A complete suite (.h/.cpp) registered in TestRunner + CMakeLists + suites/README.md, with every ISource2ServerConfig method either called or SkipCall'd with a reason, IAppSystem base slots covered, and type-level (not semantic) assertions.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "gameentities-hooks",
+      "prompt": "给 ISource2GameEntities 加个测试套件，这个接口引擎会调进游戏，所以 hook 也要覆盖上。",
+      "expected_output": "Suite with pre/post hook pairs, Declare() before install, MRES_IGNORED returns, SafeStringArg/pointer vetting in handlers, and full method accounting.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "review-existing",
+      "prompt": "帮我 review 一下 src/suites/Source2ServerSuite.cpp，看有没有漏测的接口方法或者该测没测的结构体布局。",
+      "expected_output": "Uses the audit script (or equivalent exact-match check) to verify method accounting, consults the struct registry before recommending new layout checks, and does not recommend re-inspecting a struct another suite already owns.",
+      "files": []
+    }
+  ]
+}
