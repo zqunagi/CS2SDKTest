@@ -1709,8 +1709,20 @@ void SchemaSystemSuite::ProbeSchemaType(TestContext& context, const char* label,
 		}
 	});
 
-	// The type's own name, handed back to the name matcher. Exactly one correct
-	// answer, and it comes from the object rather than from us.
+	// The type's own name, handed back to the name matcher.
+	//
+	// This was written as "exactly one correct answer" and that was wrong:
+	// m_sTypeName is a *rendered* name, not a lookup key. The simple categories
+	// carry the key verbatim ("int32", "CBaseEntity") and do match; the
+	// composed ones do not - a pointer renders as "CBodyComponent*" and an
+	// atomic as "CUtlVector< thinkfunc_t >", while IsTypeByName is keyed on the
+	// name underneath. Measured: both composed categories answer false to their
+	// own rendered name, which the first version reported as a FAIL.
+	//
+	// The composed categories now get a second probe with the name the rule
+	// predicts, which turns a bogus FAIL into a row saying what the matcher is
+	// actually keyed on. A category whose rendered name *is* its key still
+	// fails if it does not recognise it - that part was a real check.
 	CS2ST_CALL(context, prefix + "IsTypeByName(its own name)", {
 		const char* own_name = type->m_sTypeName.Get();
 		if (own_name == nullptr)
@@ -1718,11 +1730,68 @@ void SchemaSystemSuite::ProbeSchemaType(TestContext& context, const char* label,
 			context.Detail("-> no name to test with");
 			return;
 		}
+
 		const bool matches = type->IsTypeByName(own_name);
-		context.Detail("\"%.70s\" -> %s", own_name, matches ? "true" : "false");
-		if (!matches)
+
+		// The name the composed renderings are built from. Stays null for
+		// every other category, which is what selects the strict check below.
+		const char* inner_name = nullptr;
+		const char* inner_what = nullptr;
+
+		// Cast on m_eTypeCategory alone rather than through ReinterpretAs<T>().
+		// ReinterpretAs goes via SchemaTypeMap<T>::Match, which compares
+		// m_eAtomicCategory as well - and CSchemaType_Atomic is registered as
+		// SCHEMA_ATOMIC_PLAIN, so asking it about a CUtlVector (which is
+		// SCHEMA_ATOMIC_COLLECTION_OF_T) returns null and this probe would fall
+		// straight back into the strict branch it exists to avoid. The type
+		// category on its own does fix the class family: every SCHEMA_TYPE_ATOMIC
+		// object is one of the five CSchemaType_Atomic* classes, all of which
+		// derive from CSchemaType_Atomic by single inheritance, and
+		// SCHEMA_TYPE_POINTER is CSchemaType_Ptr and nothing else.
+		if (type->m_eTypeCategory == SCHEMA_TYPE_POINTER)
 		{
-			context.Fail("a type does not recognise its own name");
+			const CSchemaType_Ptr* pointer = static_cast<const CSchemaType_Ptr*>(type);
+			if (pointer->m_pObjectType != nullptr)
+			{
+				inner_name = pointer->m_pObjectType->m_sTypeName.Get();
+				inner_what = "pointee";
+			}
+		}
+		else if (type->m_eTypeCategory == SCHEMA_TYPE_ATOMIC)
+		{
+			const CSchemaType_Atomic* atomic = static_cast<const CSchemaType_Atomic*>(type);
+			if (atomic->m_pAtomicInfo != nullptr)
+			{
+				inner_name = atomic->m_pAtomicInfo->m_pszName;
+				inner_what = "atomic";
+			}
+		}
+
+		if (inner_name == nullptr)
+		{
+			context.Detail("\"%.70s\" -> %s", own_name, matches ? "true" : "false");
+			if (!matches)
+			{
+				context.Fail("a type whose name is not composed does not recognise it");
+			}
+			return;
+		}
+
+		const bool inner_matches = type->IsTypeByName(inner_name);
+		context.Detail("rendered \"%.50s\" -> %s | %s \"%.40s\" -> %s",
+			own_name, matches ? "true" : "false",
+			inner_what, inner_name, inner_matches ? "true" : "false");
+
+		if (!matches && !inner_matches)
+		{
+			// Neither the rendered name nor the one the rendering is built
+			// from. Suspect rather than Fail: which key IsTypeByName uses is
+			// nowhere in the SDK, so a third answer is a gap in what we know
+			// before it is a broken matcher. It still gets a coloured row,
+			// because the negative probe below is then the only thing left
+			// saying the matcher works at all.
+			context.Suspect("recognises neither its rendered name nor its %s name",
+				inner_what);
 		}
 	});
 

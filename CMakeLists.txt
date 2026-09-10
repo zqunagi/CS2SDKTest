@@ -141,6 +141,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/ConVarSuite.cpp
   src/suites/SchemaSystemSuite.cpp
   src/suites/GameEntitySystemSuite.cpp
+  src/suites/GameEventSuite.cpp
   src/suites/MetamodListenerSuite.cpp
 )
 
@@ -170,6 +171,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/ConVarSuite.h
   src/suites/SchemaSystemSuite.h
   src/suites/GameEntitySystemSuite.h
+  src/suites/GameEventSuite.h
   src/suites/MetamodListenerSuite.h
 )
 

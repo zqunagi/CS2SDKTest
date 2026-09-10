@@ -31,6 +31,20 @@
 ## 错误结论
 
 - `Fail` 只验证类型/布局保证，不要把“运行中的服务器通常应该有某数据”当成断言。实测为空的容器不代表布局错位。
+- **不要把「文档说 A 允许 X」当成「非 A 禁止 X」。** `icvar.h` 只写了
+  `allow_defensive` 为 true 时允许找到 defensive convar，没写 false 会隐藏；断言逆否命题
+  实测直接 FAIL。只判文档正面写了的那一半。
+- **不要断言 SDK 内联代码里那条你没法保证会走到的分支。** `ConVarRefAbstract::Init` 里
+  「落到 invalid 占位符」只在 `g_pCVar->GetConVarData()` 返回 null 时才发生，而引擎对无效句柄
+  返回非 null，于是头文件承诺的 `IsConVarDataValid()==false` 不成立。判据要落在实际成立的那个
+  谓词上（这里是 `IsConVarDataAvailable()`），偏差记 `SUSPECT` 并写明原因在引擎侧。
+- **哨兵节点的载荷字段一律只报不判。** 链表头哨兵（如 `CEventQueue::m_Events`）的
+  `m_eTargetType` / `m_flFireTime` 从来没被当成事件写过。而且 `-FLT_MAX` 这类值往往是
+  **排序哨兵标记，即正确答案**，判成「数值不合理」会把最强的布局证据变成 FAIL。
+  只判它的链接字段，未写过的一侧标 `kMayBeUninitialized`。
+- **「名字」字段不一定是查找键。** `CSchemaType::m_sTypeName` 对指针和 atomic 是**渲染出来的
+  显示名**（`CBodyComponent*`、`CUtlVector< thinkfunc_t >`），`IsTypeByName` 认的是底下那个名字。
+  拿显示名去喂匹配器再断言必须命中，是在给自己编契约。
 - SDK 没有写明的语义不要臆测；记录返回值，用非空、对象类型等无争议事实做断言。
 - oracle 全部失败时先核对基对象、数组所属对象、`offsetof` 和步长。整组一致失败通常是 oracle 算错，不是 SDK 整体错位。
 - 不要默认接口指针就是 SDK 命名的具体类；先用 getter 与字段对照等 oracle 验证。
@@ -44,6 +58,10 @@
 ## 布局与 hook
 
 - 偏移一律用 `offsetof`，不要写常数；`bool` 用原始字节读取；整数范围只在类型确实有范围时检查。
+- **检查用的缓冲区大小绝不能同时当判据。** `StructInspector::String()` 曾拿 63 字节的预览
+  缓冲区同时当「扫描终止符的上限」，于是每条超过 63 字节的帮助文本都被报成
+  「no terminator」—— 包括本插件自己注册、原样读回来的那几条，也就是「偏移完全正确」
+  的最强证据。扫描上限和打印长度是两件事，必须分开。
 - **`offsetof` 能否使用取决于成员的访问级别，三种情况三种办法。** 不要因为 `offsetof` 用不了就整个结构体不测：
 
   | 访问级别 | 办法 |

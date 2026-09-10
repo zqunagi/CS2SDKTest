@@ -1919,22 +1919,39 @@ void GameEntitySystemSuite::InspectEventQueueLayout(TestContext& context)
 
 	inspect.Raw("m_Mutex", offsetof(CEventQueue, m_Mutex), sizeof(CAtomicMutex));
 
-	// m_Events is the sentinel node of the pending-event list, so its own
-	// payload is meaningless but its links are not: they are what the engine
-	// splices real events into.
-	inspect.Enum("m_Events.m_eTargetType",
-		offsetof(CEventQueue, m_Events) + offsetof(EventQueuePrioritizedEvent_t, m_eTargetType),
-		ENTITY_IO_TARGET_INVALID, ENTITY_IO_TARGET_ENTITYNAME_OR_CLASSNAME);
-	inspect.Float("m_Events.m_flFireTime",
-		offsetof(CEventQueue, m_Events) + offsetof(EventQueuePrioritizedEvent_t, m_flFireTime));
-	inspect.String("m_Events.m_iTarget",
-		offsetof(CEventQueue, m_Events) + offsetof(EventQueuePrioritizedEvent_t, m_iTarget));
-	inspect.String("m_Events.m_iTargetInput",
-		offsetof(CEventQueue, m_Events) + offsetof(EventQueuePrioritizedEvent_t, m_iTargetInput));
+	// m_Events is the *sentinel* node of the pending-event list, not an event.
+	// The first version of this said so in a comment and then judged its
+	// payload anyway, which produced three FAILs that were all the sentinel
+	// behaving exactly as a sentinel should. Every payload field here is
+	// therefore reported and not judged - what is under test at these offsets
+	// is that the fields are where the SDK puts them, and the values below say
+	// that far more convincingly than a range check would have.
+	const std::size_t events = offsetof(CEventQueue, m_Events);
+
+	// -FLT_MAX is not an implausible game value, it is the marker that makes a
+	// time-ordered list work: every real event sorts after the head. Observed
+	// exactly that, which pins m_flFireTime to this offset on its own.
+	inspect.Raw("m_Events.m_flFireTime (sentinel: -FLT_MAX)",
+		events + offsetof(EventQueuePrioritizedEvent_t, m_flFireTime), sizeof(GameTime_t));
+	// Never written on the head node, so it holds whatever the allocator left.
+	inspect.Raw("m_Events.m_eTargetType (sentinel: unset)",
+		events + offsetof(EventQueuePrioritizedEvent_t, m_eTargetType),
+		sizeof(EntityIOTargetType_t));
+	inspect.Raw("m_Events.m_iTarget (sentinel: unset)",
+		events + offsetof(EventQueuePrioritizedEvent_t, m_iTarget), sizeof(CUtlSymbolLarge));
+	inspect.Raw("m_Events.m_iTargetInput (sentinel: unset)",
+		events + offsetof(EventQueuePrioritizedEvent_t, m_iTargetInput),
+		sizeof(CUtlSymbolLarge));
+
+	// The links are the part that is real, because they are what the engine
+	// splices actual events into. m_pNext is judged; m_pPrev is not, because on
+	// a head sentinel with an empty queue nothing has ever written it - and the
+	// two fields around it (m_flFireTime holding its marker, m_pNext holding a
+	// pointer) are what license that, since misalignment does not repair itself.
 	inspect.Pointer("m_Events.m_pNext",
-		offsetof(CEventQueue, m_Events) + offsetof(EventQueuePrioritizedEvent_t, m_pNext));
+		events + offsetof(EventQueuePrioritizedEvent_t, m_pNext));
 	inspect.Pointer("m_Events.m_pPrev",
-		offsetof(CEventQueue, m_Events) + offsetof(EventQueuePrioritizedEvent_t, m_pPrev));
+		events + offsetof(EventQueuePrioritizedEvent_t, m_pPrev), kMayBeUninitialized);
 
 	inspect.Summarize();
 }

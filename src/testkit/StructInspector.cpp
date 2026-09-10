@@ -20,6 +20,16 @@ namespace
  */
 constexpr float kMaxPlausibleFloat = 1.0e9f;
 
+/**
+ * How far String() looks for a terminator before concluding the field is not a
+ * char* at all.
+ *
+ * Deliberately much larger than the preview buffer, and unrelated to it: a
+ * string being longer than what gets printed is not evidence of anything. Only
+ * the absence of a terminator anywhere in this window is.
+ */
+constexpr std::size_t kMaxStringScan = 4096;
+
 /** The first 64 KiB is the null guard region and is never mapped. */
 constexpr std::uintptr_t kNullGuardLimit = 0x10000;
 
@@ -250,7 +260,17 @@ void StructInspector::String(const char* field, std::size_t offset, unsigned fla
 		bool terminated = false;
 		bool printable = true;
 
-		while (length < sizeof(preview) - 1)
+		// Two lengths, not one, and conflating them was a real bug: how far the
+		// scan looks for a terminator is the test, while the preview only decides
+		// how much gets printed. Tying the first to the second reported every
+		// string longer than the buffer as a broken layout - including help text
+		// this plugin had registered itself and was reading back verbatim, which
+		// is the strongest evidence available that the offset was right.
+		//
+		// The scan is still bounded. An offset that is not a char* points at
+		// bytes with no terminator among them, and walking those unbounded is how
+		// a probe stops being a probe.
+		while (length < kMaxStringScan)
 		{
 			const unsigned char ch = static_cast<unsigned char>(text[length]);
 			if (ch == 0)
@@ -258,17 +278,25 @@ void StructInspector::String(const char* field, std::size_t offset, unsigned fla
 				terminated = true;
 				break;
 			}
-			if (!IsPrintable(ch))
+			if (length < sizeof(preview) - 1)
 			{
-				printable = false;
+				// Printability is judged only over the bytes actually shown. A
+				// long string that is legible for its first 63 characters is a
+				// string; demanding the whole of it be printable would start
+				// failing on embedded newlines and UTF-8 in engine help text.
+				if (!IsPrintable(ch))
+				{
+					printable = false;
+				}
+				preview[length] = static_cast<char>(ch);
 			}
-			preview[length] = static_cast<char>(ch);
 			++length;
 		}
-		preview[length] = '\0';
+		preview[length < sizeof(preview) - 1 ? length : sizeof(preview) - 1] = '\0';
 
-		context_.Detail("@0x%02zx -> \"%s\"%s", offset, preview,
-			terminated ? "" : " (unterminated within 63 bytes)");
+		context_.Detail("@0x%02zx -> \"%s\"%s (%zu bytes%s)", offset, preview,
+			length >= sizeof(preview) ? "..." : "", length,
+			terminated ? "" : " with no terminator yet");
 
 		if (!printable)
 		{
@@ -276,7 +304,7 @@ void StructInspector::String(const char* field, std::size_t offset, unsigned fla
 		}
 		else if (!terminated)
 		{
-			Violation(flags, "no terminator in the first 63 bytes");
+			Violation(flags, "no terminator in the first %zu bytes", kMaxStringScan);
 		}
 	});
 }

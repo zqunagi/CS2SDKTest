@@ -4,6 +4,7 @@
 #include "hook/HookRecorder.h"
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
+#include "suites/GameEventSuite.h"
 #include "suites/MetamodListenerSuite.h"
 #include "suites/SchemaSystemSuite.h"
 #include "suites/Source2EngineSuite.h"
@@ -26,6 +27,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new ConVarSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GameEventSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));
 
 	return runner;
