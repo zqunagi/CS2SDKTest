@@ -7,6 +7,7 @@ Test suites live here — one per SDK interface being exercised.
   SchemaSystemSuite        ISchemaSystem / CSchemaSystemTypeScope        (93 calls + 9 struct layouts)
   GameEntitySystemSuite    CGameEntitySystem / CEntitySystem             (calls + 8 struct layouts + 4 listener callbacks)
   GameEventSuite           IGameEventSystem / IGameEventManager2         (calls + 1 struct layout + 9 hooks)
+  NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t layout + 15 cross-checks + 6 hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it
@@ -52,6 +53,32 @@ frame — must not do. So the hooks record the distinct INetworkMessageInternal
 pointers they are handed into a fixed array, and the next call sweep resolves
 those to names under the fault guard. Install the hooks, play a round, sweep
 again.
+
+NetworkServerSuite is the one that mostly does not test its own interfaces.
+Almost nothing INetworkGameServer reports is a fact it owns - the tick, the
+client limit, the map name, the globals pointer and the per-player ids are all
+reachable through IVEngineServer2 or CGlobalVars too. That would normally be a
+reason to skip a method; here it is the point, because two unrelated interfaces
+disagreeing about the tick count is a finding neither of them could produce
+alone. Fifteen such pairs are checked, and the best of them (GetTime against the
+tick-times-interval formula the SDK writes out, GetName fed back through
+IEngineServiceMgr::FindService) do not go through this plugin's own arithmetic
+at all.
+
+It is also the only suite that reaches IEngineService, the 11 slots between
+IAppSystem and any engine service, and the only one that touches multiple
+inheritance: CNetworkGameServerBase has three bases, so a pointer to it has two
+different values depending on which one it is viewed through. That adjustment is
+reported and never judged - the compiler derives it from the SDK header, so
+there is no second source to check it against, but it is a number, and a number
+that moves after an update is a changed declaration.
+
+Its hooks are all on INetworkServerService and none on the game server, which is
+a decision rather than an omission: the engine rebuilds CNetworkGameServerBase
+on level change, so a hook there stops firing at exactly the moment the
+interesting thing happens - and a hook that stopped firing looks identical to a
+method the engine no longer calls. The replacement is measured instead: the
+suite remembers the pointer it saw last sweep and says so when it changes.
 
 Vocabulary: a *module* in this codebase is always a loaded shared library
 (engine2.so, server.so — see data/GameModules.h). A *suite* is one of these
