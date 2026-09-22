@@ -9,6 +9,7 @@
 #include "suites/NetworkMessagesSuite.h"
 #include "suites/NetworkServerSuite.h"
 #include "suites/SchemaSystemSuite.h"
+#include "suites/ServerConfigSuite.h"
 #include "suites/Source2EngineSuite.h"
 #include "suites/Source2GameClientsSuite.h"
 #include "suites/Source2ServerSuite.h"
@@ -32,6 +33,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEventSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkServerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkMessagesSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));
 
 	return runner;

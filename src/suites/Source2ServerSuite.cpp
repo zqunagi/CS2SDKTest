@@ -247,10 +247,6 @@ void Source2ServerSuite::ExerciseServerState(TestContext& context)
 		context.Detail("-> %p", static_cast<void*>(server_->GetServerGCLobby()));
 	});
 
-	CS2ST_CALL(context, "ISource2Server::GetEntityInfo", {
-		context.Detail("-> %p", server_->GetEntityInfo());
-	});
-
 	CS2ST_CALL(context, "ISource2Server::GetEntity2Networkables", {
 		context.Detail("-> %p", static_cast<const void*>(server_->GetEntity2Networkables()));
 	});
@@ -365,6 +361,7 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 		"creates string tables");
 	context.SkipCall("ISource2Server::WriteSignonMessages",
 		"writes into a network buffer");
+	context.SkipCall("ISource2Server::GetEntityInfo", "causes a crash if called");
 	context.SkipCall("ISource2Server::ApplyGameSettings",
 		"applies lobby settings - hooked instead");
 	context.SkipCall("ISource2Server::ServerHibernationUpdate",

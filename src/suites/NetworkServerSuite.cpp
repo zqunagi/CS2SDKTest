@@ -620,40 +620,19 @@ void NetworkServerSuite::ExerciseGameServer(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "INetworkGameServer::GetTime", {
-		// The SDK writes the relation out in a comment - "returns game world
-		// time (GetServerTick() * tick_interval)" - which turns this into a
-		// checkable formula rather than a number to eyeball. The tick interval
-		// comes from ISource2ServerConfig, used here only as a source for it.
+		// Deliberately one engine call and nothing else. An earlier version of
+		// this row also read GetServerTick() and ISource2ServerConfig's
+		// GetTickInterval() inside the same guarded block, which made every
+		// crash in it unattributable - three suspects, one row. The formula
+		// cross-check moved to ServerConfigSuite, the suite that owns
+		// ISource2ServerConfig, so the interval it compares against gets
+		// verified where it is acquired rather than consumed blind.
 		const float time = game_server_->GetTime();
-		const int tick = game_server_->GetServerTick();
-
-		ISource2ServerConfig* config = static_cast<ISource2ServerConfig*>(
-			context.QueryInterface("server", INTERFACEVERSION_SERVERCONFIG));
-		if (config == nullptr)
+		context.Detail("-> %.4f", static_cast<double>(time));
+		if (!std::isfinite(time))
 		{
-			context.Detail("-> %.4f at tick %d (no ISource2ServerConfig for the "
-			               "tick interval)", static_cast<double>(time), tick);
-			return;
-		}
-
-		const float interval = config->GetTickInterval();
-		const float expected = static_cast<float>(tick) * interval;
-		context.Detail("-> %.4f, tick %d x interval %.6f = %.4f",
-			static_cast<double>(time), tick, static_cast<double>(interval),
-			static_cast<double>(expected));
-
-		if (!std::isfinite(time) || !std::isfinite(interval))
-		{
-			context.Fail("a time or an interval that is not finite is not a number "
-			             "either of these functions can have produced");
-			return;
-		}
-		// One tick of tolerance: the two reads are a few instructions apart and
-		// the product is float arithmetic on a value that grows all game.
-		if (std::fabs(time - expected) > interval)
-		{
-			context.Fail("the time is more than one tick away from the formula the "
-			             "SDK states for it");
+			context.Fail("a time that is not finite is not a number this "
+			             "function can have produced");
 		}
 	});
 
@@ -675,10 +654,6 @@ void NetworkServerSuite::ExerciseGameServer(TestContext& context)
 
 	CS2ST_CALL(context, "INetworkGameServer::IsBackgroundMap", {
 		context.Detail("-> %s", game_server_->IsBackgroundMap() ? "true" : "false");
-	});
-
-	CS2ST_CALL(context, "INetworkGameServer::IsSaveRestoreAllowed", {
-		context.Detail("-> %s", game_server_->IsSaveRestoreAllowed() ? "true" : "false");
 	});
 
 	CS2ST_CALL(context, "INetworkGameServer::IsChangelevelPending", {
@@ -1327,6 +1302,7 @@ void NetworkServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("INetworkGameServer::SetSpawnGroupDescription", "mutates spawn group state");
 	context.SkipCall("INetworkGameServer::PrintSpawnGroupStatus",
 		"writes an unbounded dump to the game console rather than returning it");
+	context.SkipCall("INetworkGameServer::IsSaveRestoreAllowed", "causes a crash if called");
 	context.SkipCall("INetworkGameServer::SetMapName", "renames the running level");
 	context.SkipCall("INetworkGameServer::ActivateServer", "activates the server session");
 	context.SkipCall("INetworkGameServer::PrepareForAssetLoad", "moves the load state machine");

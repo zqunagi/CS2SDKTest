@@ -9,6 +9,7 @@ Test suites live here — one per SDK interface being exercised.
   GameEventSuite           IGameEventSystem / IGameEventManager2         (calls + 1 struct layout + 9 hooks)
   NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t layout + 15 cross-checks + 6 hooks)
   NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout + protobuf round trip)
+  ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it

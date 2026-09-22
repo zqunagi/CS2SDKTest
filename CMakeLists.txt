@@ -151,6 +151,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/NetworkServerSuite.cpp
   src/suites/NetworkMessagesSuite.cpp
   src/suites/MetamodListenerSuite.cpp
+  src/suites/ServerConfigSuite.cpp
 )
 
 set(CS2SDKTEST_HEADERS
@@ -183,6 +184,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/NetworkServerSuite.h
   src/suites/NetworkMessagesSuite.h
   src/suites/MetamodListenerSuite.h
+  src/suites/ServerConfigSuite.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:
