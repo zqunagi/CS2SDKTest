@@ -53,14 +53,20 @@ option(CS2SDKTEST_WITH_PROTOBUF
        "Generate and link the SDK's protobuf sources (required by eiface.h)" ON)
 
 # Protos to run through protoc. network_connection is the one the SDK headers
-# demand; add more here when a probe needs to read actual net messages.
-set(CS2SDKTEST_PROTO_FILES "network_connection"
+# demand; netmessages (+ its imports networkbasetypes, source2_steam_stats and
+# valveextensions) is what NetworkMessagesSuite needs to walk real net
+# messages - the generated CNETMsg_Tick is the round-trip subject.
+set(CS2SDKTEST_PROTO_FILES "network_connection;netmessages"
     CACHE STRING "hl2sdk/common proto files to generate (without .proto)")
 
 option(CS2SDKTEST_TIER1_KEYVALUES3
        "Also compile tier1/keyvalues3.cpp into the plugin" OFF)
+# ON by default since NetworkMessagesSuite: its serialization round trip needs
+# bf_write/bf_read, whose constructors are exported by no prebuilt library
+# (tier0 contains only netadr_t::Serialize/Unserialize). With this off that
+# suite reports every serialization method as SKIP.
 option(CS2SDKTEST_TIER1_BITBUF
-       "Also compile tier1/bitbuf.cpp into the plugin" OFF)
+       "Also compile tier1/bitbuf.cpp into the plugin" ON)
 option(CS2SDKTEST_WARNINGS_AS_ERRORS
        "Treat warnings in this project's own sources as errors" OFF)
 
@@ -143,6 +149,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/GameEntitySystemSuite.cpp
   src/suites/GameEventSuite.cpp
   src/suites/NetworkServerSuite.cpp
+  src/suites/NetworkMessagesSuite.cpp
   src/suites/MetamodListenerSuite.cpp
 )
 
@@ -174,6 +181,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/GameEntitySystemSuite.h
   src/suites/GameEventSuite.h
   src/suites/NetworkServerSuite.h
+  src/suites/NetworkMessagesSuite.h
   src/suites/MetamodListenerSuite.h
 )
 
@@ -225,6 +233,12 @@ target_include_directories(cs2sdktest PRIVATE
 if(CS2SDKTEST_WITH_PROTOBUF)
   # The SDK includes it as "network_connection.pb.h", unqualified.
   target_include_directories(cs2sdktest SYSTEM PRIVATE "${CS2SDKTEST_PROTO_OUT_DIR}")
+endif()
+
+# NetworkMessagesSuite's round trip compiles in only when bitbuf is present;
+# the define is how the .cpp knows which half of itself to build.
+if(CS2SDKTEST_TIER1_BITBUF)
+  target_compile_definitions(cs2sdktest PRIVATE CS2SDKTEST_WITH_BITBUF=1)
 endif()
 
 target_link_libraries(cs2sdktest PRIVATE

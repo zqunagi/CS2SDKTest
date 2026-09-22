@@ -8,6 +8,7 @@ Test suites live here — one per SDK interface being exercised.
   GameEntitySystemSuite    CGameEntitySystem / CEntitySystem             (calls + 8 struct layouts + 4 listener callbacks)
   GameEventSuite           IGameEventSystem / IGameEventManager2         (calls + 1 struct layout + 9 hooks)
   NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t layout + 15 cross-checks + 6 hooks)
+  NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout + protobuf round trip)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it
@@ -79,6 +80,36 @@ on level change, so a hook there stops firing at exactly the moment the
 interesting thing happens - and a hook that stopped firing looks identical to a
 method the engine no longer calls. The replacement is measured instead: the
 suite remembers the pointer it saw last sweep and says so when it changes.
+
+NetworkMessagesSuite is the one that tests an agreement rather than an
+interface. A net message is reachable four ways - by name, by partial name, by
+id, and by the no-create form of the creating method - and the registry is
+healthy exactly when all four hand back the same entry. The deepest check is
+the protobuf round trip: an engine-allocated CNETMsg_Tick gets a known tick
+value planted through the generated accessor, goes out through
+SerializeMessageInternal, and has to come back with the same value through two
+different unserialize entry points. A protobuf descriptor change breaks that
+before it breaks anything a plugin would notice by other means - which is the
+whole reason docs/TEST_TARGETS.md #8 exists.
+
+Two build facts this suite added. netmessages.proto (and its import closure:
+networkbasetypes, source2_steam_stats, valveextensions) joined
+CS2SDKTEST_PROTO_FILES, and cs2sdktest_generate_protobuf now collects that
+closure itself rather than trusting the list to name every file - a generated
+header #includes the .pb.h of every .proto it imports, and protoc does not
+emit those on its own. And CS2SDKTEST_TIER1_BITBUF now defaults to ON: the
+round trip needs bf_write/bf_read, whose constructors are exported by no
+prebuilt library (tier0 contains exactly two bitbuf symbols, both
+netadr_t::Serialize/Unserialize). A build with it off reports every
+serialization method as SKIP rather than pretending.
+
+The write into the protobuf is guarded by a measurement. CNetMessagePB in the
+SDK is a stub over the engine's real class, so every write through ToPB<T>()
+is an ABI assumption - and the suite checks it first: AsProto() (the engine's
+own pointer to the protobuf sub-object) has to equal this build's computed
+ToPB address, or set_tick is refused and the round trip reports SKIP with
+that reason. The same comparison run as a *finding* rather than a gate is in
+the allocation section, where a mismatch is Suspect, printed, never fatal.
 
 Vocabulary: a *module* in this codebase is always a loaded shared library
 (engine2.so, server.so — see data/GameModules.h). A *suite* is one of these

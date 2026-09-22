@@ -6,6 +6,7 @@
 #include "suites/GameEntitySystemSuite.h"
 #include "suites/GameEventSuite.h"
 #include "suites/MetamodListenerSuite.h"
+#include "suites/NetworkMessagesSuite.h"
 #include "suites/NetworkServerSuite.h"
 #include "suites/SchemaSystemSuite.h"
 #include "suites/Source2EngineSuite.h"
@@ -30,6 +31,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEventSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkServerSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new NetworkMessagesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));
 
 	return runner;

@@ -57,15 +57,65 @@ set(CS2SDKTEST_PROTO_OUT_DIR "${CMAKE_BINARY_DIR}/generated/protobuf")
 
 # Generates C++ sources for each named .proto (without extension, relative to
 # hl2sdk/common) and returns the generated file list.
+#
+# A generated header #includes the .pb.h of every .proto it imports, so the
+# imports have to be generated too - protoc does not emit them on its own
+# (it only reads them). The closure below collects transitive same-directory
+# imports; imports that resolve inside the bundled protobuf tree (the
+# well-known types, e.g. google/protobuf/descriptor.proto) are satisfied by
+# that tree's headers and are skipped.
 function(cs2sdktest_generate_protobuf out_sources_var)
   file(MAKE_DIRECTORY "${CS2SDKTEST_PROTO_OUT_DIR}")
 
-  set(_generated "")
+  # Expands one entry of CS2SDKTEST_PROTO_FILES into itself plus the closure
+  # of its hl2sdk/common imports, appended in dependency order (imports first,
+  # so a regenerating build never compiles against a stale imported .pb.h).
+  function(_protobuf_closure name out_var)
+    set(_result "")
+    set(_pending "${name}")
+    set(_seen "")
+    while(_pending)
+      list(POP_FRONT _pending _current)
+      if(_current IN_LIST _seen)
+        continue()
+      endif()
+      list(APPEND _seen "${_current}")
+
+      set(_input "${CS2SDKTEST_PROTO_DIR}/${_current}.proto")
+      if(NOT EXISTS "${_input}")
+        message(FATAL_ERROR "no such proto file: ${_input}")
+      endif()
+
+      file(STRINGS "${_input}" _import_lines REGEX "^[ \t]*import")
+      foreach(_line IN LISTS _import_lines)
+        string(REGEX REPLACE "^[ \t]*import[ \t]+\"([^\"]+)\".*" "\\1" _path "${_line}")
+        # Only same-directory imports need generating; anything under a
+        # subdirectory (google/...) resolves against the bundled protobuf tree.
+        if(NOT _path MATCHES "/")
+          # .pb.h include names are extension-less; match that convention.
+          string(REGEX REPLACE "\\.proto$" "" _imported "${_path}")
+          list(PREPEND _pending "${_imported}")
+        endif()
+      endforeach()
+
+      list(APPEND _result "${_current}")
+    endwhile()
+    set(${out_var} "${_result}" PARENT_SCOPE)
+  endfunction()
+
+  set(_names "")
   foreach(_name IN LISTS ARGN)
+    _protobuf_closure("${_name}" _closed)
+    foreach(_entry IN LISTS _closed)
+      if(NOT _entry IN_LIST _names)
+        list(APPEND _names "${_entry}")
+      endif()
+    endforeach()
+  endforeach()
+
+  set(_generated "")
+  foreach(_name IN LISTS _names)
     set(_input "${CS2SDKTEST_PROTO_DIR}/${_name}.proto")
-    if(NOT EXISTS "${_input}")
-      message(FATAL_ERROR "no such proto file: ${_input}")
-    endif()
 
     set(_header "${CS2SDKTEST_PROTO_OUT_DIR}/${_name}.pb.h")
     set(_source "${CS2SDKTEST_PROTO_OUT_DIR}/${_name}.pb.cc")

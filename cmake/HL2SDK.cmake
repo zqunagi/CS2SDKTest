@@ -168,6 +168,16 @@ endif()
 add_library(hl2sdk_tier1 STATIC ${_hl2sdk_tier1_sources})
 add_library(hl2sdk::tier1 ALIAS hl2sdk_tier1)
 
+# Foreign sources, compiled but not maintained here; silenced the same way
+# CMakeLists.txt silences the entity2 .cpp files and the protoc output. On
+# Linux bitbuf.cpp's `g_ExtraMasks[32] = ~0ul` warns - unsigned long is 64-bit
+# there and the truncation to uint32 is exactly the all-ones mask it wants.
+if(NOT MSVC)
+  set_source_files_properties(${_hl2sdk_tier1_sources} PROPERTIES
+    COMPILE_OPTIONS "-w"
+  )
+endif()
+
 set_target_properties(hl2sdk_tier1 PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CXX_STANDARD 17
