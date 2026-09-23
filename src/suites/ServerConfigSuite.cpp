@@ -230,10 +230,7 @@ void ServerConfigSuite::ExerciseAppSystem(TestContext& context)
 
 void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 {
-	context.Note("[ISource2ServerConfig] the startup questions; the tick interval "
-	             "is what NetworkServerSuite's GetTime formula consumes");
-
-	float tick_interval = -1.0f;
+	context.Note("[ISource2ServerConfig] the startup questions");
 
 	CS2ST_CALL(context, "ISource2ServerConfig::GetGameDescription", {
 		const char* description = config_->GetGameDescription();
@@ -247,6 +244,53 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 		}
 	});
 
+	// GetTickInterval is gone from this interface in the deployed binary -
+	// none of the 18 recovered slots reads a tick interval (the slot it
+	// historically occupied now belongs to GetPlayerLimits, and the one float
+	// getter in the tail returns a 3D skybox parameter). The subtick-era
+	// engine runs a fixed simulation rate and takes the interval from
+	// sv_tickrate / the session-config protobuf instead, which is the convar
+	// row below. SkipCall rather than absence: a future build reintroducing a
+	// getter here is a change worth a row, and the audit script keys on the
+	// SDK declaration, where the method survives commented-out.
+	context.SkipCall("ISource2ServerConfig::GetTickInterval",
+		"removed from the interface by the deployed binary; the engine takes "
+		"the interval from sv_tickrate / the session config now");
+
+	// ---- the tick-rate convar -----------------------------------------------
+	//
+	// The interval's one remaining source on this interface's home turf.
+	// Recorded, never judged: which convar name a deployment answers to is
+	// policy. One guarded row: FindConVar is an engine call, and on Windows
+	// the fault guard protects per call, not per sweep.
+	CS2ST_CALL(context, "ISource2ServerConfig::the tick-rate convar (sv_tickrate)", {
+		ICvar* cvar = Cvar(context);
+		if (cvar == nullptr)
+		{
+			context.Detail("-> no ICvar; nothing to read");
+			return;
+		}
+
+		ConVarRefAbstract rate_cvar(cvar->FindConVar("sv_tickrate", true));
+		ConVarRefAbstract legacy_rate_cvar(cvar->FindConVar("tickrate", true));
+		const bool have_rate = rate_cvar.IsConVarDataAvailable();
+		const bool have_legacy = legacy_rate_cvar.IsConVarDataAvailable();
+
+		if (!have_rate && !have_legacy)
+		{
+			context.Detail("-> neither sv_tickrate nor tickrate is readable");
+			return;
+		}
+
+		const ConVarRefAbstract& source = have_rate ? rate_cvar : legacy_rate_cvar;
+		CBufferStringN<64> value(false);
+		source.GetValueAsString(value);
+		const float rate = static_cast<float>(std::atof(value.Get()));
+		context.Detail("-> convar \"%s\" = %.6f (interval %.6f = 1/rate)",
+			value.Get(), static_cast<double>(rate),
+			rate > 0.0f ? static_cast<double>(1.0f / rate) : 0.0);
+	});
+
 	CS2ST_CALL(context, "ISource2ServerConfig::GetNetworkVersion", {
 		// No second source for this number exists in the SDK, so it is
 		// recorded rather than judged. A change in it after an update is the
@@ -254,85 +298,6 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 		const int version = config_->GetNetworkVersion();
 		context.Detail("-> %d", version);
 	});
-
-	CS2ST_CALL(context, "ISource2ServerConfig::GetTickInterval", {
-		const float interval = config_->GetTickInterval();
-		tick_interval = interval;
-		context.Detail("-> %.6f", static_cast<double>(interval));
-
-		if (!std::isfinite(interval) || interval <= 0.0f)
-		{
-			context.Fail("a simulation interval is a finite positive float; %.6f is "
-			             "not one", static_cast<double>(interval));
-			tick_interval = -1.0f;
-			return;
-		}
-		if (interval > 1.0f)
-		{
-			// Judged as Suspect rather than Fail: 1 Hz is not an engine
-			// configuration anyone has seen, but "subsecond" is this suite's
-			// inference about policy, not something the SDK states.
-			context.Suspect("a tick interval above one second means a tick rate "
-			                "below 1 Hz, which the engine cannot run");
-		}
-	});
-
-	// ---- the tick-rate cross-check ------------------------------------------
-	//
-	// Two routes to one interval: the config interface's own getter, and the
-	// convar the command line and the engine both know. The convar's name is
-	// deployment policy, so a mismatch is Suspect here and never Fail - the
-	// same reasoning as GetHostName vs the hostname convar in
-	// NetworkServerSuite. One guarded row: FindConVar is an engine call, and
-	// on Windows the fault guard protects per call, not per sweep.
-
-	if (tick_interval > 0.0f)
-	{
-		CS2ST_CALL(context, "ISource2ServerConfig::GetTickInterval vs the tick-rate convar", {
-			ICvar* cvar = Cvar(context);
-			if (cvar == nullptr)
-			{
-				context.Detail("-> no ICvar; the cross-check degrades to the getter's own row");
-				return;
-			}
-
-			ConVarRefAbstract rate_cvar(cvar->FindConVar("sv_tickrate", true));
-			ConVarRefAbstract legacy_rate_cvar(cvar->FindConVar("tickrate", true));
-			const bool have_rate = rate_cvar.IsConVarDataAvailable();
-			const bool have_legacy = legacy_rate_cvar.IsConVarDataAvailable();
-
-			if (!have_rate && !have_legacy)
-			{
-				context.Detail("-> neither sv_tickrate nor tickrate is readable; the "
-				               "cross-check degrades to the getter's own row");
-				return;
-			}
-
-			const ConVarRefAbstract& source = have_rate ? rate_cvar : legacy_rate_cvar;
-			CBufferStringN<64> value(false);
-			source.GetValueAsString(value);
-			const float rate = static_cast<float>(std::atof(value.Get()));
-			context.Detail("interval %.6f vs convar \"%s\" = %.6f",
-				static_cast<double>(tick_interval), value.Get(),
-				static_cast<double>(rate));
-
-			if (rate > 0.0f && std::fabs((1.0f / rate) - tick_interval) > (tick_interval * 0.05f))
-			{
-				context.Suspect("the tick interval and the tick-rate convar "
-				                "disagree by more than 5%%");
-			}
-		});
-	}
-	else
-	{
-		// Said out loud rather than silently missing: a crashed or non-positive
-		// GetTickInterval row above is the reason this one has no second side
-		// to compare against, and "not present" and "could not run" must stay
-		// distinguishable in the log.
-		context.SkipCall("ISource2ServerConfig::GetTickInterval vs the tick-rate convar",
-			"GetTickInterval did not produce a usable interval; there is no first "
-			"side to compare the convar against");
-	}
 
 	CS2ST_CALL(context, "ISource2ServerConfig::GetPlayerLimits", {
 		// Seeded so "did not write" is distinguishable from "wrote a zero":
@@ -463,6 +428,33 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 	CS2ST_CALL(context, "ISource2ServerConfig::AllowSaveRestore", {
 		context.Detail("-> %s", config_->AllowSaveRestore() ? "true" : "false");
 	});
+
+	// Slots 23-27 of the deployed binary: five queries the SDK has no name
+	// for yet (they surfaced while correcting the vtable order against
+	// libserver.so, 2026-09). One reads a float from an engine config
+	// registry (a 3D skybox parameter, map-dependent), the rest are boolean.
+	// Called and recorded, never judged - there is no declaration to violate,
+	// and the day one of these flips after an update is a day worth a row
+	// for.
+	CS2ST_CALL(context, "ISource2ServerConfig::UnknownConfigQuery1", {
+		context.Detail("-> %s", config_->UnknownConfigQuery1() ? "true" : "false");
+	});
+	CS2ST_CALL(context, "ISource2ServerConfig::UnknownConfigQuery2", {
+		// The float getter. Recorded with enough precision to recognize the
+		// skybox scale in it - a map change moving this number is the
+		// cheapest confirmation of what the slot reads.
+		const float value = config_->UnknownConfigQuery2();
+		context.Detail("-> %.6f", static_cast<double>(value));
+	});
+	CS2ST_CALL(context, "ISource2ServerConfig::UnknownConfigQuery3", {
+		context.Detail("-> %s", config_->UnknownConfigQuery3() ? "true" : "false");
+	});
+	CS2ST_CALL(context, "ISource2ServerConfig::UnknownConfigQuery4", {
+		context.Detail("-> %s", config_->UnknownConfigQuery4() ? "true" : "false");
+	});
+	CS2ST_CALL(context, "ISource2ServerConfig::UnknownConfigQuery5", {
+		context.Detail("-> %s", config_->UnknownConfigQuery5() ? "true" : "false");
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -474,6 +466,11 @@ void ServerConfigSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2ServerConfig::OnClientFullyConnect",
 		"an engine-to-game callback; calling it would tell the game a client "
 		"finished connecting when none did");
+	context.SkipCall("ISource2ServerConfig::GetGameEventSystem",
+		"resolves and caches the game's event system through the engine "
+		"factory; the suite reaches IGameEventSystem through its own "
+		"QueryInterface instead, and this call would build a second copy of "
+		"state the engine already owns");
 }
 
 } // namespace cs2st

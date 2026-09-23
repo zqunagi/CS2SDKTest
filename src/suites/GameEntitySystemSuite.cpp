@@ -2081,10 +2081,12 @@ void GameEntitySystemSuite::InspectEntityClassLayout(TestContext& context)
 	inspect.Int32("m_nOutputCount", offsetof(CEntityClass, m_nOutputCount), 0, INT32_MAX);
 	inspect.Pointer("m_pSharedPulseSignature",
 		offsetof(CEntityClass, m_pSharedPulseSignature));
-	inspect.Pointer("m_unk101", offsetof(CEntityClass, m_unk101));
+	inspect.Pointer("m_pfnRegisterPulseBindings",
+		offsetof(CEntityClass, m_pfnRegisterPulseBindings));
 	inspect.Pointer("m_NameToThinkFunc", offsetof(CEntityClass, m_NameToThinkFunc));
 	inspect.Pointer("m_ThinkFuncToName", offsetof(CEntityClass, m_ThinkFuncToName));
-	inspect.Pointer("m_unk201", offsetof(CEntityClass, m_unk201));
+	inspect.Pointer("m_pfnEnumerateComponents",
+		offsetof(CEntityClass, m_pfnEnumerateComponents));
 	inspect.Pointer("m_pComponentOverrides", offsetof(CEntityClass, m_pComponentOverrides));
 	inspect.Pointer("m_pClassInfo", offsetof(CEntityClass, m_pClassInfo));
 	inspect.Pointer("m_pBaseClassInfo", offsetof(CEntityClass, m_pBaseClassInfo));
@@ -2104,6 +2106,7 @@ void GameEntitySystemSuite::InspectEntityClassLayout(TestContext& context)
 	inspect.Pointer("m_pNext", offsetof(CEntityClass, m_pNext));
 	inspect.Pointer("m_pFirstEntity", offsetof(CEntityClass, m_pFirstEntity));
 	inspect.Pointer("m_pServerClass", offsetof(CEntityClass, m_pServerClass));
+	inspect.Int32("m_nClassIndex", offsetof(CEntityClass, m_nClassIndex), 0, INT32_MAX);
 
 	inspect.Summarize();
 	inspect.HexDump();
@@ -2158,18 +2161,20 @@ void GameEntitySystemSuite::InspectEntityClassInfoLayout(TestContext& context)
 		return;
 	}
 
-	// Eight consecutive pointer-sized fields, three of them strings. The
-	// densest run of type-checkable fields anywhere in this suite.
+	// Two strings, a flags word, four pointers: the densest run of
+	// type-checkable fields anywhere in this suite. m_nFlags replaced two
+	// pointer placeholders upstream (m_pszDescription, m_pPredDescMap) - the
+	// struct shrank by two slots, which is exactly what a layout probe is
+	// here to notice.
 	StructInspector inspect(context, "CEntityClassInfo", info, sizeof(CEntityClassInfo));
 
 	inspect.String("m_pszClassname", offsetof(CEntityClassInfo, m_pszClassname));
 	inspect.String("m_pszCPPClassname", offsetof(CEntityClassInfo, m_pszCPPClassname));
-	inspect.String("m_pszDescription", offsetof(CEntityClassInfo, m_pszDescription));
+	inspect.UInt32("m_nFlags", offsetof(CEntityClassInfo, m_nFlags));
 	inspect.Pointer("m_pClass", offsetof(CEntityClassInfo, m_pClass));
 	inspect.Pointer("m_pBaseClassInfo", offsetof(CEntityClassInfo, m_pBaseClassInfo));
 	inspect.Pointer("m_pSchemaBinding", offsetof(CEntityClassInfo, m_pSchemaBinding));
 	inspect.Pointer("m_pDataDescMap", offsetof(CEntityClassInfo, m_pDataDescMap));
-	inspect.Pointer("m_pPredDescMap", offsetof(CEntityClassInfo, m_pPredDescMap));
 
 	inspect.Summarize();
 	inspect.HexDump();

@@ -623,10 +623,10 @@ void NetworkServerSuite::ExerciseGameServer(TestContext& context)
 		// Deliberately one engine call and nothing else. An earlier version of
 		// this row also read GetServerTick() and ISource2ServerConfig's
 		// GetTickInterval() inside the same guarded block, which made every
-		// crash in it unattributable - three suspects, one row. The formula
-		// cross-check moved to ServerConfigSuite, the suite that owns
-		// ISource2ServerConfig, so the interval it compares against gets
-		// verified where it is acquired rather than consumed blind.
+		// crash in it unattributable - three suspects, one row. GetTickInterval
+		// has since been removed from the interface by the deployed binary
+		// (ServerConfigSuite records the sv_tickrate convar it was replaced
+		// by), and no formula worth checking survives without it.
 		const float time = game_server_->GetTime();
 		context.Detail("-> %.4f", static_cast<double>(time));
 		if (!std::isfinite(time))

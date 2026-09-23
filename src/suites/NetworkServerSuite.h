@@ -25,7 +25,10 @@
  *   - GetGlobals() against IVEngineServer2::GetServerGlobals() - the same
  *     singleton, fetched down two vtables that share no code.
  *   - GetTime() against GetServerTick() * tick_interval, which is a formula the
- *     SDK writes out in a comment rather than one this suite invented.
+ *     SDK writes out in a comment rather than one this suite invented. (The
+ *     interval side came from ISource2ServerConfig::GetTickInterval until the
+ *     deployed binary removed that method; sv_tickrate is where the interval
+ *     lives now, see ServerConfigSuite.)
  *   - IEngineService::GetName() fed back to IEngineServiceMgr::FindService(),
  *     which has to return this very pointer.
  *

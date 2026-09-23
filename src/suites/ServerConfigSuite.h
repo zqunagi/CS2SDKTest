@@ -5,21 +5,20 @@
  * "Source2ServerConfig001" @ server.
  *
  * Small, cheap, and load-bearing in a way its size does not suggest:
- * GetTickInterval() is the tick interval the whole engine's clock arithmetic
- * hangs on (NetworkServerSuite's GetTime formula cross-check consumes it as a
- * tool), and AllowDedicatedServers() is what the Metamod loader consults when
- * it intercepts this very interface's Connect() - the single most plugin-
- * adjacent method on the surface.
+ * AllowDedicatedServers() is what the Metamod loader consults when it
+ * intercepts this very interface's Connect() - the single most plugin-
+ * adjacent method on the surface. GetTickInterval() used to be the other
+ * pillar, but the deployed binary no longer has it anywhere in the 18
+ * recovered slots: the subtick-era engine runs a fixed simulation rate and
+ * takes the interval from sv_tickrate / the session-config protobuf, so the
+ * suite records the convar instead.
  *
  * Two oracles are specific to this suite:
  *
- *   - GetTickInterval() has a type-level contract strong enough to judge:
- *     it is a simulation interval, so finite and strictly positive, and on
- *     the subsecond side (a tick rate below 1 Hz is not a thing the engine
- *     can run). A convar exists for the tick rate ("sv_tickrate" or the
- *     legacy "tickrate"), but its name is policy rather than declaration, so
- *     the cross-check is recorded rather than judged - listed as Suspect when
- *     the two disagree, never Fail.
+ *   - the tick-rate convar row is recorded rather than judged: which name a
+ *     deployment answers to ("sv_tickrate" or the legacy "tickrate") is
+ *     policy, not declaration, so it is never a Fail - the same reasoning as
+ *     GetHostName vs the hostname convar in NetworkServerSuite.
  *   - GetPlayerLimits() writes four out-parameters the SDK constrains only
  *     as "player limits". The type-level shape - every slot written, and
  *     written into [1, ABSOLUTE_PLAYER_LIMIT] where the value is a count -
@@ -51,7 +50,7 @@ public:
 	const char* Description() const override
 	{
 		return "The startup-questions interface the engine asks the game DLL: "
-		       "tick interval, player limits, dedicated-server permission";
+		       "player limits, dedicated-server permission, the tick-rate convar";
 	}
 
 	bool Acquire(TestContext& context) override;

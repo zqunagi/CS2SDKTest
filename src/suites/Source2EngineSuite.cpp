@@ -528,30 +528,35 @@ void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 	base.Int32 ("framecount",     offsetof(CGlobalVarsBase, framecount), 0, INT32_MAX);
 	base.Float ("absoluteframetime",
 	                                 offsetof(CGlobalVarsBase, absoluteframetime));
-	base.Float ("absoluteframestarttimestddev",
-	                                 offsetof(CGlobalVarsBase, absoluteframestarttimestddev));
+	base.Float ("absoluteframetime_unbounded",
+	                                 offsetof(CGlobalVarsBase, absoluteframetime_unbounded));
 	// A client count cannot be negative - that is the type talking, not the
 	// game. No upper bound here: server limits are a policy question, and
 	// encoding one would make this check stop being about layout.
 	base.Int32 ("maxClients",     offsetof(CGlobalVarsBase, maxClients), 0, INT32_MAX);
 
-	// The five m_unk fields are reverse-engineering placeholders: somebody knew
-	// how many bytes sat between two identified fields and filled the gap with
-	// ints. Reported, never judged - they have no type to be wrong about, and
-	// this is exactly the region where an inserted field would hide.
-	base.Int32 ("m_unk001",       offsetof(CGlobalVarsBase, m_unk001));
-	base.Int32 ("m_unk002",       offsetof(CGlobalVarsBase, m_unk002));
-	base.Int32 ("m_unk003",       offsetof(CGlobalVarsBase, m_unk003));
-	base.Int32 ("m_unk004",       offsetof(CGlobalVarsBase, m_unk004));
-	base.Int32 ("m_unk005",       offsetof(CGlobalVarsBase, m_unk005));
+	// The five placeholder-named fields (renamed upstream as their meanings
+	// were recovered) report the region between maxClients and
+	// m_pfnWarningFunc where an inserted field would hide. Reported, never
+	// judged - their types are still guesses upstream.
+	base.Int32 ("m_nCurrentTickThisFrame",
+	                                 offsetof(CGlobalVarsBase, m_nCurrentTickThisFrame));
+	base.Int32 ("m_nTotalTicksThisFrame",
+	                                 offsetof(CGlobalVarsBase, m_nTotalTicksThisFrame));
+	base.Float ("m_flUsercmdTickInterval",
+	                                 offsetof(CGlobalVarsBase, m_flUsercmdTickInterval));
+	base.Double("m_flUsercmdTickStartTime",
+	                                 offsetof(CGlobalVarsBase, m_flUsercmdTickStartTime));
 
 	base.Pointer("m_pfnWarningFunc",
 	                                 offsetof(CGlobalVarsBase, m_pfnWarningFunc));
 
 	base.Float ("curtime",        offsetof(CGlobalVarsBase, curtime));
 	base.Float ("frametime",      offsetof(CGlobalVarsBase, frametime));
-	base.Float ("m_unk101",       offsetof(CGlobalVarsBase, m_unk101));
-	base.Float ("m_unk102",       offsetof(CGlobalVarsBase, m_unk102));
+	base.Float ("interpolation_amount",
+	                                 offsetof(CGlobalVarsBase, interpolation_amount));
+	base.Float ("m_flUsercmdTickFraction",
+	                                 offsetof(CGlobalVarsBase, m_flUsercmdTickFraction));
 
 	base.Bool  ("m_bInSimulation",
 	                                 offsetof(CGlobalVarsBase, m_bInSimulation));
@@ -567,12 +572,14 @@ void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 	                                 kMayBeUninitialized);
 
 	base.Int32 ("tickcount",      offsetof(CGlobalVarsBase, tickcount), 0, INT32_MAX);
-	base.Int32 ("m_unk201",       offsetof(CGlobalVarsBase, m_unk201));
-	base.Int32 ("m_unk202",       offsetof(CGlobalVarsBase, m_unk202));
+	base.Int32 ("m_nClientTickCount",
+	                                 offsetof(CGlobalVarsBase, m_nClientTickCount));
+	base.Float ("m_flClientTime", offsetof(CGlobalVarsBase, m_flClientTime));
 
 	base.Float ("m_flSubtickFraction",
 	                                 offsetof(CGlobalVarsBase, m_flSubtickFraction));
-	base.Bool  ("m_unk301",       offsetof(CGlobalVarsBase, m_unk301));
+	base.Bool  ("m_bIsOncePerFrameAsyncWorkPhase",
+	                                 offsetof(CGlobalVarsBase, m_bIsOncePerFrameAsyncWorkPhase));
 	base.Raw   ("m_nThreadId",    offsetof(CGlobalVarsBase, m_nThreadId),
 	                                 sizeof(ThreadId_t));
 
