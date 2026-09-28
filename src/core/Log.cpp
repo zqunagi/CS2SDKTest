@@ -15,8 +15,8 @@
 	#include <Windows.h>
 #endif
 
-// g_SMAPI is defined once by PLUGIN_EXPOSE in Plugin.cpp; every other
-// translation unit only needs the declarations.
+// g_SMAPI (and the KHook global) are defined once by PLUGIN_EXPOSE in
+// Plugin.cpp; every other translation unit only needs the declarations.
 PLUGIN_GLOBALVARS();
 
 namespace cs2st

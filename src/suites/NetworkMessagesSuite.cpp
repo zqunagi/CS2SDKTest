@@ -45,6 +45,12 @@ const ProbeMessage kProbeMessages[] = {
 	                      "ships to clients"},
 	{"CMsgSource1LegacyGameEvent",
 	 "registered by the engine, declared in no .proto the SDK ships"},
+	// svc_EncryptedData = 78 is this SDK revision's addition to the SVC_Messages
+	// range. Resolving it by name pins the registry entry without touching its
+	// payload: the message carries encrypted bytes, so there is nothing to walk.
+	{"CSVCMsg_EncryptedData",
+	 "new in this SDK revision (svc_EncryptedData = 78); payload is opaque "
+	 "encrypted bytes"},
 };
 
 /** A name nothing will ever register; null is the only right answer. */
@@ -165,7 +171,17 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 				// each build registers is exactly what a diff across updates
 				// compares, so the value is in the row existing, not in a
 				// verdict attached to it.
-				context.Suspect("a message every prior build registered is absent");
+				if (std::strcmp(probe.name, "CSVCMsg_EncryptedData") == 0)
+				{
+					// Registered by name only for its presence row; this build
+					// not having it yet is the ordinary state of a new message.
+					context.Detail("not registered by this build (added by a newer "
+					               "SDK than the running engine, or scoped out)");
+				}
+				else
+				{
+					context.Suspect("a message every prior build registered is absent");
+				}
 			}
 			else if (std::strcmp(probe.name, "CNETMsg_Tick") == 0)
 			{

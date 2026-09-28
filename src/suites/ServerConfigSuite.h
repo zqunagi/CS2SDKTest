@@ -7,18 +7,18 @@
  * Small, cheap, and load-bearing in a way its size does not suggest:
  * AllowDedicatedServers() is what the Metamod loader consults when it
  * intercepts this very interface's Connect() - the single most plugin-
- * adjacent method on the surface. GetTickInterval() used to be the other
- * pillar, but the deployed binary no longer has it anywhere in the 18
- * recovered slots: the subtick-era engine runs a fixed simulation rate and
- * takes the interval from sv_tickrate / the session-config protobuf, so the
- * suite records the convar instead.
+ * adjacent method on the surface. GetTickInterval() is the other pillar:
+ * a finite positive subsecond float is a type-level contract, and the
+ * interval is cross-checked against the tick-rate convar below.
  *
  * Two oracles are specific to this suite:
  *
- *   - the tick-rate convar row is recorded rather than judged: which name a
+ *   - the tick-rate cross-check: two routes to one interval (the getter and
+ *     the convar the command line and the engine both know). Which name a
  *     deployment answers to ("sv_tickrate" or the legacy "tickrate") is
- *     policy, not declaration, so it is never a Fail - the same reasoning as
- *     GetHostName vs the hostname convar in NetworkServerSuite.
+ *     policy, not declaration, so a mismatch is Suspect and never Fail -
+ *     the same reasoning as GetHostName vs the hostname convar in
+ *     NetworkServerSuite.
  *   - GetPlayerLimits() writes four out-parameters the SDK constrains only
  *     as "player limits". The type-level shape - every slot written, and
  *     written into [1, ABSOLUTE_PLAYER_LIMIT] where the value is a count -
@@ -50,7 +50,7 @@ public:
 	const char* Description() const override
 	{
 		return "The startup-questions interface the engine asks the game DLL: "
-		       "player limits, dedicated-server permission, the tick-rate convar";
+		       "player limits, dedicated-server permission, the tick interval";
 	}
 
 	bool Acquire(TestContext& context) override;

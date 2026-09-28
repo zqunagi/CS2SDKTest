@@ -2541,7 +2541,8 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 			| SCHEMA_CF1_INFO_TAG_MDisableDataDescValidation
 			| SCHEMA_CF1_INFO_TAG_MClassHasEntityLimitedDataDesc
 			| SCHEMA_CF1_INFO_TAG_MClassHasCustomAlignedNewDelete
-			| SCHEMA_CF1_UNK016 | SCHEMA_CF1_INFO_TAG_MConstructibleClassBase
+			| SCHEMA_CF1_INFO_TAG_MNonConstructibleClassBase
+			| SCHEMA_CF1_INFO_TAG_MConstructibleClassBase
 			| SCHEMA_CF1_INFO_TAG_MHasKV3TransferPolymorphicClassname;
 
 		context.Detail("-> 0x%08x (unknown bits 0x%08x)",
@@ -2587,8 +2588,9 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 		"construct or destruct in place - mutates something; the pointer is "
 		"checked, never invoked");
 	context.SkipCall("SchemaClassInfoData_t::m_pDataDescMap (walk)",
-		"datamap_t is only forward-declared on this branch, so there is no "
-		"layout to read the far side of that pointer with");
+		"datamap_t is now fully defined on this branch, but walking it safely "
+		"means trusting m_pDataDescForCompare and its dataDesc count from a "
+		"third-party binary; the pointer itself is checked above");
 	context.SkipCall("SchemaStaticFieldData_t",
 		"SchemaClassInfoData_t exposes no static-field array to reach one "
 		"through; the struct is declared but unreachable from here");
@@ -3124,12 +3126,15 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 			context.Fail("the enum claims both global and module-local type scope");
 		}
 		// Cast is explicit because | promotes the enumerators to int; the
-		// value is 7, but relying on an implicit narrowing here would be one
+		// value is 0x3f, but relying on an implicit narrowing here would be one
 		// more thing for a future -Wconversion build to trip over.
 		const std::uint8_t known_flags = static_cast<std::uint8_t>(
 			SCHEMA_EF_IS_REGISTERED
 			| SCHEMA_EF_MODULE_LOCAL_TYPE_SCOPE
-			| SCHEMA_EF_GLOBAL_TYPE_SCOPE);
+			| SCHEMA_EF_GLOBAL_TYPE_SCOPE
+			| SCHEMA_EF_UNK003
+			| SCHEMA_EF_UNK004
+			| SCHEMA_EF_UNK005);
 		// Masked back down to 8 bits: ~ promotes to int, so without the cast
 		// the complement would carry 24 set bits that are not part of the field.
 		const std::uint8_t unknown_flags =

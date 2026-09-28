@@ -56,7 +56,7 @@ public:
 	virtual void ExerciseCalls(TestContext& context) = 0;
 
 	/**
-	 * Installs SourceHook hooks. Returns how many were installed.
+	 * Installs KHook hooks. Returns how many were installed.
 	 * Default is none, so a suite that only does calls implements nothing.
 	 */
 	virtual int InstallHooks(TestContext& context)

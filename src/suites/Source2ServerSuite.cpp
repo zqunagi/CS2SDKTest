@@ -3,10 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <ISmmPlugin.h>
 #include <appframework/IAppSystem.h>
 #include <eiface.h>
-#include <sourcehook.h>
 #include <tier1/utlstring.h>
 #include <tier1/utlvector.h>
 
@@ -14,24 +12,9 @@
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
 
-// SH_ADD_HOOK expands to code that reaches g_SHPtr and g_PLID; these are the
-// declarations for them. They are defined once by PLUGIN_EXPOSE in Plugin.cpp.
-PLUGIN_GLOBALVARS();
-
-// Hook declarations. The third argument is the method's cv-qualifier list, so
-// SH_NOATTRIB is "no qualifiers" and a const method would put `const` there.
-// The fourth is the overload index; none of these are overloaded.
-SH_DECL_HOOK3_void(ISource2Server, GameFrame, SH_NOATTRIB, 0, bool, bool, bool);
-SH_DECL_HOOK1_void(ISource2Server, PreWorldUpdate, SH_NOATTRIB, 0, bool);
-SH_DECL_HOOK1_void(ISource2Server, UpdateWhenNotInGame, SH_NOATTRIB, 0, float);
-SH_DECL_HOOK1_void(ISource2Server, ServerHibernationUpdate, SH_NOATTRIB, 0, bool);
-SH_DECL_HOOK0_void(ISource2Server, GameServerSteamAPIActivated, SH_NOATTRIB, 0);
-SH_DECL_HOOK0_void(ISource2Server, GameServerSteamAPIDeactivated, SH_NOATTRIB, 0);
-SH_DECL_HOOK1_void(ISource2Server, ApplyGameSettings, SH_NOATTRIB, 0, KeyValues*);
-SH_DECL_HOOK2_void(ISource2Server, ServerConVarChanged, SH_NOATTRIB, 0, const char*, const char*);
-SH_DECL_HOOK1_void(ISource2Server, OnHostNameChanged, SH_NOATTRIB, 0, const char*);
-SH_DECL_HOOK2(ISource2Server, ShouldTimeoutClient, SH_NOATTRIB, 0, bool, int, float);
-SH_DECL_HOOK1(ISource2Server, ShouldHideFromMasterServer, SH_NOATTRIB, 0, bool, bool);
+// The SH_DECL_HOOK block used to live here; under KHook the hook templates are
+// declared as members in the header instead, bound to the SDK member pointers
+// in the constructor at the bottom of this file.
 
 namespace cs2st
 {
@@ -431,27 +414,19 @@ int Source2ServerSuite::InstallHooks(TestContext& context)
 	recorder.Declare(kHookShouldTimeout, Id());
 	recorder.Declare(kHookShouldHide, Id());
 
-	// Each one twice: pre (false) records the entry, post (true) records the
-	// return. See the header for why both.
-#define CS2ST_ADD_PAIR(method) \
-	SH_ADD_HOOK(ISource2Server, method, server_, \
-		SH_MEMBER(this, &Source2ServerSuite::Pre_##method), false); \
-	SH_ADD_HOOK(ISource2Server, method, server_, \
-		SH_MEMBER(this, &Source2ServerSuite::Post_##method), true)
-
-	CS2ST_ADD_PAIR(GameFrame);
-	CS2ST_ADD_PAIR(PreWorldUpdate);
-	CS2ST_ADD_PAIR(UpdateWhenNotInGame);
-	CS2ST_ADD_PAIR(ServerHibernationUpdate);
-	CS2ST_ADD_PAIR(GameServerSteamAPIActivated);
-	CS2ST_ADD_PAIR(GameServerSteamAPIDeactivated);
-	CS2ST_ADD_PAIR(ApplyGameSettings);
-	CS2ST_ADD_PAIR(ServerConVarChanged);
-	CS2ST_ADD_PAIR(OnHostNameChanged);
-	CS2ST_ADD_PAIR(ShouldTimeoutClient);
-	CS2ST_ADD_PAIR(ShouldHideFromMasterServer);
-
-#undef CS2ST_ADD_PAIR
+	// Each hook object carries its pre and post handler from the constructor;
+	// Add installs the detour on the server instance, Remove takes it off.
+	hook_GameFrame_.Add(server_);
+	hook_PreWorldUpdate_.Add(server_);
+	hook_UpdateWhenNotInGame_.Add(server_);
+	hook_ServerHibernationUpdate_.Add(server_);
+	hook_GameServerSteamAPIActivated_.Add(server_);
+	hook_GameServerSteamAPIDeactivated_.Add(server_);
+	hook_ApplyGameSettings_.Add(server_);
+	hook_ServerConVarChanged_.Add(server_);
+	hook_OnHostNameChanged_.Add(server_);
+	hook_ShouldTimeoutClient_.Add(server_);
+	hook_ShouldHideFromMasterServer_.Add(server_);
 
 	hooks_installed_ = true;
 	(void)context;
@@ -465,25 +440,17 @@ void Source2ServerSuite::RemoveHooks(TestContext& context)
 		return;
 	}
 
-#define CS2ST_REMOVE_PAIR(method) \
-	SH_REMOVE_HOOK(ISource2Server, method, server_, \
-		SH_MEMBER(this, &Source2ServerSuite::Pre_##method), false); \
-	SH_REMOVE_HOOK(ISource2Server, method, server_, \
-		SH_MEMBER(this, &Source2ServerSuite::Post_##method), true)
-
-	CS2ST_REMOVE_PAIR(GameFrame);
-	CS2ST_REMOVE_PAIR(PreWorldUpdate);
-	CS2ST_REMOVE_PAIR(UpdateWhenNotInGame);
-	CS2ST_REMOVE_PAIR(ServerHibernationUpdate);
-	CS2ST_REMOVE_PAIR(GameServerSteamAPIActivated);
-	CS2ST_REMOVE_PAIR(GameServerSteamAPIDeactivated);
-	CS2ST_REMOVE_PAIR(ApplyGameSettings);
-	CS2ST_REMOVE_PAIR(ServerConVarChanged);
-	CS2ST_REMOVE_PAIR(OnHostNameChanged);
-	CS2ST_REMOVE_PAIR(ShouldTimeoutClient);
-	CS2ST_REMOVE_PAIR(ShouldHideFromMasterServer);
-
-#undef CS2ST_REMOVE_PAIR
+	hook_GameFrame_.Remove(server_);
+	hook_PreWorldUpdate_.Remove(server_);
+	hook_UpdateWhenNotInGame_.Remove(server_);
+	hook_ServerHibernationUpdate_.Remove(server_);
+	hook_GameServerSteamAPIActivated_.Remove(server_);
+	hook_GameServerSteamAPIDeactivated_.Remove(server_);
+	hook_ApplyGameSettings_.Remove(server_);
+	hook_ServerConVarChanged_.Remove(server_);
+	hook_OnHostNameChanged_.Remove(server_);
+	hook_ShouldTimeoutClient_.Remove(server_);
+	hook_ShouldHideFromMasterServer_.Remove(server_);
 
 	hooks_installed_ = false;
 	(void)context;
@@ -495,100 +462,99 @@ void Source2ServerSuite::RemoveHooks(TestContext& context)
 //  These run inside the server's own frame - GameFrame at the tick rate - so
 //  they do the minimum: bump a counter, and format arguments only until the
 //  sample quota is full (HookRecorder stops before formatting once it is).
-//  Every one ends in RETURN_META / RETURN_META_VALUE, which is how SourceHook
-//  hands control back.
+//  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED.
 // -----------------------------------------------------------------------------
 
-void Source2ServerSuite::Pre_GameFrame(bool simulating, bool first_tick, bool last_tick)
+KHook::Return<void> Source2ServerSuite::Pre_GameFrame(ISource2Server*, bool simulating, bool first_tick, bool last_tick)
 {
 	CS2ST_HOOK_ENTER_ARGS(kHookGameFrame, "simulating=%d first=%d last=%d",
 		simulating ? 1 : 0, first_tick ? 1 : 0, last_tick ? 1 : 0);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_GameFrame(bool, bool, bool)
+KHook::Return<void> Source2ServerSuite::Post_GameFrame(ISource2Server*, bool, bool, bool)
 {
 	CS2ST_HOOK_LEAVE(kHookGameFrame);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_PreWorldUpdate(bool simulating)
+KHook::Return<void> Source2ServerSuite::Pre_PreWorldUpdate(ISource2Server*, bool simulating)
 {
 	CS2ST_HOOK_ENTER_ARGS(kHookPreWorldUpdate, "simulating=%d", simulating ? 1 : 0);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_PreWorldUpdate(bool)
+KHook::Return<void> Source2ServerSuite::Post_PreWorldUpdate(ISource2Server*, bool)
 {
 	CS2ST_HOOK_LEAVE(kHookPreWorldUpdate);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_UpdateWhenNotInGame(float frame_time)
+KHook::Return<void> Source2ServerSuite::Pre_UpdateWhenNotInGame(ISource2Server*, float frame_time)
 {
 	CS2ST_HOOK_ENTER_ARGS(kHookUpdateNotInGame, "frametime=%.4f",
 		static_cast<double>(frame_time));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_UpdateWhenNotInGame(float)
+KHook::Return<void> Source2ServerSuite::Post_UpdateWhenNotInGame(ISource2Server*, float)
 {
 	CS2ST_HOOK_LEAVE(kHookUpdateNotInGame);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_ServerHibernationUpdate(bool hibernating)
+KHook::Return<void> Source2ServerSuite::Pre_ServerHibernationUpdate(ISource2Server*, bool hibernating)
 {
 	CS2ST_HOOK_ENTER_ARGS(kHookHibernation, "hibernating=%d", hibernating ? 1 : 0);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_ServerHibernationUpdate(bool)
+KHook::Return<void> Source2ServerSuite::Post_ServerHibernationUpdate(ISource2Server*, bool)
 {
 	CS2ST_HOOK_LEAVE(kHookHibernation);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_GameServerSteamAPIActivated()
+KHook::Return<void> Source2ServerSuite::Pre_GameServerSteamAPIActivated(ISource2Server*)
 {
 	CS2ST_HOOK_ENTER(kHookSteamActivated);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_GameServerSteamAPIActivated()
+KHook::Return<void> Source2ServerSuite::Post_GameServerSteamAPIActivated(ISource2Server*)
 {
 	CS2ST_HOOK_LEAVE(kHookSteamActivated);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_GameServerSteamAPIDeactivated()
+KHook::Return<void> Source2ServerSuite::Pre_GameServerSteamAPIDeactivated(ISource2Server*)
 {
 	CS2ST_HOOK_ENTER(kHookSteamDeactivated);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_GameServerSteamAPIDeactivated()
+KHook::Return<void> Source2ServerSuite::Post_GameServerSteamAPIDeactivated(ISource2Server*)
 {
 	CS2ST_HOOK_LEAVE(kHookSteamDeactivated);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_ApplyGameSettings(KeyValues* settings)
+KHook::Return<void> Source2ServerSuite::Pre_ApplyGameSettings(ISource2Server*, KeyValues* settings)
 {
 	// Only the pointer value - walking into a KeyValues tree from a hook is
 	// exactly the kind of thing that turns a diagnostic into an outage.
 	CS2ST_HOOK_ENTER_ARGS(kHookApplyGameSettings, "kv=%p",
 		static_cast<void*>(settings));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_ApplyGameSettings(KeyValues*)
+KHook::Return<void> Source2ServerSuite::Post_ApplyGameSettings(ISource2Server*, KeyValues*)
 {
 	CS2ST_HOOK_LEAVE(kHookApplyGameSettings);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_ServerConVarChanged(const char* name, const char* value)
+KHook::Return<void> Source2ServerSuite::Pre_ServerConVarChanged(ISource2Server*, const char* name, const char* value)
 {
 	// Both arguments are vetted before anything dereferences them, and the
 	// lengths are capped so a missing terminator cannot walk off a page.
@@ -597,55 +563,101 @@ void Source2ServerSuite::Pre_ServerConVarChanged(const char* name, const char* v
 	CS2ST_HOOK_ENTER_ARGS(kHookConVarChanged, "%.63s = \"%.63s\"",
 		SafeStringArg(name, name_scratch),
 		SafeStringArg(value, value_scratch));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_ServerConVarChanged(const char*, const char*)
+KHook::Return<void> Source2ServerSuite::Post_ServerConVarChanged(ISource2Server*, const char*, const char*)
 {
 	CS2ST_HOOK_LEAVE(kHookConVarChanged);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Pre_OnHostNameChanged(const char* hostname)
+KHook::Return<void> Source2ServerSuite::Pre_OnHostNameChanged(ISource2Server*, const char* hostname)
 {
 	char scratch[32];
 	CS2ST_HOOK_ENTER_ARGS(kHookHostNameChanged, "hostname=\"%.63s\"",
 		SafeStringArg(hostname, scratch));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2ServerSuite::Post_OnHostNameChanged(const char*)
+KHook::Return<void> Source2ServerSuite::Post_OnHostNameChanged(ISource2Server*, const char*)
 {
 	CS2ST_HOOK_LEAVE(kHookHostNameChanged);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-bool Source2ServerSuite::Pre_ShouldTimeoutClient(int user_id, float time_since_last_received)
+KHook::Return<bool> Source2ServerSuite::Pre_ShouldTimeoutClient(ISource2Server*, int user_id, float time_since_last_received)
 {
 	CS2ST_HOOK_ENTER_ARGS(kHookShouldTimeout, "userID=%d since=%.2f",
 		user_id, static_cast<double>(time_since_last_received));
-	// MRES_IGNORED means the value here is discarded and the game's own result
-	// stands - which is what makes this observation rather than interference.
-	RETURN_META_VALUE(MRES_IGNORED, false);
+	// Action::Ignore means the `ret` field here is discarded and the game's own
+	// result stands - which is what makes this observation rather than
+	// interference.
+	return { KHook::Action::Ignore, false };
 }
 
-bool Source2ServerSuite::Post_ShouldTimeoutClient(int, float)
+KHook::Return<bool> Source2ServerSuite::Post_ShouldTimeoutClient(ISource2Server*, int, float)
 {
 	CS2ST_HOOK_LEAVE(kHookShouldTimeout);
-	RETURN_META_VALUE(MRES_IGNORED, false);
+	return { KHook::Action::Ignore, false };
 }
 
-bool Source2ServerSuite::Pre_ShouldHideFromMasterServer(bool server_has_password)
+KHook::Return<bool> Source2ServerSuite::Pre_ShouldHideFromMasterServer(ISource2Server*, bool server_has_password)
 {
 	CS2ST_HOOK_ENTER_ARGS(kHookShouldHide, "hasPassword=%d",
 		server_has_password ? 1 : 0);
-	RETURN_META_VALUE(MRES_IGNORED, false);
+	return { KHook::Action::Ignore, false };
 }
 
-bool Source2ServerSuite::Post_ShouldHideFromMasterServer(bool)
+KHook::Return<bool> Source2ServerSuite::Post_ShouldHideFromMasterServer(ISource2Server*, bool)
 {
 	CS2ST_HOOK_LEAVE(kHookShouldHide);
-	RETURN_META_VALUE(MRES_IGNORED, false);
+	return { KHook::Action::Ignore, false };
+}
+
+// -----------------------------------------------------------------------------
+//  Hook binding
+//
+//  The KHook::Virtual constructor resolves the vtable slot from the member
+//  pointer, so this list is the plugin's ABI contract with the SDK: the day a
+//  hook stops firing after an update, these lines are what to re-check first.
+// -----------------------------------------------------------------------------
+
+Source2ServerSuite::Source2ServerSuite() :
+	hook_GameFrame_(&ISource2Server::GameFrame, this,
+		&Source2ServerSuite::Pre_GameFrame,
+		&Source2ServerSuite::Post_GameFrame),
+	hook_PreWorldUpdate_(&ISource2Server::PreWorldUpdate, this,
+		&Source2ServerSuite::Pre_PreWorldUpdate,
+		&Source2ServerSuite::Post_PreWorldUpdate),
+	hook_UpdateWhenNotInGame_(&ISource2Server::UpdateWhenNotInGame, this,
+		&Source2ServerSuite::Pre_UpdateWhenNotInGame,
+		&Source2ServerSuite::Post_UpdateWhenNotInGame),
+	hook_ServerHibernationUpdate_(&ISource2Server::ServerHibernationUpdate, this,
+		&Source2ServerSuite::Pre_ServerHibernationUpdate,
+		&Source2ServerSuite::Post_ServerHibernationUpdate),
+	hook_GameServerSteamAPIActivated_(&ISource2Server::GameServerSteamAPIActivated, this,
+		&Source2ServerSuite::Pre_GameServerSteamAPIActivated,
+		&Source2ServerSuite::Post_GameServerSteamAPIActivated),
+	hook_GameServerSteamAPIDeactivated_(&ISource2Server::GameServerSteamAPIDeactivated, this,
+		&Source2ServerSuite::Pre_GameServerSteamAPIDeactivated,
+		&Source2ServerSuite::Post_GameServerSteamAPIDeactivated),
+	hook_ApplyGameSettings_(&ISource2Server::ApplyGameSettings, this,
+		&Source2ServerSuite::Pre_ApplyGameSettings,
+		&Source2ServerSuite::Post_ApplyGameSettings),
+	hook_ServerConVarChanged_(&ISource2Server::ServerConVarChanged, this,
+		&Source2ServerSuite::Pre_ServerConVarChanged,
+		&Source2ServerSuite::Post_ServerConVarChanged),
+	hook_OnHostNameChanged_(&ISource2Server::OnHostNameChanged, this,
+		&Source2ServerSuite::Pre_OnHostNameChanged,
+		&Source2ServerSuite::Post_OnHostNameChanged),
+	hook_ShouldTimeoutClient_(&ISource2Server::ShouldTimeoutClient, this,
+		&Source2ServerSuite::Pre_ShouldTimeoutClient,
+		&Source2ServerSuite::Post_ShouldTimeoutClient),
+	hook_ShouldHideFromMasterServer_(&ISource2Server::ShouldHideFromMasterServer, this,
+		&Source2ServerSuite::Pre_ShouldHideFromMasterServer,
+		&Source2ServerSuite::Post_ShouldHideFromMasterServer)
+{
 }
 
 } // namespace cs2st

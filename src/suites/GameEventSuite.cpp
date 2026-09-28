@@ -6,50 +6,23 @@
 #include <cstring>
 #include <string>
 
-#include <ISmmPlugin.h>
 #include <appframework/IAppSystem.h>
 #include <const.h>
 #include <igameevents.h>
 #include <networksystem/inetworkmessages.h>
-#include <sourcehook.h>
 
 #include "core/Log.h"
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
 #include "testkit/StructInspector.h"
 
-// SH_ADD_HOOK expands to code that reaches g_SHPtr and g_PLID; these are the
-// declarations for them. They are defined once by PLUGIN_EXPOSE in Plugin.cpp.
-PLUGIN_GLOBALVARS();
-
-// Hook declarations, copied from public/engine/igameeventsystem.h. The third
-// argument is the method's cv-qualifier list (SH_NOATTRIB = none); the fourth
-// is the overload index.
-//
-// PostEventAbstract is the only place in this plugin where that fourth argument
-// earns its keep: the two overloads are separate vtable slots and both are
-// worth watching. SH_DECL_HOOK names its per-hook struct after the index, and
-// emits the add/remove helpers as C++ overloads keyed on the delegate type -
-// which differs between eight arguments and six - so the pair coexists.
-SH_DECL_HOOK1_void(IGameEventSystem, RegisterGameEvent, SH_NOATTRIB, 0,
-	INetworkMessageInternal*);
-SH_DECL_HOOK4_void(IGameEventSystem, RegisterGameEventHandlerAbstract, SH_NOATTRIB, 0,
-	CUtlSlot*, const CUtlAbstractDelegate&, INetworkMessageInternal*, int);
-SH_DECL_HOOK3_void(IGameEventSystem, UnregisterGameEventHandlerAbstract, SH_NOATTRIB, 0,
-	CUtlSlot*, const CUtlAbstractDelegate&, INetworkMessageInternal*);
-SH_DECL_HOOK4_void(IGameEventSystem, PostEventAbstract_Local, SH_NOATTRIB, 0,
-	CSplitScreenSlot, INetworkMessageInternal*, const CNetMessage*, unsigned long);
-SH_DECL_HOOK8_void(IGameEventSystem, PostEventAbstract, SH_NOATTRIB, 0,
-	CSplitScreenSlot, bool, int, const uint64*, INetworkMessageInternal*,
-	const CNetMessage*, unsigned long, NetChannelBufType_t);
-SH_DECL_HOOK6_void(IGameEventSystem, PostEventAbstract, SH_NOATTRIB, 1,
-	CSplitScreenSlot, bool, IRecipientFilter*, INetworkMessageInternal*,
-	const CNetMessage*, unsigned long);
-SH_DECL_HOOK5_void(IGameEventSystem, PostEntityEventAbstract, SH_NOATTRIB, 0,
-	const CBaseHandle&, INetworkMessageInternal*, const CNetMessage*, unsigned long,
-	NetChannelBufType_t);
-SH_DECL_HOOK0_void(IGameEventSystem, ProcessQueuedEvents, SH_NOATTRIB, 0);
-SH_DECL_HOOK0_void(IGameEventSystem, PurgeQueuedEvents, SH_NOATTRIB, 0);
+// The SH_DECL_HOOK block used to live here; under KHook the hook templates are
+// declared as members in the header instead, bound to the SDK member pointers
+// in the constructor at the bottom of this file. PostEventAbstract is the one
+// place that needs care: the two overloads are separate vtable slots, and the
+// constructor disambiguates their member pointers with a static_cast each -
+// which is also why the overload index that SH_DECL_HOOK used to carry is gone;
+// the cast names the overload now.
 
 namespace cs2st
 {
@@ -1012,33 +985,17 @@ int GameEventSuite::InstallHooks(TestContext& context)
 	recorder.Declare(kProcessQueuedEvents, Id());
 	recorder.Declare(kPurgeQueuedEvents, Id());
 
-	// Each one twice: pre (false) records the entry and the arguments, post
-	// (true) records that the original came back. Unequal counts mean something
-	// swallowed the call, which is a different failure from "the engine stopped
-	// calling" and only the pair can tell them apart.
-#define CS2ST_ADD_PAIR(method) \
-	SH_ADD_HOOK(IGameEventSystem, method, event_system_, \
-		SH_MEMBER(this, &GameEventSuite::Pre_##method), false); \
-	SH_ADD_HOOK(IGameEventSystem, method, event_system_, \
-		SH_MEMBER(this, &GameEventSuite::Post_##method), true)
-
-	CS2ST_ADD_PAIR(RegisterGameEvent);
-	CS2ST_ADD_PAIR(RegisterGameEventHandlerAbstract);
-	CS2ST_ADD_PAIR(UnregisterGameEventHandlerAbstract);
-	CS2ST_ADD_PAIR(PostEventAbstract_Local);
-	CS2ST_ADD_PAIR(PostEventAbstract);
-	CS2ST_ADD_PAIR(PostEntityEventAbstract);
-	CS2ST_ADD_PAIR(ProcessQueuedEvents);
-	CS2ST_ADD_PAIR(PurgeQueuedEvents);
-
-#undef CS2ST_ADD_PAIR
-
-	// The IRecipientFilter overload shares its SDK name with the one above, so
-	// the pair macro cannot spell its handlers; written out instead.
-	SH_ADD_HOOK(IGameEventSystem, PostEventAbstract, event_system_,
-		SH_MEMBER(this, &GameEventSuite::Pre_PostEventAbstractFiltered), false);
-	SH_ADD_HOOK(IGameEventSystem, PostEventAbstract, event_system_,
-		SH_MEMBER(this, &GameEventSuite::Post_PostEventAbstractFiltered), true);
+	// Each hook object carries its pre and post handler from the constructor;
+	// Add installs the detour on the event system, Remove takes it off.
+	hook_RegisterGameEvent_.Add(event_system_);
+	hook_RegisterGameEventHandlerAbstract_.Add(event_system_);
+	hook_UnregisterGameEventHandlerAbstract_.Add(event_system_);
+	hook_PostEventAbstract_Local_.Add(event_system_);
+	hook_PostEventAbstract_.Add(event_system_);
+	hook_PostEventAbstractFiltered_.Add(event_system_);
+	hook_PostEntityEventAbstract_.Add(event_system_);
+	hook_ProcessQueuedEvents_.Add(event_system_);
+	hook_PurgeQueuedEvents_.Add(event_system_);
 
 	hooks_installed_ = true;
 
@@ -1056,27 +1013,15 @@ void GameEventSuite::RemoveHooks(TestContext& context)
 		return;
 	}
 
-#define CS2ST_REMOVE_PAIR(method) \
-	SH_REMOVE_HOOK(IGameEventSystem, method, event_system_, \
-		SH_MEMBER(this, &GameEventSuite::Pre_##method), false); \
-	SH_REMOVE_HOOK(IGameEventSystem, method, event_system_, \
-		SH_MEMBER(this, &GameEventSuite::Post_##method), true)
-
-	CS2ST_REMOVE_PAIR(RegisterGameEvent);
-	CS2ST_REMOVE_PAIR(RegisterGameEventHandlerAbstract);
-	CS2ST_REMOVE_PAIR(UnregisterGameEventHandlerAbstract);
-	CS2ST_REMOVE_PAIR(PostEventAbstract_Local);
-	CS2ST_REMOVE_PAIR(PostEventAbstract);
-	CS2ST_REMOVE_PAIR(PostEntityEventAbstract);
-	CS2ST_REMOVE_PAIR(ProcessQueuedEvents);
-	CS2ST_REMOVE_PAIR(PurgeQueuedEvents);
-
-#undef CS2ST_REMOVE_PAIR
-
-	SH_REMOVE_HOOK(IGameEventSystem, PostEventAbstract, event_system_,
-		SH_MEMBER(this, &GameEventSuite::Pre_PostEventAbstractFiltered), false);
-	SH_REMOVE_HOOK(IGameEventSystem, PostEventAbstract, event_system_,
-		SH_MEMBER(this, &GameEventSuite::Post_PostEventAbstractFiltered), true);
+	hook_RegisterGameEvent_.Remove(event_system_);
+	hook_RegisterGameEventHandlerAbstract_.Remove(event_system_);
+	hook_UnregisterGameEventHandlerAbstract_.Remove(event_system_);
+	hook_PostEventAbstract_Local_.Remove(event_system_);
+	hook_PostEventAbstract_.Remove(event_system_);
+	hook_PostEventAbstractFiltered_.Remove(event_system_);
+	hook_PostEntityEventAbstract_.Remove(event_system_);
+	hook_ProcessQueuedEvents_.Remove(event_system_);
+	hook_PurgeQueuedEvents_.Remove(event_system_);
 
 	hooks_installed_ = false;
 	(void)context;
@@ -1091,7 +1036,7 @@ void GameEventSuite::RemoveHooks(TestContext& context)
 //  no structure is walked. Naming a message is deliberately deferred to the
 //  next call sweep, which does have a guard around it.
 //
-//  Every one ends in RETURN_META, which is how SourceHook hands control back.
+//  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED.
 // -----------------------------------------------------------------------------
 
 void GameEventSuite::NoteObservedMessage(INetworkMessageInternal* message)
@@ -1118,7 +1063,7 @@ void GameEventSuite::NoteObservedMessage(INetworkMessageInternal* message)
 	observed_messages_[observed_message_count_++] = message;
 }
 
-void GameEventSuite::Pre_RegisterGameEvent(INetworkMessageInternal* pEvent)
+KHook::Return<void> GameEventSuite::Pre_RegisterGameEvent(IGameEventSystem*, INetworkMessageInternal* pEvent)
 {
 	// Fires while the engine builds its event registry, which on a server this
 	// plugin loads late into has usually already happened. A count of zero here
@@ -1126,19 +1071,19 @@ void GameEventSuite::Pre_RegisterGameEvent(INetworkMessageInternal* pEvent)
 	// load, which is worth knowing on its own.
 	NoteObservedMessage(pEvent);
 	CS2ST_HOOK_ENTER_ARGS(kRegisterGameEvent, "event=%p", static_cast<void*>(pEvent));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_RegisterGameEvent(INetworkMessageInternal*)
+KHook::Return<void> GameEventSuite::Post_RegisterGameEvent(IGameEventSystem*, INetworkMessageInternal*)
 {
 	CS2ST_HOOK_LEAVE(kRegisterGameEvent);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_RegisterGameEventHandlerAbstract(CUtlSlot* nSlot,
-                                                          const CUtlAbstractDelegate& delegate,
-                                                          INetworkMessageInternal* pEvent,
-                                                          int nPriority)
+KHook::Return<void> GameEventSuite::Pre_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
+                                                                         const CUtlAbstractDelegate& delegate,
+                                                                         INetworkMessageInternal* pEvent,
+                                                                         int nPriority)
 {
 	// The delegate is passed by reference and its members are private, so only
 	// its address is recorded. CUtlSlot has no class body in the SDK at all,
@@ -1148,40 +1093,40 @@ void GameEventSuite::Pre_RegisterGameEventHandlerAbstract(CUtlSlot* nSlot,
 		"slot=%p deleg=%p event=%p prio=%d",
 		static_cast<void*>(nSlot), static_cast<const void*>(&delegate),
 		static_cast<void*>(pEvent), nPriority);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_RegisterGameEventHandlerAbstract(CUtlSlot*,
-                                                           const CUtlAbstractDelegate&,
-                                                           INetworkMessageInternal*, int)
+KHook::Return<void> GameEventSuite::Post_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot*,
+                                                                          const CUtlAbstractDelegate&,
+                                                                          INetworkMessageInternal*, int)
 {
 	CS2ST_HOOK_LEAVE(kRegisterGameEventHandlerAbstract);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_UnregisterGameEventHandlerAbstract(CUtlSlot* nSlot,
-                                                            const CUtlAbstractDelegate& delegate,
-                                                            INetworkMessageInternal* pEvent)
+KHook::Return<void> GameEventSuite::Pre_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
+                                                                           const CUtlAbstractDelegate& delegate,
+                                                                           INetworkMessageInternal* pEvent)
 {
 	NoteObservedMessage(pEvent);
 	CS2ST_HOOK_ENTER_ARGS(kUnregisterGameEventHandlerAbstract,
 		"slot=%p deleg=%p event=%p",
 		static_cast<void*>(nSlot), static_cast<const void*>(&delegate),
 		static_cast<void*>(pEvent));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_UnregisterGameEventHandlerAbstract(CUtlSlot*,
-                                                             const CUtlAbstractDelegate&,
-                                                             INetworkMessageInternal*)
+KHook::Return<void> GameEventSuite::Post_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot*,
+                                                                            const CUtlAbstractDelegate&,
+                                                                            INetworkMessageInternal*)
 {
 	CS2ST_HOOK_LEAVE(kUnregisterGameEventHandlerAbstract);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_PostEventAbstract_Local(CSplitScreenSlot nSlot,
-                                                 INetworkMessageInternal* pEvent,
-                                                 const CNetMessage* pData, unsigned long nSize)
+KHook::Return<void> GameEventSuite::Pre_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot,
+                                                                INetworkMessageInternal* pEvent,
+                                                                const CNetMessage* pData, unsigned long nSize)
 {
 	NoteObservedMessage(pEvent);
 
@@ -1190,21 +1135,21 @@ void GameEventSuite::Pre_PostEventAbstract_Local(CSplitScreenSlot nSlot,
 
 	CS2ST_HOOK_ENTER_ARGS(kPostEventAbstractLocal, "slot=%d event=%p %s size=%lu",
 		nSlot.Get(), static_cast<void*>(pEvent), payload, nSize);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_PostEventAbstract_Local(CSplitScreenSlot, INetworkMessageInternal*,
-                                                  const CNetMessage*, unsigned long)
+KHook::Return<void> GameEventSuite::Post_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot, INetworkMessageInternal*,
+                                                                 const CNetMessage*, unsigned long)
 {
 	CS2ST_HOOK_LEAVE(kPostEventAbstractLocal);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_PostEventAbstract(CSplitScreenSlot nSlot, bool bLocalOnly,
-                                           int nClientCount, const uint64* clients,
-                                           INetworkMessageInternal* pEvent,
-                                           const CNetMessage* pData, unsigned long nSize,
-                                           NetChannelBufType_t bufType)
+KHook::Return<void> GameEventSuite::Pre_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
+                                                          int nClientCount, const uint64* clients,
+                                                          INetworkMessageInternal* pEvent,
+                                                          const CNetMessage* pData, unsigned long nSize,
+                                                          NetChannelBufType_t bufType)
 {
 	// The busiest and most valuable hook in this suite: this is the slot every
 	// user message and every networked game event goes through, and its
@@ -1223,21 +1168,21 @@ void GameEventSuite::Pre_PostEventAbstract(CSplitScreenSlot nSlot, bool bLocalOn
 		"slot=%d local=%d %s event=%p %s size=%lu buf=%s",
 		nSlot.Get(), bLocalOnly ? 1 : 0, recipients,
 		static_cast<void*>(pEvent), payload, nSize, BufTypeName(bufType));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_PostEventAbstract(CSplitScreenSlot, bool, int, const uint64*,
-                                            INetworkMessageInternal*, const CNetMessage*,
-                                            unsigned long, NetChannelBufType_t)
+KHook::Return<void> GameEventSuite::Post_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot, bool, int, const uint64*,
+                                                           INetworkMessageInternal*, const CNetMessage*,
+                                                           unsigned long, NetChannelBufType_t)
 {
 	CS2ST_HOOK_LEAVE(kPostEventAbstract);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_PostEventAbstractFiltered(CSplitScreenSlot nSlot, bool bLocalOnly,
-                                                   IRecipientFilter* pFilter,
-                                                   INetworkMessageInternal* pEvent,
-                                                   const CNetMessage* pData, unsigned long nSize)
+KHook::Return<void> GameEventSuite::Pre_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
+                                                                  IRecipientFilter* pFilter,
+                                                                  INetworkMessageInternal* pEvent,
+                                                                  const CNetMessage* pData, unsigned long nSize)
 {
 	NoteObservedMessage(pEvent);
 
@@ -1252,21 +1197,21 @@ void GameEventSuite::Pre_PostEventAbstractFiltered(CSplitScreenSlot nSlot, bool 
 		nSlot.Get(), bLocalOnly ? 1 : 0, static_cast<void*>(pFilter),
 		LooksLikeObjectPointer(pFilter) ? "" : " NOT-A-POINTER",
 		static_cast<void*>(pEvent), payload, nSize);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_PostEventAbstractFiltered(CSplitScreenSlot, bool, IRecipientFilter*,
-                                                    INetworkMessageInternal*,
-                                                    const CNetMessage*, unsigned long)
+KHook::Return<void> GameEventSuite::Post_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot, bool, IRecipientFilter*,
+                                                                   INetworkMessageInternal*,
+                                                                   const CNetMessage*, unsigned long)
 {
 	CS2ST_HOOK_LEAVE(kPostEventAbstractFiltered);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_PostEntityEventAbstract(const CBaseHandle& hndl,
-                                                 INetworkMessageInternal* pEvent,
-                                                 const CNetMessage* pData, unsigned long nSize,
-                                                 NetChannelBufType_t bufType)
+KHook::Return<void> GameEventSuite::Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl,
+                                                                INetworkMessageInternal* pEvent,
+                                                                const CNetMessage* pData, unsigned long nSize,
+                                                                NetChannelBufType_t bufType)
 {
 	NoteObservedMessage(pEvent);
 
@@ -1284,43 +1229,89 @@ void GameEventSuite::Pre_PostEntityEventAbstract(const CBaseHandle& hndl,
 		entry, plausible ? "" : " IMPLAUSIBLE-INDEX", hndl.GetSerialNumber(),
 		hndl.IsValid() ? 1 : 0, static_cast<void*>(pEvent), payload, nSize,
 		BufTypeName(bufType));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_PostEntityEventAbstract(const CBaseHandle&, INetworkMessageInternal*,
-                                                  const CNetMessage*, unsigned long,
-                                                  NetChannelBufType_t)
+KHook::Return<void> GameEventSuite::Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle&, INetworkMessageInternal*,
+                                                                 const CNetMessage*, unsigned long,
+                                                                 NetChannelBufType_t)
 {
 	CS2ST_HOOK_LEAVE(kPostEntityEventAbstract);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_ProcessQueuedEvents()
+KHook::Return<void> GameEventSuite::Pre_ProcessQueuedEvents(IGameEventSystem*)
 {
 	// Runs every frame, which makes it this suite's liveness probe: if its
 	// count is zero, no hook here attached and every other row is meaningless.
 	// HookRecorder stops formatting once its sample quota is full, which is
 	// what keeps a per-frame hook affordable.
 	CS2ST_HOOK_ENTER(kProcessQueuedEvents);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_ProcessQueuedEvents()
+KHook::Return<void> GameEventSuite::Post_ProcessQueuedEvents(IGameEventSystem*)
 {
 	CS2ST_HOOK_LEAVE(kProcessQueuedEvents);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Pre_PurgeQueuedEvents()
+KHook::Return<void> GameEventSuite::Pre_PurgeQueuedEvents(IGameEventSystem*)
 {
 	CS2ST_HOOK_ENTER(kPurgeQueuedEvents);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void GameEventSuite::Post_PurgeQueuedEvents()
+KHook::Return<void> GameEventSuite::Post_PurgeQueuedEvents(IGameEventSystem*)
 {
 	CS2ST_HOOK_LEAVE(kPurgeQueuedEvents);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
+}
+
+// -----------------------------------------------------------------------------
+//  Hook binding
+//
+//  The KHook::Virtual constructor resolves the vtable slot from the member
+//  pointer. PostEventAbstract's two overloads share a name, so each member's
+//  constructor names its slot with a static_cast to the exact overload - the
+//  replacement for the overload index SH_DECL_HOOK used to carry.
+// -----------------------------------------------------------------------------
+
+GameEventSuite::GameEventSuite() :
+	hook_RegisterGameEvent_(&IGameEventSystem::RegisterGameEvent, this,
+		&GameEventSuite::Pre_RegisterGameEvent,
+		&GameEventSuite::Post_RegisterGameEvent),
+	hook_RegisterGameEventHandlerAbstract_(&IGameEventSystem::RegisterGameEventHandlerAbstract, this,
+		&GameEventSuite::Pre_RegisterGameEventHandlerAbstract,
+		&GameEventSuite::Post_RegisterGameEventHandlerAbstract),
+	hook_UnregisterGameEventHandlerAbstract_(&IGameEventSystem::UnregisterGameEventHandlerAbstract, this,
+		&GameEventSuite::Pre_UnregisterGameEventHandlerAbstract,
+		&GameEventSuite::Post_UnregisterGameEventHandlerAbstract),
+	hook_PostEventAbstract_Local_(&IGameEventSystem::PostEventAbstract_Local, this,
+		&GameEventSuite::Pre_PostEventAbstract_Local,
+		&GameEventSuite::Post_PostEventAbstract_Local),
+	hook_PostEventAbstract_(static_cast<void (IGameEventSystem::*)(
+		CSplitScreenSlot, bool, int, const uint64*, INetworkMessageInternal*,
+		const CNetMessage*, unsigned long, NetChannelBufType_t)>(
+		&IGameEventSystem::PostEventAbstract), this,
+		&GameEventSuite::Pre_PostEventAbstract,
+		&GameEventSuite::Post_PostEventAbstract),
+	hook_PostEventAbstractFiltered_(static_cast<void (IGameEventSystem::*)(
+		CSplitScreenSlot, bool, IRecipientFilter*, INetworkMessageInternal*,
+		const CNetMessage*, unsigned long)>(
+		&IGameEventSystem::PostEventAbstract), this,
+		&GameEventSuite::Pre_PostEventAbstractFiltered,
+		&GameEventSuite::Post_PostEventAbstractFiltered),
+	hook_PostEntityEventAbstract_(&IGameEventSystem::PostEntityEventAbstract, this,
+		&GameEventSuite::Pre_PostEntityEventAbstract,
+		&GameEventSuite::Post_PostEntityEventAbstract),
+	hook_ProcessQueuedEvents_(&IGameEventSystem::ProcessQueuedEvents, this,
+		&GameEventSuite::Pre_ProcessQueuedEvents,
+		&GameEventSuite::Post_ProcessQueuedEvents),
+	hook_PurgeQueuedEvents_(&IGameEventSystem::PurgeQueuedEvents, this,
+		&GameEventSuite::Pre_PurgeQueuedEvents,
+		&GameEventSuite::Post_PurgeQueuedEvents)
+{
 }
 
 } // namespace cs2st

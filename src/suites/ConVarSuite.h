@@ -57,6 +57,7 @@
 // handlers have to spell out ConCommandRef, ConVarRef, ConVarCreation_t and
 // CCommandContext by name. icvar.h is where that whole set is declared.
 #include <icvar.h>
+#include <khook.hpp>
 
 #include "testkit/ITestSuite.h"
 
@@ -117,38 +118,55 @@ private:
 	void NoteTypeTraitsTable(TestContext& context);
 	void NoteSideEffectingCalls(TestContext& context);
 
-	// ---- SourceHook handlers ----------------------------------------------
+	// ---- KHook handlers ----------------------------------------------------
 	//
-	// Signatures copied from icvar.h rather than paraphrased. A mismatch here
-	// compiles fine - SourceHook takes the calling convention from what is
-	// written - and then hands every handler garbage, which looks exactly like
-	// the drift this suite exists to detect.
+	// Signatures copied from icvar.h rather than paraphrased. KHook resolves
+	// the vtable slot from the SDK member pointer, so a drifted signature is a
+	// compile error here rather than a silent garbage read - which is the drift
+	// detection this suite exists for, moved to build time.
 
-	void Pre_DispatchConCommand(ConCommandRef cmd, const CCommandContext& ctx,
-	                            const CCommand& args);
-	void Post_DispatchConCommand(ConCommandRef cmd, const CCommandContext& ctx,
-	                             const CCommand& args);
+public:
+	ConVarSuite();
 
-	void Pre_RegisterConVar(const ConVarCreation_t& setup, uint64 flags,
-	                        ConVarRef* cvar_ref, ConVarData** cvar_data);
-	void Post_RegisterConVar(const ConVarCreation_t& setup, uint64 flags,
-	                         ConVarRef* cvar_ref, ConVarData** cvar_data);
+private:
+	KHook::Return<void> Pre_DispatchConCommand(ICvar*, ConCommandRef cmd, const CCommandContext& ctx,
+	                                           const CCommand& args);
+	KHook::Return<void> Post_DispatchConCommand(ICvar*, ConCommandRef cmd, const CCommandContext& ctx,
+	                                            const CCommand& args);
 
-	ConCommandRef Pre_RegisterConCommand(const ConCommandCreation_t& setup, uint64 flags);
-	ConCommandRef Post_RegisterConCommand(const ConCommandCreation_t& setup, uint64 flags);
+	KHook::Return<void> Pre_RegisterConVar(ICvar*, const ConVarCreation_t& setup, uint64 flags,
+	                                       ConVarRef* cvar_ref, ConVarData** cvar_data);
+	KHook::Return<void> Post_RegisterConVar(ICvar*, const ConVarCreation_t& setup, uint64 flags,
+	                                        ConVarRef* cvar_ref, ConVarData** cvar_data);
 
-	void Pre_CallGlobalChangeCallbacks(ConVarRefAbstract* ref, CSplitScreenSlot slot,
-	                                   const char* new_value, const char* old_value,
-	                                   void* unk01);
-	void Post_CallGlobalChangeCallbacks(ConVarRefAbstract* ref, CSplitScreenSlot slot,
-	                                    const char* new_value, const char* old_value,
-	                                    void* unk01);
+	KHook::Return<ConCommandRef> Pre_RegisterConCommand(ICvar*, const ConCommandCreation_t& setup, uint64 flags);
+	KHook::Return<ConCommandRef> Post_RegisterConCommand(ICvar*, const ConCommandCreation_t& setup, uint64 flags);
 
-	void Pre_UnregisterConVarCallbacks(ConVarRef cvar);
-	void Post_UnregisterConVarCallbacks(ConVarRef cvar);
+	KHook::Return<void> Pre_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref, CSplitScreenSlot slot,
+	                                                  const char* new_value, const char* old_value,
+	                                                  void* unk01);
+	KHook::Return<void> Post_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref, CSplitScreenSlot slot,
+	                                                   const char* new_value, const char* old_value,
+	                                                   void* unk01);
 
-	void Pre_UnregisterConCommandCallbacks(ConCommandRef cmd);
-	void Post_UnregisterConCommandCallbacks(ConCommandRef cmd);
+	KHook::Return<void> Pre_UnregisterConVarCallbacks(ICvar*, ConVarRef cvar);
+	KHook::Return<void> Post_UnregisterConVarCallbacks(ICvar*, ConVarRef cvar);
+
+	KHook::Return<void> Pre_UnregisterConCommandCallbacks(ICvar*, ConCommandRef cmd);
+	KHook::Return<void> Post_UnregisterConCommandCallbacks(ICvar*, ConCommandRef cmd);
+
+	// ---- the hooks themselves ------------------------------------------------
+	//
+	// One KHook::Virtual per virtual, bound in the constructor; template
+	// parameters are the interface, the return type, then the SDK's argument
+	// list. RegisterConCommand returns ConCommandRef by value, which is why its
+	// handlers return KHook::Return<ConCommandRef>.
+	KHook::Virtual<ICvar, void, ConCommandRef, const CCommandContext&, const CCommand&> hook_DispatchConCommand_;
+	KHook::Virtual<ICvar, void, const ConVarCreation_t&, uint64, ConVarRef*, ConVarData**> hook_RegisterConVar_;
+	KHook::Virtual<ICvar, ConCommandRef, const ConCommandCreation_t&, uint64> hook_RegisterConCommand_;
+	KHook::Virtual<ICvar, void, ConVarRefAbstract*, CSplitScreenSlot, const char*, const char*, void*> hook_CallGlobalChangeCallbacks_;
+	KHook::Virtual<ICvar, void, ConVarRef> hook_UnregisterConVarCallbacks_;
+	KHook::Virtual<ICvar, void, ConCommandRef> hook_UnregisterConCommandCallbacks_;
 
 	ICvar* cvar_ = nullptr;
 

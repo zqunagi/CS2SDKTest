@@ -1440,7 +1440,8 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 		});
 
 		CS2ST_CALL(context, "CEntityInstance::GetScriptDesc", {
-			context.Detail("-> %p", probe_instance_->GetScriptDesc());
+			context.Detail("-> %p",
+				static_cast<void*>(probe_instance_->GetScriptDesc()));
 		});
 
 		CS2ST_CALL(context, "CEntityInstance::ObjectCaps", {
@@ -1545,6 +1546,8 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 	context.SkipCall("CEntityInstance::AssignChangeAccessorPathIds", "renumbers field paths");
 	context.SkipCall("CEntityInstance::unk501", "unidentified slot");
 	context.SkipCall("CEntityInstance::unk502", "unidentified slot");
+	context.SkipCall("CEntityInstance::Pulse_OnDynamicAttributeChanged",
+		"a Pulse notification callback");
 	context.SkipCall("CEntityInstance::ReloadPrivateScripts", "reloads and re-runs vscript");
 	context.SkipCall("CEntityInstance::unk601", "unidentified slot");
 	context.SkipCall("CEntityInstance::unk602", "unidentified slot");
@@ -1925,23 +1928,47 @@ void GameEntitySystemSuite::InspectEventQueueLayout(TestContext& context)
 	// behaving exactly as a sentinel should. Every payload field here is
 	// therefore reported and not judged - what is under test at these offsets
 	// is that the fields are where the SDK puts them, and the values below say
-	// that far more convincingly than a range check would have.
+	// that far more convincingly than a range check would have. That includes
+	// the middle of the struct this revision gave real names to (the Pulse
+	// argument pack and param map, 144 + ~80 opaque bytes) - reported as Raw
+	// so a field inserted ahead of them moves a number instead of nothing.
 	const std::size_t events = offsetof(CEventQueue, m_Events);
 
+	inspect.Raw("m_Events.m_WorldGroupId (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_WorldGroupId),
+		sizeof(WorldGroupId_t));
 	// -FLT_MAX is not an implausible game value, it is the marker that makes a
 	// time-ordered list work: every real event sorts after the head. Observed
 	// exactly that, which pins m_flFireTime to this offset on its own.
 	inspect.Raw("m_Events.m_flFireTime (sentinel: -FLT_MAX)",
-		events + offsetof(EventQueuePrioritizedEvent_t, m_flFireTime), sizeof(GameTime_t));
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_flFireTime), sizeof(GameTime_t));
 	// Never written on the head node, so it holds whatever the allocator left.
-	inspect.Raw("m_Events.m_eTargetType (sentinel: unset)",
-		events + offsetof(EventQueuePrioritizedEvent_t, m_eTargetType),
+	inspect.Raw("m_Events.m_targetType (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_targetType),
 		sizeof(EntityIOTargetType_t));
-	inspect.Raw("m_Events.m_iTarget (sentinel: unset)",
-		events + offsetof(EventQueuePrioritizedEvent_t, m_iTarget), sizeof(CUtlSymbolLarge));
-	inspect.Raw("m_Events.m_iTargetInput (sentinel: unset)",
-		events + offsetof(EventQueuePrioritizedEvent_t, m_iTargetInput),
+	inspect.Raw("m_Events.m_pTarget (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_pTarget), sizeof(CUtlSymbolLarge));
+	inspect.Raw("m_Events.m_pTargetInput (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_pTargetInput),
 		sizeof(CUtlSymbolLarge));
+	inspect.Raw("m_Events.m_hActivator (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_hActivator),
+		sizeof(CEntityHandle));
+	inspect.Raw("m_Events.m_hCaller (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_hCaller),
+		sizeof(CEntityHandle));
+	inspect.Raw("m_Events.m_hEntTarget (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_hEntTarget),
+		sizeof(CEntityHandle));
+	inspect.Raw("m_Events.m_variantValue (sentinel: unset)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_variantValue),
+		sizeof(CVariant));
+	inspect.Raw("m_Events.m_PulseArguments (sentinel: uninitialized)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_PulseArguments),
+		sizeof(CPulseArgumentPack));
+	inspect.Raw("m_Events.m_paramMap (sentinel: uninitialized)",
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_paramMap),
+		sizeof(CPulseInputParamMap));
 
 	// The links are the part that is real, because they are what the engine
 	// splices actual events into. m_pNext is judged; m_pPrev is not, because on
@@ -1949,9 +1976,9 @@ void GameEntitySystemSuite::InspectEventQueueLayout(TestContext& context)
 	// two fields around it (m_flFireTime holding its marker, m_pNext holding a
 	// pointer) are what license that, since misalignment does not repair itself.
 	inspect.Pointer("m_Events.m_pNext",
-		events + offsetof(EventQueuePrioritizedEvent_t, m_pNext));
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_pNext));
 	inspect.Pointer("m_Events.m_pPrev",
-		events + offsetof(EventQueuePrioritizedEvent_t, m_pPrev), kMayBeUninitialized);
+		events + offsetof(EntityIOQueuePrioritizedEvent_t, m_pPrev), kMayBeUninitialized);
 
 	inspect.Summarize();
 }
@@ -2097,10 +2124,10 @@ void GameEntitySystemSuite::InspectEntityClassLayout(TestContext& context)
 	inspect.Raw("m_ComponentOffsets", offsetof(CEntityClass, m_ComponentOffsets), 24);
 	inspect.Raw("m_AllHelpers", offsetof(CEntityClass, m_AllHelpers), 24);
 	inspect.Raw("m_componentUnserializerClassInfo",
-		offsetof(CEntityClass, m_componentUnserializerClassInfo), 32);
+		offsetof(CEntityClass, m_componentUnserializerClassInfo),
+		sizeof(ComponentUnserializerClassInfo_t));
 	inspect.Raw("m_flattenedSerializer",
 		offsetof(CEntityClass, m_flattenedSerializer), 16);
-	inspect.Raw("m_classInputInfos", offsetof(CEntityClass, m_classInputInfos), 24);
 	inspect.Raw("m_classOutputInfos", offsetof(CEntityClass, m_classOutputInfos), 24);
 	inspect.UInt32("m_requiredEHandle", offsetof(CEntityClass, m_requiredEHandle));
 	inspect.Pointer("m_pNext", offsetof(CEntityClass, m_pNext));

@@ -4,45 +4,19 @@
 #include <cstddef>
 #include <cstdio>
 
-#include <ISmmPlugin.h>
 #include <appframework/IAppSystem.h>
-#include <sourcehook.h>
 #include <tier1/bufferstring.h>
 
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
 
-// SH_ADD_HOOK expands to code that reaches g_SHPtr and g_PLID; these are the
-// declarations for them. They are defined once by PLUGIN_EXPOSE in Plugin.cpp.
-PLUGIN_GLOBALVARS();
-
-// Hook declarations. The third argument is the method's cv-qualifier list, so
-// SH_NOATTRIB is "no qualifiers"; the fourth is the overload index, and none of
-// these are overloaded.
-//
-// These signatures are copied from public/eiface.h rather than paraphrased. A
-// mismatch here would not fail to compile - SourceHook derives its calling
-// convention from what is written - it would silently hand every handler
-// garbage, which looks exactly like the drift this suite exists to detect.
-SH_DECL_HOOK6_void(ISource2GameClients, OnClientConnected, SH_NOATTRIB, 0,
-	CPlayerSlot, const char*, uint64, const char*, const char*, bool);
-SH_DECL_HOOK6(ISource2GameClients, ClientConnect, SH_NOATTRIB, 0, bool,
-	CPlayerSlot, const char*, uint64, const char*, bool, CBufferString*);
-SH_DECL_HOOK4_void(ISource2GameClients, ClientPutInServer, SH_NOATTRIB, 0,
-	CPlayerSlot, const char*, int, uint64);
-SH_DECL_HOOK4_void(ISource2GameClients, ClientActive, SH_NOATTRIB, 0,
-	CPlayerSlot, bool, const char*, uint64);
-SH_DECL_HOOK1_void(ISource2GameClients, ClientFullyConnect, SH_NOATTRIB, 0, CPlayerSlot);
-SH_DECL_HOOK5_void(ISource2GameClients, ClientDisconnect, SH_NOATTRIB, 0,
-	CPlayerSlot, ENetworkDisconnectionReason, const char*, uint64, const char*);
-SH_DECL_HOOK2_void(ISource2GameClients, ClientCommand, SH_NOATTRIB, 0,
-	CPlayerSlot, const CCommand&);
-SH_DECL_HOOK1_void(ISource2GameClients, ClientSettingsChanged, SH_NOATTRIB, 0, CPlayerSlot);
-SH_DECL_HOOK1_void(ISource2GameClients, ClientVoice, SH_NOATTRIB, 0, CPlayerSlot);
-SH_DECL_HOOK2_void(ISource2GameClients, ClientCommandKeyValues, SH_NOATTRIB, 0,
-	CPlayerSlot, KeyValues*);
-SH_DECL_HOOK4_void(ISource2GameClients, ClientSvcUserMessage, SH_NOATTRIB, 0,
-	CPlayerSlot, int, uint32, const void*);
+// The SH_DECL_HOOK block used to live here; under KHook the hook templates are
+// declared as members in the header instead, bound to the SDK member pointers
+// in the constructor at the bottom of this file. The signatures there are the
+// SDK's own, not paraphrased: KHook resolves the vtable slot from the member
+// pointer, so a drifted signature is a compile error rather than a silent
+// garbage read - which is the drift-detection this suite exists for, moved
+// from runtime to build time.
 
 namespace cs2st
 {
@@ -416,9 +390,9 @@ void Source2GameClientsSuite::NoteSideEffectingCalls(TestContext& context)
 		"runs per player per frame and only carries a vis_info_t the SDK does "
 		"not define; a hook here would be cost without evidence");
 	context.SkipCall("ISource2GameClients::ProcessUsercmds",
-		"takes CNetMessagePB<CCLCMsg_Move> by const reference, so SourceHook "
-		"needs its size - and netmessages.pb.h is not among the protobuf files "
-		"this build generates (see CS2SDKTEST_PROTO_FILES)");
+		"takes CNetMessagePB<CCLCMsg_Move> by const reference, so the hook "
+		"template needs its size - and netmessages.pb.h is not among the protobuf "
+		"files this build generates (see CS2SDKTEST_PROTO_FILES)");
 	context.SkipCall("ISource2GameClients::ClientDiagnostic",
 		"CCLCMsg_Diagnostic is only forward-declared here; hookable, but there "
 		"would be nothing to read out of the pointer");
@@ -460,27 +434,19 @@ int Source2GameClientsSuite::InstallHooks(TestContext& context)
 	recorder.Declare(kClientCommandKeyValues, Id());
 	recorder.Declare(kClientSvcUserMessage, Id());
 
-	// Each one twice: pre (false) records the entry, post (true) records the
-	// return. See the header for why both.
-#define CS2ST_ADD_PAIR(method) \
-	SH_ADD_HOOK(ISource2GameClients, method, clients_, \
-		SH_MEMBER(this, &Source2GameClientsSuite::Pre_##method), false); \
-	SH_ADD_HOOK(ISource2GameClients, method, clients_, \
-		SH_MEMBER(this, &Source2GameClientsSuite::Post_##method), true)
-
-	CS2ST_ADD_PAIR(OnClientConnected);
-	CS2ST_ADD_PAIR(ClientConnect);
-	CS2ST_ADD_PAIR(ClientPutInServer);
-	CS2ST_ADD_PAIR(ClientActive);
-	CS2ST_ADD_PAIR(ClientFullyConnect);
-	CS2ST_ADD_PAIR(ClientDisconnect);
-	CS2ST_ADD_PAIR(ClientCommand);
-	CS2ST_ADD_PAIR(ClientSettingsChanged);
-	CS2ST_ADD_PAIR(ClientVoice);
-	CS2ST_ADD_PAIR(ClientCommandKeyValues);
-	CS2ST_ADD_PAIR(ClientSvcUserMessage);
-
-#undef CS2ST_ADD_PAIR
+	// Each hook object carries its pre and post handler from the constructor;
+	// Add installs the detour on the clients instance, Remove takes it off.
+	hook_OnClientConnected_.Add(clients_);
+	hook_ClientConnect_.Add(clients_);
+	hook_ClientPutInServer_.Add(clients_);
+	hook_ClientActive_.Add(clients_);
+	hook_ClientFullyConnect_.Add(clients_);
+	hook_ClientDisconnect_.Add(clients_);
+	hook_ClientCommand_.Add(clients_);
+	hook_ClientSettingsChanged_.Add(clients_);
+	hook_ClientVoice_.Add(clients_);
+	hook_ClientCommandKeyValues_.Add(clients_);
+	hook_ClientSvcUserMessage_.Add(clients_);
 
 	hooks_installed_ = true;
 
@@ -496,25 +462,17 @@ void Source2GameClientsSuite::RemoveHooks(TestContext& context)
 		return;
 	}
 
-#define CS2ST_REMOVE_PAIR(method) \
-	SH_REMOVE_HOOK(ISource2GameClients, method, clients_, \
-		SH_MEMBER(this, &Source2GameClientsSuite::Pre_##method), false); \
-	SH_REMOVE_HOOK(ISource2GameClients, method, clients_, \
-		SH_MEMBER(this, &Source2GameClientsSuite::Post_##method), true)
-
-	CS2ST_REMOVE_PAIR(OnClientConnected);
-	CS2ST_REMOVE_PAIR(ClientConnect);
-	CS2ST_REMOVE_PAIR(ClientPutInServer);
-	CS2ST_REMOVE_PAIR(ClientActive);
-	CS2ST_REMOVE_PAIR(ClientFullyConnect);
-	CS2ST_REMOVE_PAIR(ClientDisconnect);
-	CS2ST_REMOVE_PAIR(ClientCommand);
-	CS2ST_REMOVE_PAIR(ClientSettingsChanged);
-	CS2ST_REMOVE_PAIR(ClientVoice);
-	CS2ST_REMOVE_PAIR(ClientCommandKeyValues);
-	CS2ST_REMOVE_PAIR(ClientSvcUserMessage);
-
-#undef CS2ST_REMOVE_PAIR
+	hook_OnClientConnected_.Remove(clients_);
+	hook_ClientConnect_.Remove(clients_);
+	hook_ClientPutInServer_.Remove(clients_);
+	hook_ClientActive_.Remove(clients_);
+	hook_ClientFullyConnect_.Remove(clients_);
+	hook_ClientDisconnect_.Remove(clients_);
+	hook_ClientCommand_.Remove(clients_);
+	hook_ClientSettingsChanged_.Remove(clients_);
+	hook_ClientVoice_.Remove(clients_);
+	hook_ClientCommandKeyValues_.Remove(clients_);
+	hook_ClientSvcUserMessage_.Remove(clients_);
 
 	hooks_installed_ = false;
 	(void)context;
@@ -528,13 +486,12 @@ void Source2GameClientsSuite::RemoveHooks(TestContext& context)
 //  argument is vetted before it is touched, every string is length-capped, and
 //  nothing walks a structure it was handed.
 //
-//  Every one ends in RETURN_META / RETURN_META_VALUE, which is how SourceHook
-//  hands control back.
+//  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED.
 // -----------------------------------------------------------------------------
 
-void Source2GameClientsSuite::Pre_OnClientConnected(CPlayerSlot slot, const char* name,
-                                                    uint64 xuid, const char* network_id,
-                                                    const char* address, bool fake_player)
+KHook::Return<void> Source2GameClientsSuite::Pre_OnClientConnected(ISource2GameClients*, CPlayerSlot slot, const char* name,
+                                                                   uint64 xuid, const char* network_id,
+                                                                   const char* address, bool fake_player)
 {
 	char name_scratch[48];
 	char id_scratch[48];
@@ -547,19 +504,19 @@ void Source2GameClientsSuite::Pre_OnClientConnected(CPlayerSlot slot, const char
 		SafeStringArg(network_id, id_scratch),
 		SafeStringArg(address, address_scratch),
 		fake_player ? 1 : 0);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_OnClientConnected(CPlayerSlot, const char*, uint64,
-                                                     const char*, const char*, bool)
+KHook::Return<void> Source2GameClientsSuite::Post_OnClientConnected(ISource2GameClients*, CPlayerSlot, const char*, uint64,
+                                                                    const char*, const char*, bool)
 {
 	CS2ST_HOOK_LEAVE(kOnClientConnected);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-bool Source2GameClientsSuite::Pre_ClientConnect(CPlayerSlot slot, const char* name,
-                                                uint64 xuid, const char* network_id,
-                                                bool unk1, CBufferString* reject_reason)
+KHook::Return<bool> Source2GameClientsSuite::Pre_ClientConnect(ISource2GameClients*, CPlayerSlot slot, const char* name,
+                                                               uint64 xuid, const char* network_id,
+                                                               bool unk1, CBufferString* reject_reason)
 {
 	char name_scratch[48];
 	char id_scratch[48];
@@ -598,20 +555,20 @@ bool Source2GameClientsSuite::Pre_ClientConnect(CPlayerSlot slot, const char* na
 		unk1 ? 1 : 0,
 		buffer_note);
 
-	// MRES_IGNORED means this value is discarded and the game's own answer
-	// stands. Returning false here would refuse the connection.
-	RETURN_META_VALUE(MRES_IGNORED, true);
+	// Action::Ignore means the `ret` field here is discarded and the game's own
+	// answer stands. Returning a real false would refuse the connection.
+	return { KHook::Action::Ignore, true };
 }
 
-bool Source2GameClientsSuite::Post_ClientConnect(CPlayerSlot, const char*, uint64,
-                                                 const char*, bool, CBufferString*)
+KHook::Return<bool> Source2GameClientsSuite::Post_ClientConnect(ISource2GameClients*, CPlayerSlot, const char*, uint64,
+                                                                const char*, bool, CBufferString*)
 {
 	CS2ST_HOOK_LEAVE(kClientConnect);
-	RETURN_META_VALUE(MRES_IGNORED, true);
+	return { KHook::Action::Ignore, true };
 }
 
-void Source2GameClientsSuite::Pre_ClientPutInServer(CPlayerSlot slot, const char* name,
-                                                    int type, uint64 xuid)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name,
+                                                                   int type, uint64 xuid)
 {
 	char name_scratch[48];
 	// The SDK documents type as 0 player / 1 bot / 2 unknown, which makes
@@ -622,48 +579,48 @@ void Source2GameClientsSuite::Pre_ClientPutInServer(CPlayerSlot slot, const char
 		SafeStringArg(name, name_scratch),
 		type, (type < 0 || type > 2) ? " OUT-OF-RANGE" : "",
 		static_cast<unsigned long long>(xuid));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientPutInServer(CPlayerSlot, const char*, int, uint64)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientPutInServer(ISource2GameClients*, CPlayerSlot, const char*, int, uint64)
 {
 	CS2ST_HOOK_LEAVE(kClientPutInServer);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientActive(CPlayerSlot slot, bool load_game,
-                                               const char* name, uint64 xuid)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientActive(ISource2GameClients*, CPlayerSlot slot, bool load_game,
+                                                              const char* name, uint64 xuid)
 {
 	char name_scratch[48];
 	CS2ST_HOOK_ENTER_ARGS(kClientActive, "slot=%d load=%d name=\"%.63s\" xuid=%llu",
 		slot.Get(), load_game ? 1 : 0,
 		SafeStringArg(name, name_scratch),
 		static_cast<unsigned long long>(xuid));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientActive(CPlayerSlot, bool, const char*, uint64)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientActive(ISource2GameClients*, CPlayerSlot, bool, const char*, uint64)
 {
 	CS2ST_HOOK_LEAVE(kClientActive);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientFullyConnect(CPlayerSlot slot)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientFullyConnect(ISource2GameClients*, CPlayerSlot slot)
 {
 	CS2ST_HOOK_ENTER_ARGS(kClientFullyConnect, "slot=%d", slot.Get());
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientFullyConnect(CPlayerSlot)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientFullyConnect(ISource2GameClients*, CPlayerSlot)
 {
 	CS2ST_HOOK_LEAVE(kClientFullyConnect);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientDisconnect(CPlayerSlot slot,
-                                                   ENetworkDisconnectionReason reason,
-                                                   const char* name, uint64 xuid,
-                                                   const char* network_id)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientDisconnect(ISource2GameClients*, CPlayerSlot slot,
+                                                                  ENetworkDisconnectionReason reason,
+                                                                  const char* name, uint64 xuid,
+                                                                  const char* network_id)
 {
 	char name_scratch[48];
 	char id_scratch[48];
@@ -684,17 +641,17 @@ void Source2GameClientsSuite::Pre_ClientDisconnect(CPlayerSlot slot,
 		SafeStringArg(name, name_scratch),
 		static_cast<unsigned long long>(xuid),
 		SafeStringArg(network_id, id_scratch));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientDisconnect(CPlayerSlot, ENetworkDisconnectionReason,
-                                                    const char*, uint64, const char*)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientDisconnect(ISource2GameClients*, CPlayerSlot, ENetworkDisconnectionReason,
+                                                                   const char*, uint64, const char*)
 {
 	CS2ST_HOOK_LEAVE(kClientDisconnect);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientCommand(CPlayerSlot slot, const CCommand& args)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientCommand(ISource2GameClients*, CPlayerSlot slot, const CCommand& args)
 {
 	// CCommand's accessors are inline in the SDK header, so reading them trusts
 	// the SDK's layout against the object the engine built. ArgC() comes out of
@@ -709,72 +666,117 @@ void Source2GameClientsSuite::Pre_ClientCommand(CPlayerSlot slot, const CCommand
 		slot.Get(), argc,
 		plausible ? "" : " IMPLAUSIBLE",
 		plausible ? SafeStringArg(args.Arg(0), arg0_scratch) : "<not read>");
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientCommand(CPlayerSlot, const CCommand&)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientCommand(ISource2GameClients*, CPlayerSlot, const CCommand&)
 {
 	CS2ST_HOOK_LEAVE(kClientCommand);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientSettingsChanged(CPlayerSlot slot)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientSettingsChanged(ISource2GameClients*, CPlayerSlot slot)
 {
 	CS2ST_HOOK_ENTER_ARGS(kClientSettingsChanged, "slot=%d", slot.Get());
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientSettingsChanged(CPlayerSlot)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientSettingsChanged(ISource2GameClients*, CPlayerSlot)
 {
 	CS2ST_HOOK_LEAVE(kClientSettingsChanged);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientVoice(CPlayerSlot slot)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientVoice(ISource2GameClients*, CPlayerSlot slot)
 {
 	// Fires per voice packet, so it is the busiest hook in this suite by a wide
 	// margin. HookRecorder stops formatting once its sample quota is full,
 	// which is what keeps that affordable.
 	CS2ST_HOOK_ENTER_ARGS(kClientVoice, "slot=%d", slot.Get());
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientVoice(CPlayerSlot)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientVoice(ISource2GameClients*, CPlayerSlot)
 {
 	CS2ST_HOOK_LEAVE(kClientVoice);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientCommandKeyValues(CPlayerSlot slot, KeyValues* kv)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientCommandKeyValues(ISource2GameClients*, CPlayerSlot slot, KeyValues* kv)
 {
 	// Only the pointer value - walking into a KeyValues tree from a hook is
 	// exactly the kind of thing that turns a diagnostic into an outage.
 	CS2ST_HOOK_ENTER_ARGS(kClientCommandKeyValues, "slot=%d kv=%p", slot.Get(),
 		static_cast<void*>(kv));
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientCommandKeyValues(CPlayerSlot, KeyValues*)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientCommandKeyValues(ISource2GameClients*, CPlayerSlot, KeyValues*)
 {
 	CS2ST_HOOK_LEAVE(kClientCommandKeyValues);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Pre_ClientSvcUserMessage(CPlayerSlot slot, int type,
-                                                       uint32 size, const void* buffer)
+KHook::Return<void> Source2GameClientsSuite::Pre_ClientSvcUserMessage(ISource2GameClients*, CPlayerSlot slot, int type,
+                                                                      uint32 size, const void* buffer)
 {
 	// The payload is not decoded: that needs the usermessages protobuf set,
 	// which this build does not generate. Type and size are still the useful
 	// part - they are what a plugin routing user messages keys off.
 	CS2ST_HOOK_ENTER_ARGS(kClientSvcUserMessage, "slot=%d type=%d size=%u buf=%p",
 		slot.Get(), type, static_cast<unsigned>(size), buffer);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
 }
 
-void Source2GameClientsSuite::Post_ClientSvcUserMessage(CPlayerSlot, int, uint32, const void*)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientSvcUserMessage(ISource2GameClients*, CPlayerSlot, int, uint32, const void*)
 {
 	CS2ST_HOOK_LEAVE(kClientSvcUserMessage);
-	RETURN_META(MRES_IGNORED);
+	return { KHook::Action::Ignore };
+}
+
+// -----------------------------------------------------------------------------
+//  Hook binding
+//
+//  The KHook::Virtual constructor resolves the vtable slot from the member
+//  pointer, so this list is the plugin's ABI contract with the SDK - and with
+//  it, argument drift moved from a runtime garbage read to a compile error.
+// -----------------------------------------------------------------------------
+
+Source2GameClientsSuite::Source2GameClientsSuite() :
+	hook_OnClientConnected_(&ISource2GameClients::OnClientConnected, this,
+		&Source2GameClientsSuite::Pre_OnClientConnected,
+		&Source2GameClientsSuite::Post_OnClientConnected),
+	hook_ClientConnect_(&ISource2GameClients::ClientConnect, this,
+		&Source2GameClientsSuite::Pre_ClientConnect,
+		&Source2GameClientsSuite::Post_ClientConnect),
+	hook_ClientPutInServer_(&ISource2GameClients::ClientPutInServer, this,
+		&Source2GameClientsSuite::Pre_ClientPutInServer,
+		&Source2GameClientsSuite::Post_ClientPutInServer),
+	hook_ClientActive_(&ISource2GameClients::ClientActive, this,
+		&Source2GameClientsSuite::Pre_ClientActive,
+		&Source2GameClientsSuite::Post_ClientActive),
+	hook_ClientFullyConnect_(&ISource2GameClients::ClientFullyConnect, this,
+		&Source2GameClientsSuite::Pre_ClientFullyConnect,
+		&Source2GameClientsSuite::Post_ClientFullyConnect),
+	hook_ClientDisconnect_(&ISource2GameClients::ClientDisconnect, this,
+		&Source2GameClientsSuite::Pre_ClientDisconnect,
+		&Source2GameClientsSuite::Post_ClientDisconnect),
+	hook_ClientCommand_(&ISource2GameClients::ClientCommand, this,
+		&Source2GameClientsSuite::Pre_ClientCommand,
+		&Source2GameClientsSuite::Post_ClientCommand),
+	hook_ClientSettingsChanged_(&ISource2GameClients::ClientSettingsChanged, this,
+		&Source2GameClientsSuite::Pre_ClientSettingsChanged,
+		&Source2GameClientsSuite::Post_ClientSettingsChanged),
+	hook_ClientVoice_(&ISource2GameClients::ClientVoice, this,
+		&Source2GameClientsSuite::Pre_ClientVoice,
+		&Source2GameClientsSuite::Post_ClientVoice),
+	hook_ClientCommandKeyValues_(&ISource2GameClients::ClientCommandKeyValues, this,
+		&Source2GameClientsSuite::Pre_ClientCommandKeyValues,
+		&Source2GameClientsSuite::Post_ClientCommandKeyValues),
+	hook_ClientSvcUserMessage_(&ISource2GameClients::ClientSvcUserMessage, this,
+		&Source2GameClientsSuite::Pre_ClientSvcUserMessage,
+		&Source2GameClientsSuite::Post_ClientSvcUserMessage)
+{
 }
 
 } // namespace cs2st

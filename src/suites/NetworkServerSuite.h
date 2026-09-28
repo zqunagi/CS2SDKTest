@@ -52,11 +52,14 @@
 #ifndef CS2SDKTEST_SUITES_NETWORKSERVERSUITE_H_
 #define CS2SDKTEST_SUITES_NETWORKSERVERSUITE_H_
 
+#include <khook.hpp>
+
 #include "testkit/ITestSuite.h"
 
-// Deliberately no SDK headers here: every hooked method takes POD parameters
-// (bool, int) or none, so the handler signatures need nothing declared. The
-// SDK types live in the .cpp, where SH_DECL_HOOK needs the complete interface.
+// Deliberately no SDK headers beyond the forward declarations below: the
+// KHook::Virtual members name INetworkServerService only as a template
+// argument (never dereferenced in this header), and every hooked method takes
+// POD parameters (bool, int) or none. The complete SDK types live in the .cpp.
 class INetworkServerService;
 class CNetworkGameServerBase;
 class CGlobalVars;
@@ -87,31 +90,47 @@ public:
 
 	// ---- hook handlers -----------------------------------------------------
 	//
-	// Public because SH_MEMBER takes their addresses from outside the class.
-	// Pre/post pairs, every one returning MRES_IGNORED.
+	// KHook::Virtual binds these by member pointer in the constructor below,
+	// so they can stay private. Pre/post pairs, every one answering
+	// Action::Ignore.
 	//
 	// All six are on INetworkServerService, which lives as long as the process.
 	// Between them they cover the level-load lifecycle - the thing this suite
 	// can observe that a call sweep cannot, because a sweep only ever sees one
 	// instant and these are transitions.
 
-	void Pre_StartChangeLevel();
-	void Post_StartChangeLevel();
+	KHook::Return<void> Pre_StartChangeLevel(INetworkServerService*);
+	KHook::Return<void> Post_StartChangeLevel(INetworkServerService*);
 
-	void Pre_SetGameLoadStarted();
-	void Post_SetGameLoadStarted();
+	KHook::Return<void> Pre_SetGameLoadStarted(INetworkServerService*);
+	KHook::Return<void> Post_SetGameLoadStarted(INetworkServerService*);
 
-	void Pre_SetGameLoadFailed(bool bFailed);
-	void Post_SetGameLoadFailed(bool bFailed);
+	KHook::Return<void> Pre_SetGameLoadFailed(INetworkServerService*, bool bFailed);
+	KHook::Return<void> Post_SetGameLoadFailed(INetworkServerService*, bool bFailed);
 
-	void Pre_DisconnectGameNow(int nReason);
-	void Post_DisconnectGameNow(int nReason);
+	KHook::Return<void> Pre_DisconnectGameNow(INetworkServerService*, int nReason);
+	KHook::Return<void> Post_DisconnectGameNow(INetworkServerService*, int nReason);
 
-	void Pre_SetFinalSimulationTickThisFrame(int nTick);
-	void Post_SetFinalSimulationTickThisFrame(int nTick);
+	KHook::Return<void> Pre_SetFinalSimulationTickThisFrame(INetworkServerService*, int nTick);
+	KHook::Return<void> Post_SetFinalSimulationTickThisFrame(INetworkServerService*, int nTick);
 
-	void Pre_PreserveSteamID();
-	void Post_PreserveSteamID();
+	KHook::Return<void> Pre_PreserveSteamID(INetworkServerService*);
+	KHook::Return<void> Post_PreserveSteamID(INetworkServerService*);
+
+	// ---- the hooks themselves ------------------------------------------------
+	//
+	// One KHook::Virtual per virtual: constructor binds the handlers above,
+	// InstallHooks calls Add(service_), RemoveHooks calls Remove(service_).
+	// Template parameters are the interface, the return type, then the argument
+	// list exactly as the SDK declares it.
+	KHook::Virtual<INetworkServerService, void> hook_StartChangeLevel_;
+	KHook::Virtual<INetworkServerService, void> hook_SetGameLoadStarted_;
+	KHook::Virtual<INetworkServerService, void, bool> hook_SetGameLoadFailed_;
+	KHook::Virtual<INetworkServerService, void, int> hook_DisconnectGameNow_;
+	KHook::Virtual<INetworkServerService, void, int> hook_SetFinalSimulationTickThisFrame_;
+	KHook::Virtual<INetworkServerService, void> hook_PreserveSteamID_;
+
+	NetworkServerSuite();
 
 private:
 	void ExerciseAppSystem(TestContext& context);

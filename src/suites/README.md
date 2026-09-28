@@ -14,7 +14,7 @@ Test suites live here — one per SDK interface being exercised.
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it
 is here because LevelInit/LevelShutdown reach a Source 2 plugin only through
-IMetamodListener. It is also the only suite whose "hooks" are not SourceHook —
+IMetamodListener. It is also the only suite whose "hooks" are not KHook detours —
 ISmmAPI::AddListener has no inverse, so removing them stops the recording but
 not the callbacks.
 

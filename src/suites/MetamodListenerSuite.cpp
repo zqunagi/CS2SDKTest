@@ -10,10 +10,11 @@
 #include "hook/HookRecorder.h"
 #include "version_gen.h"
 
-// g_SMAPI / g_PLAPI / g_PLID / g_SHPtr live in Plugin.cpp, where PLUGIN_EXPOSE
-// defines them; this is the declaration side. Unlike the other suites nothing
-// here needs SourceHook's macros - Metamod calls a registered listener
-// directly - but the same globals are how AddListener finds our plugin record.
+// g_SMAPI / g_PLAPI / g_PLID / KHook::__exported__khook live in Plugin.cpp,
+// where PLUGIN_EXPOSE defines them; this is the declaration side. Unlike the
+// other suites nothing here needs KHook's machinery - Metamod calls a
+// registered listener directly - but the same globals are how AddListener
+// finds our plugin record.
 PLUGIN_GLOBALVARS();
 
 namespace cs2st
@@ -68,9 +69,9 @@ bool MetamodListenerSuite::Acquire(TestContext& context)
 		return false;
 	}
 
-	context.Note("ISmmAPI at %p, plugin id %d, ISourceHook at %p",
+	context.Note("ISmmAPI at %p, plugin id %d, KHook detour interface at %p",
 		static_cast<void*>(smm_), static_cast<int>(g_PLID),
-		static_cast<void*>(g_SHPtr));
+		static_cast<void*>(KHook::__exported__khook));
 	return true;
 }
 
@@ -117,14 +118,25 @@ void MetamodListenerSuite::ExerciseVersions(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "ISmmAPI::GetShVersions", {
-		int iface = -1;
-		int impl = -1;
-		smm_->GetShVersions(iface, impl);
-		context.Detail("-> SourceHook iface %d, impl %d", iface, impl);
-		if (iface <= 0 || impl < iface)
+	// GetShVersions is gone with SourceHook itself (PLAPI 18). Its replacement
+	// is the detour interface below - one pointer whose non-nullness is now the
+	// "hook layer is alive" fact the old version pair used to carry.
+	CS2ST_CALL(context, "ISmmAPI::GetDetourInterface", {
+		void* detour = smm_->GetDetourInterface(g_PLID);
+		context.Detail("-> %p; the KHook global this plugin hooks through is %p",
+			detour, static_cast<void*>(KHook::__exported__khook));
+
+		// PLUGIN_SAVEVARS fetched this exact pointer at load time. Null means
+		// every KHook::Virtual in this plugin is inert - the same failure the
+		// old GetShVersions row was there to catch, one rename later.
+		if (detour == nullptr)
 		{
-			context.Fail("implementation version must be at least the interface version");
+			context.Fail("the detour interface is what hooks resolve through; "
+			             "null means no hook in this plugin can attach");
+		}
+		else if (detour != static_cast<void*>(KHook::__exported__khook))
+		{
+			context.Fail("differs from the KHook global this plugin hooks through");
 		}
 	});
 
@@ -288,21 +300,22 @@ void MetamodListenerSuite::ExerciseMetaFactory(TestContext& context)
 		int ret = -1;
 		PluginId id = 0;
 		void* sh = smm_->MetaFactory(MMIFACE_SOURCEHOOK, &ret, &id);
-		context.Detail("-> %p (ret %d, id %d); g_SHPtr is %p",
-			sh, ret, static_cast<int>(id), static_cast<void*>(g_SHPtr));
 
-		// PLUGIN_SAVEVARS fetched g_SHPtr through this exact call at load time,
-		// so the two must still be the same object. If they diverge, either the
-		// factory changed or something has swapped SourceHook underneath us -
-		// and every SH_ADD_HOOK in this plugin is then attached to the wrong
-		// implementation.
-		if (sh == nullptr)
+		// PLAPI 18 removed the built-in branch that answered this name: khook
+		// replaced SourceHook, and the pointer now travels through
+		// GetDetourInterface instead. A name-only lookup therefore falls
+		// through to the listener walk and answers nothing - which is the new
+		// correct behavior, not a broken factory. The row stays because it is
+		// how an update that changes this again gets noticed.
+		context.Detail("-> %p (ret %d); the hook layer now travels through "
+		               "GetDetourInterface (%p)",
+			sh, ret,
+			static_cast<void*>(KHook::__exported__khook));
+
+		if (sh != nullptr)
 		{
-			context.Fail("SourceHook is always available through MetaFactory");
-		}
-		else if (sh != static_cast<void*>(g_SHPtr))
-		{
-			context.Fail("differs from the g_SHPtr this plugin hooks through");
+			context.Suspect("some listener claimed ISourceHook after Metamod "
+			                "stopped providing it; worth knowing who");
 		}
 	});
 

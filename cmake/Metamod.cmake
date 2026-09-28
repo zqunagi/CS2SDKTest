@@ -4,8 +4,9 @@
 #  Defines metamod::metamod - the headers a Metamod:Source plugin needs.
 #
 #  A plugin links nothing from Metamod: ISmmPlugin/ISmmAPI are pure virtual and
-#  the SourceHook entry points resolve through g_SHPtr, which PLUGIN_GLOBALVARS()
-#  declares and the loader fills in. So this is headers only, on purpose.
+#  the KHook entry points resolve through KHook::__exported__khook, which
+#  PLUGIN_GLOBALVARS() declares and PLUGIN_SAVEVARS fills from
+#  ISmmAPI::GetDetourInterface. So this is headers only, on purpose.
 # =============================================================================
 
 if(TARGET metamod::metamod)
@@ -20,12 +21,19 @@ if(NOT EXISTS "${METAMOD_ROOT}/core/ISmmPlugin.h")
     "Run: git submodule update --init --recursive")
 endif()
 
+if(NOT EXISTS "${METAMOD_ROOT}/third_party/khook/include/khook.hpp")
+  message(FATAL_ERROR
+    "khook not found at '${METAMOD_ROOT}/third_party/khook'.\n"
+    "Metamod 2.1 replaced SourceHook with khook; run:\n"
+    "  git submodule update --init --recursive metamod-source")
+endif()
+
 add_library(metamod_headers INTERFACE)
 add_library(metamod::metamod ALIAS metamod_headers)
 
 target_include_directories(metamod_headers SYSTEM INTERFACE
   "${METAMOD_ROOT}/core"
-  "${METAMOD_ROOT}/core/sourcehook"
+  "${METAMOD_ROOT}/third_party/khook/include"
 )
 
 # ISmmPlugin.h branches on this: with META_IS_SOURCE2 it pulls in

@@ -12,8 +12,8 @@ namespace cs2st
 CS2SDKTestPlugin g_Plugin;
 } // namespace cs2st
 
-// Defines g_SMAPI/g_PLAPI/g_PLID/g_SHPtr and the CreateInterface export
-// Metamod looks for. Must sit at global scope.
+// Defines g_SMAPI/g_PLAPI/g_PLID/KHook::__exported__khook and the
+// CreateInterface export Metamod looks for. Must sit at global scope.
 PLUGIN_EXPOSE(CS2SDKTestPlugin, cs2st::g_Plugin);
 
 namespace cs2st
