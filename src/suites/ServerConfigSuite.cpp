@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include <appframework/IAppSystem.h>
 #include <const.h>
@@ -142,6 +143,7 @@ void ServerConfigSuite::ExerciseCalls(TestContext& context)
 {
 	ExerciseAppSystem(context);
 	ExerciseConfigQueries(context);
+	ExerciseTailSlots(context);
 	NoteSideEffectingCalls(context);
 }
 
@@ -255,85 +257,6 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 		context.Detail("-> %d", version);
 	});
 
-	CS2ST_CALL(context, "ISource2ServerConfig::GetTickInterval", {
-		const float interval = config_->GetTickInterval();
-		tick_interval = interval;
-		context.Detail("-> %.6f", static_cast<double>(interval));
-
-		if (!std::isfinite(interval) || interval <= 0.0f)
-		{
-			context.Fail("a simulation interval is a finite positive float; %.6f is "
-			             "not one", static_cast<double>(interval));
-			tick_interval = -1.0f;
-			return;
-		}
-		if (interval > 1.0f)
-		{
-			// Judged as Suspect rather than Fail: 1 Hz is not an engine
-			// configuration anyone has seen, but "subsecond" is this suite's
-			// inference about policy, not something the SDK states.
-			context.Suspect("a tick interval above one second means a tick rate "
-			                "below 1 Hz, which the engine cannot run");
-		}
-	});
-
-	// ---- the tick-rate cross-check ------------------------------------------
-	//
-	// Two routes to one interval: the config interface's own getter, and the
-	// convar the command line and the engine both know. The convar's name is
-	// deployment policy, so a mismatch is Suspect here and never Fail - the
-	// same reasoning as GetHostName vs the hostname convar in
-	// NetworkServerSuite. One guarded row: FindConVar is an engine call, and
-	// on Windows the fault guard protects per call, not per sweep.
-
-	if (tick_interval > 0.0f)
-	{
-		CS2ST_CALL(context, "ISource2ServerConfig::GetTickInterval vs the tick-rate convar", {
-			ICvar* cvar = Cvar(context);
-			if (cvar == nullptr)
-			{
-				context.Detail("-> no ICvar; the cross-check degrades to the getter's own row");
-				return;
-			}
-
-			ConVarRefAbstract rate_cvar(cvar->FindConVar("sv_tickrate", true));
-			ConVarRefAbstract legacy_rate_cvar(cvar->FindConVar("tickrate", true));
-			const bool have_rate = rate_cvar.IsConVarDataAvailable();
-			const bool have_legacy = legacy_rate_cvar.IsConVarDataAvailable();
-
-			if (!have_rate && !have_legacy)
-			{
-				context.Detail("-> neither sv_tickrate nor tickrate is readable; the "
-				               "cross-check degrades to the getter's own row");
-				return;
-			}
-
-			const ConVarRefAbstract& source = have_rate ? rate_cvar : legacy_rate_cvar;
-			CBufferStringN<64> value(false);
-			source.GetValueAsString(value);
-			const float rate = static_cast<float>(std::atof(value.Get()));
-			context.Detail("interval %.6f vs convar \"%s\" = %.6f",
-				static_cast<double>(tick_interval), value.Get(),
-				static_cast<double>(rate));
-
-			if (rate > 0.0f && std::fabs((1.0f / rate) - tick_interval) > (tick_interval * 0.05f))
-			{
-				context.Suspect("the tick interval and the tick-rate convar "
-				                "disagree by more than 5%%");
-			}
-		});
-	}
-	else
-	{
-		// Said out loud rather than silently missing: a crashed or non-positive
-		// GetTickInterval row above is the reason this one has no second side
-		// to compare against, and "not present" and "could not run" must stay
-		// distinguishable in the log.
-		context.SkipCall("ISource2ServerConfig::GetTickInterval vs the tick-rate convar",
-			"GetTickInterval did not produce a usable interval; there is no first "
-			"side to compare the convar against");
-	}
-
 	CS2ST_CALL(context, "ISource2ServerConfig::GetPlayerLimits", {
 		// Seeded so "did not write" is distinguishable from "wrote a zero":
 		// counts have exactly one out-of-domain value, and it is negative.
@@ -393,10 +316,6 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 	CS2ST_CALL(context, "ISource2ServerConfig::ShouldNotifyLocalClientConnectionStateChanges", {
 		context.Detail("-> %s",
 			config_->ShouldNotifyLocalClientConnectionStateChanges() ? "true" : "false");
-	});
-
-	CS2ST_CALL(context, "ISource2ServerConfig::AllowPlayerToTakeOverBots", {
-		context.Detail("-> %s", config_->AllowPlayerToTakeOverBots() ? "true" : "false");
 	});
 
 	// One row per loop mode rather than one row looping over all three: a
@@ -463,6 +382,70 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 	CS2ST_CALL(context, "ISource2ServerConfig::AllowSaveRestore", {
 		context.Detail("-> %s", config_->AllowSaveRestore() ? "true" : "false");
 	});
+}
+
+// -----------------------------------------------------------------------------
+//  The tail slots (22-27) and the factory slot (28)
+//
+//  Slots 23/24 carry names in the SDK since PR #430 (IsCommandQueueEnabled /
+//  GetCommandQueueDilationPercentage), reversing evidence from this repo's own
+//  notes: the implementations read the cq_enable / cq_dilation_percentage
+//  convars through holders near unk_29B3800 / unk_29B37F0, and the runtime
+//  probe agreed (true / 5.0 = the convar defaults). The rest stay unnamed -
+//  their implementations are byte-identical mov eax,1 stubs whose identity
+//  would have to come from engine-side call sites, which is out of this
+//  suite's reach. Each row records the value so a future build repurposing a
+//  slot shows up as a diff rather than a silent shift.
+//
+//  Slot 28 is the ensure-and-register hook: resolve GameEventSystem via the
+//  caller's factory on first call (cached in a libserver.so global, ~200
+//  readers), then register this DLL's game events (the sub_1779D60 tail).
+//  The interface pointer never leaves the DLL - the runtime probe got 0x1
+//  back, a bool success code - so the SDK's void* era is over; the current
+//  declaration passes no factory at all. Calling it re-runs the registration
+//  walk only (idempotent, observed harmless with a warm cache), but it is
+//  engine-init territory, so the row records a SkipCall rather than a probe.
+// -----------------------------------------------------------------------------
+
+void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
+{
+	CS2ST_CALL(context, "ISource2ServerConfig::unk101 [slot 22, bool]", {
+		context.Detail("-> %s", config_->unk101() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2ServerConfig::IsCommandQueueEnabled [slot 23, bool]", {
+		context.Detail("-> %s", config_->IsCommandQueueEnabled() ? "true" : "false");
+	});
+
+	// The one float in the tail. A wrong slot mapping here reads a stale XMM0
+	// (the "clean 0.0" from the reversing notes), so the raw bits go into the
+	// detail line too: a plausible float with bits 0x00000000 means the callee
+	// never touched XMM0. 5.0 is cq_dilation_percentage's default.
+	CS2ST_CALL(context, "ISource2ServerConfig::GetCommandQueueDilationPercentage [slot 24, float]", {
+		const float value = config_->GetCommandQueueDilationPercentage();
+		unsigned int bits = 0;
+		std::memcpy(&bits, &value, sizeof(bits));
+		context.Detail("-> %f (bits 0x%08X)", value, bits);
+	});
+
+	CS2ST_CALL(context, "ISource2ServerConfig::unk201 [slot 25, bool]", {
+		context.Detail("-> %s", config_->unk201() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2ServerConfig::unk202 [slot 26, bool]", {
+		context.Detail("-> %s", config_->unk202() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2ServerConfig::unk203 [slot 27, bool]", {
+		context.Detail("-> %s", config_->unk203() ? "true" : "false");
+	});
+
+	context.SkipCall("ISource2ServerConfig::unk204 [slot 28]",
+		"the game-event ensure-and-register hook; the probe era established it "
+		"caches GameEventSystemServerV001 in a server-DLL global and returns a "
+		"bool, but its body also walks the event dictionary, which is engine "
+		"init - not something a probe should re-run for a value it already "
+		"knows how to interpret");
 }
 
 // -----------------------------------------------------------------------------

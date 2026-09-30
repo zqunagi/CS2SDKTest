@@ -59,6 +59,7 @@ public:
 private:
 	void ExerciseAppSystem(TestContext& context);
 	void ExerciseConfigQueries(TestContext& context);
+	void ExerciseTailSlots(TestContext& context);
 	void NoteSideEffectingCalls(TestContext& context);
 
 	ISource2ServerConfig* config_ = nullptr;
