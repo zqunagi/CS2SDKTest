@@ -38,7 +38,7 @@ target_include_directories(metamod_headers SYSTEM INTERFACE
 
 # ISmmPlugin.h branches on this: with META_IS_SOURCE2 it pulls in
 # interfaces/interfaces.h, without it tier1/interface.h - a file the cs2 branch
-# of hl2sdk does not have. Getting this wrong fails at the very first include.
+# of s2sdk does not have. Getting this wrong fails at the very first include.
 target_compile_definitions(metamod_headers INTERFACE
   META_IS_SOURCE2
 )

@@ -61,7 +61,7 @@ constexpr int kHookedMethodCount = 9;
  * Every version string this interface has ever answered to, asked of every
  * loaded module.
  *
- * hl2sdk's cs2 branch supplies no constant for it, so there is nothing to
+ * s2sdk's cs2 branch supplies no constant for it, so there is nothing to
  * #include here - these are written out, with where each one comes from, so a
  * reader can tell a researched guess from a hopeful one. The list is cheap to
  * extend and costs one CreateInterface call per module per entry.
@@ -845,7 +845,7 @@ void GameEventSuite::ReportObservedMessages(TestContext& context)
 
 void GameEventSuite::ReportManagerProbe(TestContext& context)
 {
-	context.Note("[IGameEventManager2] hl2sdk's cs2 branch declares the class and no "
+	context.Note("[IGameEventManager2] s2sdk's cs2 branch declares the class and no "
 	             "version constant, so every name it has ever answered to is asked of "
 	             "every loaded module");
 
@@ -1211,7 +1211,7 @@ KHook::Return<void> GameEventSuite::Post_PostEventAbstractFiltered(IGameEventSys
 KHook::Return<void> GameEventSuite::Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl,
                                                                 INetworkMessageInternal* pEvent,
                                                                 const CNetMessage* pData, unsigned long nSize,
-                                                                NetChannelBufType_t bufType)
+                                                                NetChannelBufType_t bufType, bool bAllClients)
 {
 	NoteObservedMessage(pEvent);
 
@@ -1225,16 +1225,16 @@ KHook::Return<void> GameEventSuite::Pre_PostEntityEventAbstract(IGameEventSystem
 	const bool plausible = (entry >= -1) && (entry < MAX_EDICTS);
 
 	CS2ST_HOOK_ENTER_ARGS(kPostEntityEventAbstract,
-		"ent=%d%s serial=%d valid=%d event=%p %s size=%lu buf=%s",
+		"ent=%d%s serial=%d valid=%d event=%p %s size=%lu buf=%s all=%d",
 		entry, plausible ? "" : " IMPLAUSIBLE-INDEX", hndl.GetSerialNumber(),
 		hndl.IsValid() ? 1 : 0, static_cast<void*>(pEvent), payload, nSize,
-		BufTypeName(bufType));
+		BufTypeName(bufType), bAllClients ? 1 : 0);
 	return { KHook::Action::Ignore };
 }
 
 KHook::Return<void> GameEventSuite::Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle&, INetworkMessageInternal*,
                                                                  const CNetMessage*, unsigned long,
-                                                                 NetChannelBufType_t)
+                                                                 NetChannelBufType_t, bool)
 {
 	CS2ST_HOOK_LEAVE(kPostEntityEventAbstract);
 	return { KHook::Action::Ignore };

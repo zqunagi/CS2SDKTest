@@ -2,7 +2,8 @@
 #  HL2SDK.cmake
 #
 #  Defines the imported targets used to compile against the Source 2 (CS2)
-#  branch of hl2sdk:
+#  branch of s2sdk (formerly hl2sdk; the checkout folder was renamed with the
+#  upstream repository, the target names were not):
 #
 #    hl2sdk::headers   INTERFACE  - include paths + platform/compiler defines
 #    hl2sdk::tier1     STATIC     - the handful of tier1 .cpp files that are
@@ -19,11 +20,11 @@ if(TARGET hl2sdk::hl2sdk)
   return()
 endif()
 
-set(HL2SDK_ROOT "${CS2SDKTEST_HL2SDK_DIR}" CACHE PATH "Root of the hl2sdk checkout")
+set(HL2SDK_ROOT "${CS2SDKTEST_HL2SDK_DIR}" CACHE PATH "Root of the s2sdk checkout")
 
 if(NOT EXISTS "${HL2SDK_ROOT}/public/interfaces/interfaces.h")
   message(FATAL_ERROR
-    "hl2sdk not found at '${HL2SDK_ROOT}'.\n"
+    "s2sdk not found at '${HL2SDK_ROOT}'.\n"
     "Run: git submodule update --init --recursive")
 endif()
 
@@ -153,7 +154,7 @@ endif()
 #  hl2sdk::tier1
 #
 #  There is no prebuilt tier1 on this branch: public/tier1/*.h is header-only
-#  template code, and the few real translation units live in hl2sdk/tier1/.
+#  template code, and the few real translation units live in s2sdk/tier1/.
 #  convar.cpp is mandatory for anything that registers a ConVar/ConCommand.
 # -----------------------------------------------------------------------------
 set(_hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier1/convar.cpp")
@@ -180,7 +181,9 @@ endif()
 
 set_target_properties(hl2sdk_tier1 PROPERTIES
   POSITION_INDEPENDENT_CODE ON
-  CXX_STANDARD 17
+  # AMBuildScript in s2sdk builds everything as C++20 now; keep the tier1
+  # translation units this plugin compiles under the same standard.
+  CXX_STANDARD 20
   CXX_STANDARD_REQUIRED ON
   FOLDER "third_party"
 )
@@ -200,7 +203,7 @@ add_library(hl2sdk::libs ALIAS hl2sdk_libs)
 function(_hl2sdk_require_lib out_var relative_path)
   set(_full "${HL2SDK_ROOT}/${relative_path}")
   if(NOT EXISTS "${_full}")
-    message(FATAL_ERROR "hl2sdk library missing: ${_full}")
+    message(FATAL_ERROR "s2sdk library missing: ${_full}")
   endif()
   set(${out_var} "${_full}" PARENT_SCOPE)
 endfunction()
@@ -258,4 +261,4 @@ target_link_libraries(hl2sdk_all INTERFACE
   hl2sdk::libs
 )
 
-message(STATUS "hl2sdk: ${HL2SDK_ROOT} (engine '${HL2SDK_ENGINE_NAME}', SOURCE_ENGINE=${HL2SDK_ENGINE_CODE})")
+message(STATUS "s2sdk: ${HL2SDK_ROOT} (engine '${HL2SDK_ENGINE_NAME}', SOURCE_ENGINE=${HL2SDK_ENGINE_CODE})")

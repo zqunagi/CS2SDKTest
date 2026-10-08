@@ -28,7 +28,7 @@ namespace
 // clients), and one whose protobuf class the SDK does not ship at all.
 //
 // The third is a finding in its own right: CMsgSource1LegacyGameEvent is
-// registered by the engine but declared in no .proto under hl2sdk/common, so
+// registered by the engine but declared in no .proto under s2sdk/common, so
 // the descriptor can be read but the payload cannot be walked. Every plugin
 // that fires a Source 1-style event holds the same line in its own copy of
 // this table.
@@ -557,7 +557,7 @@ void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 //
 //  SDK note: CNetMessagePB here is a *stub* over the engine's real class
 //  ("AMNOTE: This is a stub class over real CNetMessagePB!", netmessage.h).
-//  Every hl2sdk-cs2 plugin nonetheless writes through ToPB<T>() - the stub's
+//  Every s2sdk-cs2 plugin nonetheless writes through ToPB<T>() - the stub's
 //  layout is the ecosystem's working ABI assumption. This section measures
 //  that assumption before anything writes through it: the engine's own
 //  AsProto() says where it thinks the protobuf sub-object starts, our
@@ -651,6 +651,32 @@ void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 		}
 	});
 
+	CS2ST_CALL(context, "CNetMessage::GetMessageId", {
+		// Slot the SDK named in the Oct 2026 rework (it used to sit inside the
+		// old CopyConstruct(other) signature). Two routes to the same id: the
+		// message's own vtable and the descriptor the registry hands out.
+		const NetworkMessageId id = allocated->GetMessageId();
+		context.Detail("-> %u (descriptor says %u)",
+			static_cast<unsigned>(id),
+			static_cast<unsigned>(tick_message_->GetNetMessageInfo()->m_MessageId));
+		if (tick_message_->GetNetMessageInfo() != nullptr
+			&& id != tick_message_->GetNetMessageInfo()->m_MessageId)
+		{
+			context.Fail("the message and its registry descriptor report different ids");
+		}
+	});
+
+	CS2ST_CALL(context, "CNetMessage::GetName", {
+		// Same rework, same shape of oracle: the message's name against the
+		// binding's own GetName, reached down two different vtables.
+		const char* name = allocated->GetName();
+		context.Detail("-> \"%s\"", name != nullptr ? name : "(null)");
+		if (name == nullptr || std::strcmp(name, "CNETMsg_Tick") != 0)
+		{
+			context.Fail("a CNETMsg_Tick allocation reports a different name");
+		}
+	});
+
 	CS2ST_CALL(context, "CNetMessage::GetMargin", {
 		// A plain load of an inline float member, not a virtual call - the
 		// same class of read as CCommand::ArgC() in the clients suite. The
@@ -673,8 +699,10 @@ void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 
 	CS2ST_CALL(context, "CNetMessage::CopyConstruct", {
 		// The message's own copy path, on the same object - the vtable slot
-		// the registry helper presumably ends up inside.
-		CNetMessage* via_message = allocated->CopyConstruct(allocated);
+		// the registry helper presumably ends up inside. The SDK reworked this
+		// slot from CopyConstruct(const CNetMessage*) to a nullary copy: the
+		// source is the object it is called on.
+		CNetMessage* via_message = allocated->CopyConstruct();
 		context.Detail("-> %p", static_cast<void*>(via_message));
 		if (via_message != nullptr)
 		{
@@ -1047,14 +1075,17 @@ void NetworkMessagesSuite::ExerciseMiscReadonly(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "INetworkMessages::GetNetworkSerializationContextData", {
-		// A context name nothing set: null is the only answer that keeps this
-		// read-only, so data back means the slot is no longer the lookup.
-		void* data = messages_->GetNetworkSerializationContextData(
+		// A context name nothing set: zero is the only answer that keeps this
+		// read-only, so a handle back means the slot is no longer the lookup.
+		// The SDK typed this uint16 (it used to be void*) in the Oct 2026
+		// rework; unk101 below is what turns the handle back into the pointer.
+		const uint16 data = messages_->GetNetworkSerializationContextData(
 			"Cs2SdkTestNoSuchContext");
-		context.Detail("-> %p for a context name nothing set", data);
-		if (data != nullptr)
+		context.Detail("-> %u for a context name nothing set",
+			static_cast<unsigned>(data));
+		if (data != 0)
 		{
-			context.Suspect("an unset serialization context answered with data");
+			context.Suspect("an unset serialization context answered with a handle");
 		}
 	});
 
@@ -1070,9 +1101,11 @@ void NetworkMessagesSuite::ExerciseMiscReadonly(TestContext& context)
 // -----------------------------------------------------------------------------
 //  InspectLoggingChannel - CLoggingSystem::LoggingChannel_t layout
 //
-//  GetLoggingChannel hands back the registry's own logging channel: a struct
-//  the engine fills at startup, so every field holds a value, and one this
-//  project had not registered anywhere (list-struct-coverage.sh agrees).
+//  GetLoggingChannel used to hand back the CLoggingSystem::LoggingChannel_t
+//  pointer itself; the Oct 2026 SDK rework types it as the channel *id*, and
+//  tier0's exported LoggingSystem_GetChannel turns the id back into the
+//  struct. Two steps, two modules - and the struct itself is one the engine
+//  fills at startup, so every field holds a value.
 // -----------------------------------------------------------------------------
 
 void NetworkMessagesSuite::InspectLoggingChannel(TestContext& context)
@@ -1081,14 +1114,43 @@ void NetworkMessagesSuite::InspectLoggingChannel(TestContext& context)
 	             "engine fills at startup, so every field holds a value");
 
 	CLoggingSystem::LoggingChannel_t* channel = nullptr;
+	LoggingChannelID_t channel_id = INVALID_LOGGING_CHANNEL_ID;
 
 	CS2ST_CALL(context, "INetworkMessages::GetLoggingChannel", {
-		channel = messages_->GetLoggingChannel();
+		channel_id = messages_->GetLoggingChannel();
+		context.Detail("-> channel id %d", static_cast<int>(channel_id));
+		if (channel_id == INVALID_LOGGING_CHANNEL_ID)
+		{
+			context.Fail("a live registry has a logging channel");
+		}
+	});
+
+	if (channel_id == INVALID_LOGGING_CHANNEL_ID)
+	{
+		context.SkipCall("LoggingChannel_t",
+			"GetLoggingChannel did not return a channel id");
+		return;
+	}
+
+	// Bounds before anything indexes with it: the SDK's own CLoggingSystem::
+	// GetChannel is now an inline m_RegisteredChannels[id], so an id past the
+	// array would walk off the struct. MAX_LOGGING_CHANNEL_COUNT is the SDK's
+	// own bound.
+	if (channel_id < 0 || channel_id >= MAX_LOGGING_CHANNEL_COUNT)
+	{
+		context.Fail("channel id %d is outside the SDK's channel array",
+			static_cast<int>(channel_id));
+		context.SkipCall("LoggingChannel_t", "no in-range channel to inspect");
+		return;
+	}
+
+	CS2ST_CALL(context, "LoggingSystem_GetChannel (tier0)", {
+		channel = const_cast<CLoggingSystem::LoggingChannel_t*>(
+			LoggingSystem_GetChannel(channel_id));
 		context.Detail("-> %p", static_cast<void*>(channel));
 		if (!LooksLikeObjectPointer(channel))
 		{
-			context.Fail("the logging channel of a live registry is not an object "
-			             "pointer");
+			context.Fail("tier0 resolved the registry's own channel id to nothing");
 			channel = nullptr;
 		}
 	});
@@ -1096,7 +1158,7 @@ void NetworkMessagesSuite::InspectLoggingChannel(TestContext& context)
 	if (channel == nullptr)
 	{
 		context.SkipCall("LoggingChannel_t",
-			"GetLoggingChannel did not return an instance");
+			"LoggingSystem_GetChannel did not return an instance");
 		return;
 	}
 
@@ -1104,6 +1166,16 @@ void NetworkMessagesSuite::InspectLoggingChannel(TestContext& context)
 		channel, sizeof(CLoggingSystem::LoggingChannel_t));
 
 	inspect.Int32  ("m_ID",               offsetof(CLoggingSystem::LoggingChannel_t, m_ID));
+	// The one field here with a known-correct value: the id GetLoggingChannel
+	// handed back is by definition this channel's own index.
+	if (channel->m_ID != channel_id)
+	{
+		CS2ST_CALL(context, "LoggingChannel_t::m_ID vs GetLoggingChannel", {
+			context.Detail("-> struct says %d, interface said %d",
+				channel->m_ID, static_cast<int>(channel_id));
+			context.Fail("the channel struct does not carry the id that resolved it");
+		});
+	}
 	// Two flag words, each a bitmask the SDK enumerates; raw because the legal
 	// set is engine policy, not type law.
 	inspect.UInt32 ("m_DefaultFlags",     offsetof(CLoggingSystem::LoggingChannel_t, m_DefaultFlags));
@@ -1172,8 +1244,14 @@ void NetworkMessagesSuite::NoteSkippedWrites(TestContext& context)
 		"covered above");
 	context.SkipCall("INetworkMessages::RegisterSchemaTypeOverride",
 		"rewrites schema-type resolution for named fields");
-	context.SkipCall("INetworkMessages::unk101", "unidentified in the SDK");
+	context.SkipCall("INetworkMessages::unk101",
+		"resolves a serialization-context handle back to the pointer "
+		"SetNetworkSerializationContextData stored; the handle half is covered "
+		"above, but calling this on the zero handle nothing set is not a probe "
+		"this suite can interpret");
 	context.SkipCall("INetworkMessages::unk102", "unidentified in the SDK");
+	context.SkipCall("INetworkMessages::unk201", "unidentified in the SDK");
+	context.SkipCall("INetworkMessages::unk202", "unidentified in the SDK");
 	context.SkipCall("INetworkMessages::~INetworkMessages",
 		"would destroy the registry every message on the server depends on");
 	context.SkipCall("INetworkMessageInternal::SetMessageId",

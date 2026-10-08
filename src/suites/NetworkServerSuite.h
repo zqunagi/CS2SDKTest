@@ -58,8 +58,9 @@
 
 // Deliberately no SDK headers beyond the forward declarations below: the
 // KHook::Virtual members name INetworkServerService only as a template
-// argument (never dereferenced in this header), and every hooked method takes
-// POD parameters (bool, int) or none. The complete SDK types live in the .cpp.
+// argument (never dereferenced in this header), and the hooked methods take
+// only POD parameters (bool, int) or pointers that never get dereferenced
+// outside the .cpp. The complete SDK types live in the .cpp.
 class INetworkServerService;
 class CNetworkGameServerBase;
 class CGlobalVars;
@@ -94,13 +95,15 @@ public:
 	// so they can stay private. Pre/post pairs, every one answering
 	// Action::Ignore.
 	//
-	// All six are on INetworkServerService, which lives as long as the process.
+	// All five are on INetworkServerService, which lives as long as the process.
 	// Between them they cover the level-load lifecycle - the thing this suite
 	// can observe that a call sweep cannot, because a sweep only ever sees one
 	// instant and these are transitions.
 
-	KHook::Return<void> Pre_StartChangeLevel(INetworkServerService*);
-	KHook::Return<void> Post_StartChangeLevel(INetworkServerService*);
+	KHook::Return<void> Pre_StartChangeLevel(INetworkServerService*, const char* pszMap,
+	                                         const char* pszLandmark, void* pUnknown);
+	KHook::Return<void> Post_StartChangeLevel(INetworkServerService*, const char* pszMap,
+	                                          const char* pszLandmark, void* pUnknown);
 
 	KHook::Return<void> Pre_SetGameLoadStarted(INetworkServerService*);
 	KHook::Return<void> Post_SetGameLoadStarted(INetworkServerService*);
@@ -111,9 +114,6 @@ public:
 	KHook::Return<void> Pre_DisconnectGameNow(INetworkServerService*, int nReason);
 	KHook::Return<void> Post_DisconnectGameNow(INetworkServerService*, int nReason);
 
-	KHook::Return<void> Pre_SetFinalSimulationTickThisFrame(INetworkServerService*, int nTick);
-	KHook::Return<void> Post_SetFinalSimulationTickThisFrame(INetworkServerService*, int nTick);
-
 	KHook::Return<void> Pre_PreserveSteamID(INetworkServerService*);
 	KHook::Return<void> Post_PreserveSteamID(INetworkServerService*);
 
@@ -122,12 +122,13 @@ public:
 	// One KHook::Virtual per virtual: constructor binds the handlers above,
 	// InstallHooks calls Add(service_), RemoveHooks calls Remove(service_).
 	// Template parameters are the interface, the return type, then the argument
-	// list exactly as the SDK declares it.
-	KHook::Virtual<INetworkServerService, void> hook_StartChangeLevel_;
+	// list exactly as the SDK declares it (StartChangeLevel grew map/landmark/
+	// unknown parameters in the s2sdk rework; the old zero-arg vtable slot is
+	// gone).
+	KHook::Virtual<INetworkServerService, void, const char*, const char*, void*> hook_StartChangeLevel_;
 	KHook::Virtual<INetworkServerService, void> hook_SetGameLoadStarted_;
 	KHook::Virtual<INetworkServerService, void, bool> hook_SetGameLoadFailed_;
 	KHook::Virtual<INetworkServerService, void, int> hook_DisconnectGameNow_;
-	KHook::Virtual<INetworkServerService, void, int> hook_SetFinalSimulationTickThisFrame_;
 	KHook::Virtual<INetworkServerService, void> hook_PreserveSteamID_;
 
 	NetworkServerSuite();

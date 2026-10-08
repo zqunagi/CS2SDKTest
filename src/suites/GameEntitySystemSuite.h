@@ -7,7 +7,7 @@
  * 1. There is no interface to query for.
  *
  *    "GameResourceServiceServerV001" @ engine2 resolves to IGameResourceService,
- *    and hl2sdk declares exactly two things about that type: a forward
+ *    and s2sdk declares exactly two things about that type: a forward
  *    declaration in interfaces.h and a version string. No class body, no
  *    methods, no way to ask it for the entity system. Every plugin in the
  *    ecosystem instead reads a raw pointer out of the service object at a
@@ -30,7 +30,7 @@
  *
  *    CEntitySystem's vtable is short and almost entirely side-effecting. The
  *    valuable surface is the non-virtual helpers - GetEntityIdentity,
- *    FindClassByName, the three EntityInstance*Iter_t classes - which hl2sdk
+ *    FindClassByName, the three EntityInstance*Iter_t classes - which s2sdk
  *    implements itself, in entity2/entitysystem.cpp, out of nothing but struct
  *    offsets. That code is compiled into this plugin. Calling it *is* testing
  *    the layout: if Valve moves m_EntityList or grows CEntityIdentity, those
@@ -179,7 +179,7 @@ private:
 	/**
 	 * "GameResourceServiceServerV001". Held as void* because that is all the
 	 * SDK gives us - IGameResourceService is a forward declaration with no
-	 * body anywhere in hl2sdk.
+	 * body anywhere in s2sdk.
 	 */
 	void* resource_service_ = nullptr;
 

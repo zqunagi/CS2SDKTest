@@ -12,7 +12,7 @@ Test suites live here — one per SDK interface being exercised.
   ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
-MetamodListenerSuite is the odd one out: it tests Metamod, not hl2sdk, and it
+MetamodListenerSuite is the odd one out: it tests Metamod, not s2sdk, and it
 is here because LevelInit/LevelShutdown reach a Source 2 plugin only through
 IMetamodListener. It is also the only suite whose "hooks" are not KHook detours —
 ISmmAPI::AddListener has no inverse, so removing them stops the recording but
@@ -29,17 +29,17 @@ string-typed convar would put a buffer from this module's heap into storage the
 engine frees. The string type is covered read-only instead.
 
 GameEntitySystemSuite is another odd one. There is no interface to query:
-hl2sdk gives IGameResourceService a name and nothing else, so the entity system
+s2sdk gives IGameResourceService a name and nothing else, so the entity system
 is fished out of the service object at a byte offset the ecosystem agrees on —
 which the suite treats as a hypothesis and measures. It is also the only suite
 that writes into the game (AddListenerEntity), and the only one that compiles
-SDK translation units (hl2sdk/entity2/*.cpp) in order to test them; it supplies
+SDK translation units (s2sdk/entity2/*.cpp) in order to test them; it supplies
 the GameEntitySystem() definition those need.
 
 GameEventSuite is the third, and the only suite that reports on an interface it
 cannot reach. IGameEventSystem is an ordinary CreateInterface away, but
 IGameEventManager2 — the interface plugins actually write against — has no
-version constant anywhere in hl2sdk's cs2 branch, and no module answers any name
+version constant anywhere in s2sdk's cs2 branch, and no module answers any name
 it has ever had. The CS2 ecosystem gets at it by calling a virtual on
 ISource2Server at a gamedata-supplied offset and subtracting 8; this project has
 no gamedata, and blind-calling server vtable slots to find that one would hit

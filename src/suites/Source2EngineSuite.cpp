@@ -417,13 +417,24 @@ void Source2EngineSuite::ExercisePlayerQueries(TestContext& context)
 		context.Detail("-> %s", engine_->IsSplitScreenPlayer(slot) ? "true" : "false");
 	});
 
-	CS2ST_CALL(context, "IVEngineServer2::GetNumSplitScreenUsersAttachedToEdict", {
-		context.Detail("-> %d", engine_->GetNumSplitScreenUsersAttachedToEdict(slot));
+	CS2ST_CALL(context, "IVEngineServer2::GetSplitScreenPlayerAttachToEdict", {
+		// The SDK reworked the split-screen trio in the Oct 2026 update: this
+		// slot now returns the attached player's slot instead of an edict_t*,
+		// and GetNumSplitScreenUsersAttachedToEdict is gone from the interface.
+		// An unattached slot answers with an invalid slot - the value shape the
+		// SDK's own CPlayerSlot API promises.
+		const CPlayerSlot attached = engine_->GetSplitScreenPlayerAttachToEdict(slot);
+		context.Detail("-> slot %d, valid=%s", attached.Get(),
+			attached.IsValid() ? "true" : "false");
 	});
 
-	CS2ST_CALL(context, "IVEngineServer2::GetSplitScreenPlayerAttachToEdict", {
-		context.Detail("-> %p",
-			static_cast<void*>(engine_->GetSplitScreenPlayerAttachToEdict(slot)));
+	CS2ST_CALL(context, "IVEngineServer2::GetSplitScreenPlayerForEdict", {
+		// The other survivor of the trio, same reworked shape: a CPlayerSlot
+		// back instead of an edict_t*.
+		const CPlayerSlot split =
+			engine_->GetSplitScreenPlayerForEdict(slot, 0);
+		context.Detail("-> slot %d, valid=%s", split.Get(),
+			split.IsValid() ? "true" : "false");
 	});
 
 	CS2ST_CALL(context, "IVEngineServer2::GetClientConVarValue", {
@@ -486,10 +497,18 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 	});
 
 	context.SkipCall("IVEngineServer2::UnloadSpawnGroup", "unloads level content");
+	context.SkipCall("IVEngineServer2::LoadSpawnGroup",
+		"loads level content into a live spawn group; the Oct 2026 rework "
+		"added the slot, and the SpawnGroupDesc_t it takes is not safe to "
+		"fabricate");
 	context.SkipCall("IVEngineServer2::MakeSpawnGroupActive", "changes what is live");
 	context.SkipCall("IVEngineServer2::SynchronouslySpawnGroup", "spawns entities");
 	context.SkipCall("IVEngineServer2::SynchronizeAndBlockUntilLoaded", "blocks the server");
 	context.SkipCall("IVEngineServer2::SetSpawnGroupDescription", "mutates spawn group state");
+
+	// GetAllSpawnGroupsWithPVS and P2PGroupChanged are declared inside an
+	// #if 0 block in the SDK - they name no vtable slot, so there is nothing
+	// to call and nothing to skip.
 }
 
 // -----------------------------------------------------------------------------
@@ -622,6 +641,9 @@ void Source2EngineSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("IVEngineServer2::ClientPrintf", "writes to a player's console");
 	context.SkipCall("IVEngineServer2::CreateFakeClient", "adds a bot");
 	context.SkipCall("IVEngineServer2::DisconnectClient", "kicks a player");
+	context.SkipCall("IVEngineServer2::DisconnectAllClients",
+		"kicks every connected player; named unk301 in the SDK until the "
+		"Oct 2026 rework");
 	context.SkipCall("IVEngineServer2::KickClient", "kicks a player");
 	context.SkipCall("IVEngineServer2::BanClient", "bans a player");
 	context.SkipCall("IVEngineServer2::SetHLTVChatBan", "mutes an HLTV slot");
@@ -639,7 +661,8 @@ void Source2EngineSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("IVEngineServer2::ShowFrameTimeReport", "parameter meanings unconfirmed");
 	context.SkipCall("IVEngineServer2::DumpNetStats", "parameter meanings unconfirmed");
 
-	context.Note("plus 30 unnamed slots (unk001-unk609) the SDK has not identified");
+	context.Note("plus 35 unnamed slots (unk001-unk613, minus the rework-named "
+	             "DisconnectAllClients) the SDK has not identified");
 }
 
 } // namespace cs2st

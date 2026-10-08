@@ -19,17 +19,21 @@
 #include <tier1/utlvector.h>
 
 #include "core/Log.h"
+#include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
 #include "testkit/StructInspector.h"
 
 // The SH_DECL_HOOK block used to live here; under KHook the hook templates are
 // declared as members in the header instead, bound to the SDK member pointers
-// in the constructor at the bottom of this file. All six are on
+// in the constructor at the bottom of this file. All five are on
 // INetworkServerService and none on the game server, which is the whole design
 // of this suite's hook half - see the header. StartChangeLevel and
 // PreserveSteamID exist on *both* interfaces, but each KHook::Virtual carries
 // its own member pointer, so binding the service's pair does not collide with
-// anything.
+// anything. SetFinalSimulationTickThisFrame dropped off the list when the
+// s2sdk rework removed it from the interface - the per-frame liveness probe
+// duty now falls to SetGameLoadStarted being the next thing to fire on a level
+// change, and to the sweep's own tick cross-checks.
 
 namespace cs2st
 {
@@ -46,12 +50,10 @@ constexpr const char* kSetGameLoadFailed =
 	"INetworkServerService::SetGameLoadFailed";
 constexpr const char* kDisconnectGameNow =
 	"INetworkServerService::DisconnectGameNow";
-constexpr const char* kSetFinalSimulationTickThisFrame =
-	"INetworkServerService::SetFinalSimulationTickThisFrame";
 constexpr const char* kPreserveSteamID =
 	"INetworkServerService::PreserveSteamID";
 
-constexpr int kHookedMethodCount = 6;
+constexpr int kHookedMethodCount = 5;
 
 // ---- probe constants --------------------------------------------------------
 
@@ -436,21 +438,14 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 			game_server_ != nullptr ? "present" : "null");
 	});
 
-	CS2ST_CALL(context, "INetworkServerService::GetGameServer", {
-		// Returns void* where GetIGameServer returns a typed pointer. Whether
-		// they are the same object is undocumented, so it is measured: on
-		// single inheritance from INetworkGameServer the two would coincide.
-		void* raw = service_->GetGameServer();
-		context.Detail("-> %p (GetIGameServer gave %p)%s", raw,
-			static_cast<void*>(game_server_),
-			raw == static_cast<void*>(game_server_) ? "  (same address)" : "");
-	});
-
 	CS2ST_CALL(context, "INetworkServerService::GetServerNetworkAddress", {
-		// An int here, while INetworkGameServer::GetServerNetworkAddress
-		// returns a netadr_t. Recorded on its own; the netadr_t is where the
-		// checkable structure is.
-		context.Detail("-> %d", service_->GetServerNetworkAddress());
+		// Used to be declared as returning a bare int; the Oct 2026 SDK rework
+		// types it as netadr_t, matching INetworkGameServer's declaration - and
+		// the struct below is where the checkable structure lives.
+		const netadr_t address = service_->GetServerNetworkAddress();
+		char rendered[64] = {};
+		address.ToString(rendered, sizeof(rendered), false);
+		context.Detail("-> \"%s\"", rendered);
 	});
 
 	CS2ST_CALL(context, "INetworkServerService::GameLoadFailed", {
@@ -466,6 +461,18 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 		context.Detail("-> %p", service_->GetServerSerializersMsg());
 	});
 
+	CS2ST_CALL(context, "INetworkServerService::GetGameSpawnGroupMgr", {
+		// Slot the Oct 2026 rework added between GetServerSerializersMsg and
+		// IsSaveRestoreAllowed.
+		context.Detail("-> %p", static_cast<void*>(service_->GetGameSpawnGroupMgr()));
+	});
+
+	CS2ST_CALL(context, "INetworkServerService::IsChangelevelPending", {
+		// A read-only state query the rework named; whatever it answers about
+		// this server, the call surviving is the slot check.
+		context.Detail("-> %s", service_->IsChangelevelPending() ? "true" : "false");
+	});
+
 	context.SkipCall("INetworkServerService::~INetworkServerService",
 		"would destroy an engine service the manager still holds");
 	context.SkipCall("INetworkServerService::StartupServer",
@@ -479,17 +486,32 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 		"disconnects the running game; hooked instead");
 	context.SkipCall("INetworkServerService::PrintSpawnGroupStatus",
 		"writes an unbounded dump to the game console rather than returning it");
-	context.SkipCall("INetworkServerService::SetFinalSimulationTickThisFrame",
-		"changes how far the engine simulates this frame; hooked instead");
 	context.SkipCall("INetworkServerService::SetGameLoadFailed",
 		"marks the level load as failed; hooked instead");
 	context.SkipCall("INetworkServerService::SetGameLoadStarted",
 		"moves the load state machine; hooked instead");
 	context.SkipCall("INetworkServerService::StartChangeLevel",
 		"begins a map change; hooked instead");
+	context.SkipCall("INetworkServerService::FinishChangeLevel",
+		"completes a map change; the engine calls it against its own "
+		"changelevel state, which this suite has none of");
 	context.SkipCall("INetworkServerService::PreserveSteamID",
 		"changes how the next session's identity is assigned; hooked instead");
-	context.SkipCall("INetworkServerService::unk_18019F5B0", "unidentified in the SDK");
+	context.SkipCall("INetworkServerService::IsSaveRestoreAllowed",
+		"the rework-typed overload takes a CUtlString* reason out-parameter; "
+		"the INetworkGameServer row below records why even a null one is not "
+		"probed");
+	context.SkipCall("INetworkServerService::unk101",
+		"unidentified in the SDK (bool-returning)");
+	context.SkipCall("INetworkServerService::unk102",
+		"unidentified in the SDK and takes an int");
+	context.SkipCall("INetworkServerService::unk103", "unidentified in the SDK");
+	context.SkipCall("INetworkServerService::unk104", "unidentified in the SDK");
+	context.SkipCall("INetworkServerService::unk105",
+		"unidentified in the SDK (bool-returning)");
+	context.SkipCall("INetworkServerService::unk106", "unidentified in the SDK");
+	context.SkipCall("INetworkServerService::unk107",
+		"unidentified in the SDK and takes a bool");
 }
 
 // -----------------------------------------------------------------------------
@@ -1358,7 +1380,7 @@ void NetworkServerSuite::NoteSideEffectingCalls(TestContext& context)
 //  hook on it stops firing at the exact moment the interesting thing happens -
 //  and a hook that has stopped firing looks identical to a method the engine no
 //  longer calls, which is the one confusion this whole plugin exists to avoid.
-//  The service is a process-lifetime singleton, and between them these six
+//  The service is a process-lifetime singleton, and between them these five
 //  cover the level-load lifecycle the sweep cannot see.
 // -----------------------------------------------------------------------------
 
@@ -1377,7 +1399,6 @@ int NetworkServerSuite::InstallHooks(TestContext& context)
 	recorder.Declare(kSetGameLoadStarted, Id());
 	recorder.Declare(kSetGameLoadFailed, Id());
 	recorder.Declare(kDisconnectGameNow, Id());
-	recorder.Declare(kSetFinalSimulationTickThisFrame, Id());
 	recorder.Declare(kPreserveSteamID, Id());
 
 	// Each hook object carries its pre and post handler from the constructor;
@@ -1388,14 +1409,13 @@ int NetworkServerSuite::InstallHooks(TestContext& context)
 	hook_SetGameLoadStarted_.Add(service_);
 	hook_SetGameLoadFailed_.Add(service_);
 	hook_DisconnectGameNow_.Add(service_);
-	hook_SetFinalSimulationTickThisFrame_.Add(service_);
 	hook_PreserveSteamID_.Add(service_);
 
 	hooks_installed_ = true;
 
-	context.Note("SetFinalSimulationTickThisFrame is expected once a frame while a "
-	             "level runs; a zero there is the first thing to check, because it "
-	             "cannot be told apart from the engine no longer calling it");
+	context.Note("StartChangeLevel carries the map and landmark as arguments "
+	             "since the s2sdk rework, so the hook log now shows where the "
+	             "change is headed");
 	CS2ST_LOG_INFO("%s: the rest only fire on a level change or a disconnect - "
 	               "change the map, then dump\n", Id());
 	return kHookedMethodCount;
@@ -1414,7 +1434,6 @@ void NetworkServerSuite::RemoveHooks(TestContext& context)
 	hook_SetGameLoadStarted_.Remove(service_);
 	hook_SetGameLoadFailed_.Remove(service_);
 	hook_DisconnectGameNow_.Remove(service_);
-	hook_SetFinalSimulationTickThisFrame_.Remove(service_);
 	hook_PreserveSteamID_.Remove(service_);
 
 	hooks_installed_ = false;
@@ -1424,22 +1443,39 @@ void NetworkServerSuite::RemoveHooks(TestContext& context)
 // -----------------------------------------------------------------------------
 //  Hook handlers
 //
-//  These run in the engine's own frame, where CallGuard is not armed. Every
-//  parameter here is a bool or an int, so there is nothing to vet and nothing
-//  to walk - which is part of why these six were the ones chosen.
+//  These run in the engine's own frame, where CallGuard is not armed. POD
+//  parameters need no vetting; the string arguments StartChangeLevel grew in
+//  the s2sdk rework go through SafeStringArg before any %s sees them, per the
+//  no-unvetted-dereference rule in HookArg.h - which is part of why these five
+//  were the ones chosen.
 //
 //  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED:
 //  observe, never steer. The KHook::Virtual members are bound to these in the
 //  constructor at the bottom of this file.
 // -----------------------------------------------------------------------------
 
-KHook::Return<void> NetworkServerSuite::Pre_StartChangeLevel(INetworkServerService*)
+KHook::Return<void> NetworkServerSuite::Pre_StartChangeLevel(INetworkServerService*,
+                                                             const char* pszMap,
+                                                             const char* pszLandmark,
+                                                             void* pUnknown)
 {
-	CS2ST_HOOK_ENTER(kStartChangeLevel);
+	// Vetted before the format call, never straight off the argument: a wrong
+	// signature here is a float or a bool in the register, and touching it raw
+	// faults inside the callback that exists to report exactly that.
+	char map_scratch[64];
+	char landmark_scratch[64];
+	CS2ST_HOOK_ENTER_ARGS(kStartChangeLevel,
+		"map=\"%.63s\" landmark=\"%.63s\" unknown=%p",
+		SafeStringArg(pszMap, map_scratch),
+		SafeStringArg(pszLandmark, landmark_scratch),
+		pUnknown);
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> NetworkServerSuite::Post_StartChangeLevel(INetworkServerService*)
+KHook::Return<void> NetworkServerSuite::Post_StartChangeLevel(INetworkServerService*,
+                                                              const char* /*pszMap*/,
+                                                              const char* /*pszLandmark*/,
+                                                              void* /*pUnknown*/)
 {
 	CS2ST_HOOK_LEAVE(kStartChangeLevel);
 	return { KHook::Action::Ignore };
@@ -1487,21 +1523,6 @@ KHook::Return<void> NetworkServerSuite::Post_DisconnectGameNow(INetworkServerSer
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> NetworkServerSuite::Pre_SetFinalSimulationTickThisFrame(INetworkServerService*, int nTick)
-{
-	// Once a frame while a level runs, which makes this the liveness probe for
-	// the whole set. HookRecorder stops formatting once its sample quota is
-	// full, which is what keeps a per-frame hook affordable.
-	CS2ST_HOOK_ENTER_ARGS(kSetFinalSimulationTickThisFrame, "tick=%d", nTick);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Post_SetFinalSimulationTickThisFrame(INetworkServerService*, int)
-{
-	CS2ST_HOOK_LEAVE(kSetFinalSimulationTickThisFrame);
-	return { KHook::Action::Ignore };
-}
-
 KHook::Return<void> NetworkServerSuite::Pre_PreserveSteamID(INetworkServerService*)
 {
 	CS2ST_HOOK_ENTER(kPreserveSteamID);
@@ -1536,9 +1557,6 @@ NetworkServerSuite::NetworkServerSuite() :
 	hook_DisconnectGameNow_(&INetworkServerService::DisconnectGameNow, this,
 		&NetworkServerSuite::Pre_DisconnectGameNow,
 		&NetworkServerSuite::Post_DisconnectGameNow),
-	hook_SetFinalSimulationTickThisFrame_(&INetworkServerService::SetFinalSimulationTickThisFrame, this,
-		&NetworkServerSuite::Pre_SetFinalSimulationTickThisFrame,
-		&NetworkServerSuite::Post_SetFinalSimulationTickThisFrame),
 	hook_PreserveSteamID_(&INetworkServerService::PreserveSteamID, this,
 		&NetworkServerSuite::Pre_PreserveSteamID,
 		&NetworkServerSuite::Post_PreserveSteamID)

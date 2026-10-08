@@ -55,7 +55,7 @@ CS2ST_PRIVATE_FIELD(ConVarDataFilterCBIndex, ConVarData, unsigned int,   m_iFilt
 CS2ST_PRIVATE_FIELD(ConVarDataComplCBIndex,  ConVarData, unsigned int,   m_iCompletionCBIndex);
 CS2ST_PRIVATE_FIELD(ConVarDataGameInfoFlags, ConVarData, int,            m_GameInfoFlags);
 CS2ST_PRIVATE_FIELD(ConVarDataUserInfoIndex, ConVarData, int,            m_UserInfoByteIndex);
-CS2ST_PRIVATE_FIELD(ConVarDataCustomDataFn,  ConVarData, FnCustomData_t, m_fnCustomData);
+CS2ST_PRIVATE_FIELD(ConVarDataEnumInfoFn,   ConVarData, FnGetEnumInfoHandle_t, m_fnGetEnumInfoHandle);
 
 namespace
 {
@@ -150,11 +150,12 @@ void ProbeBoolChanged(CConVar<bool>* cvar, CSplitScreenSlot slot,
  * pointers, so the engine treats them as two different registrations.
  */
 void ProbeGlobalChanged(ConVarRefAbstract* ref, CSplitScreenSlot slot,
-                        const char* new_value, const char* old_value, void* unk01)
+                        const char* new_value, const char* old_value,
+                        ConVarUserInfoSet_t* userinfo_data)
 {
 	(void)slot;
 	(void)old_value;
-	(void)unk01;
+	(void)userinfo_data;
 	++g_probe.probe_global_changes;
 
 	char scratch[48];
@@ -188,9 +189,10 @@ constexpr int kHookedMethodCount = 8;
  * function pointer, so the engine has nowhere to put a `this`.
  */
 void PersistentGlobalChanged(ConVarRefAbstract* ref, CSplitScreenSlot slot,
-                             const char* new_value, const char* old_value, void* unk01)
+                             const char* new_value, const char* old_value,
+                             ConVarUserInfoSet_t* userinfo_data)
 {
-	(void)unk01;
+	(void)userinfo_data;
 
 	char name_scratch[48];
 	char new_scratch[48];
@@ -534,7 +536,7 @@ std::size_t CollectConVarDataOffsets(const ConVarData* data, std::size_t* out,
 	out[n++] = PrivateFieldOffset<ConVarDataComplCBIndex>(data);
 	out[n++] = PrivateFieldOffset<ConVarDataGameInfoFlags>(data);
 	out[n++] = PrivateFieldOffset<ConVarDataUserInfoIndex>(data);
-	out[n++] = PrivateFieldOffset<ConVarDataCustomDataFn>(data);
+	out[n++] = PrivateFieldOffset<ConVarDataEnumInfoFn>(data);
 	return n;
 }
 
@@ -1496,9 +1498,17 @@ void ConVarSuite::ExerciseConVarDataApi(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "ConVarData::GetCustomDataFn", {
-		context.Detail("-> %p (only a handful of cvars set one)",
-			reinterpret_cast<const void*>(data->GetCustomDataFn()));
+	CS2ST_CALL(context, "ConVarData::HasEnumInfo", {
+		// The Oct 2026 SDK rework named this slot's era: m_fnCustomData /
+		// GetCustomDataFn became m_fnGetEnumInfoHandle / HasEnumInfo+GetEnumInfo,
+		// a schema-enum binding only a handful of cvars (lb_debug_tiles and
+		// friends) set. Ours did not, so false is the only right answer.
+		context.Detail("-> %s (only a handful of cvars set one)",
+			data->HasEnumInfo() ? "true" : "false");
+		if (data->HasEnumInfo())
+		{
+			context.Fail("cs2sdktest_int was registered with no enum binding");
+		}
 	});
 
 	// Two independent routes to the split-screen slot count, plus a
@@ -4599,7 +4609,7 @@ void ConVarSuite::InspectConVarDataLayout(TestContext& context)
 	inspect.Int32  ("m_GameInfoFlags", PrivateFieldOffset<ConVarDataGameInfoFlags>(data));
 	inspect.Int32  ("m_UserInfoByteIndex",
 				  PrivateFieldOffset<ConVarDataUserInfoIndex>(data));
-	inspect.Pointer("m_fnCustomData", PrivateFieldOffset<ConVarDataCustomDataFn>(data));
+	inspect.Pointer("m_fnGetEnumInfoHandle", PrivateFieldOffset<ConVarDataEnumInfoFn>(data));
 
 	CVValue_t* slot0 = data->Value(0);
 	if (slot0 == nullptr)
@@ -4944,9 +4954,10 @@ KHook::Return<ConCommandRef> ConVarSuite::Post_RegisterConCommand(ICvar*, const 
 KHook::Return<void> ConVarSuite::Pre_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref,
                                                                CSplitScreenSlot slot,
                                                                const char* new_value,
-                                                               const char* old_value, void* unk01)
+                                                               const char* old_value,
+                                                               ConVarUserInfoSet_t* userinfo_data)
 {
-	(void)unk01;
+	(void)userinfo_data;
 
 	char name_scratch[48];
 	char new_scratch[48];
@@ -4966,13 +4977,14 @@ KHook::Return<void> ConVarSuite::Pre_CallGlobalChangeCallbacks(ICvar*, ConVarRef
 KHook::Return<void> ConVarSuite::Post_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref,
                                                                 CSplitScreenSlot slot,
                                                                 const char* new_value,
-                                                                const char* old_value, void* unk01)
+                                                                const char* old_value,
+                                                                ConVarUserInfoSet_t* userinfo_data)
 {
 	(void)ref;
 	(void)slot;
 	(void)new_value;
 	(void)old_value;
-	(void)unk01;
+	(void)userinfo_data;
 	CS2ST_HOOK_LEAVE(kCallGlobalChange);
 	return { KHook::Action::Ignore };
 }

@@ -1,17 +1,17 @@
 cmake_minimum_required(VERSION 3.21)
 
 # =============================================================================
-#  CS2SDKTest - a Metamod:Source exercise harness for hl2sdk (cs2 branch)
+#  CS2SDKTest - a Metamod:Source exercise harness for s2sdk (cs2 branch)
 #
 #  Behaves like an ordinary plugin, but its job is to use as much of the SDK as
 #  possible: call the engine interfaces, hook the callbacks, and log what
 #  actually happened. After a game update, the log is what tells you which
-#  parts of hl2sdk no longer match the game.
+#  parts of s2sdk no longer match the game.
 # =============================================================================
 
 project(cs2sdktest
   VERSION 0.1.0
-  DESCRIPTION "hl2sdk surface diagnostics for Counter-Strike 2"
+  DESCRIPTION "s2sdk surface diagnostics for Counter-Strike 2"
   LANGUAGES CXX
 )
 
@@ -28,8 +28,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # -----------------------------------------------------------------------------
 #  Options
 # -----------------------------------------------------------------------------
-set(CS2SDKTEST_HL2SDK_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/hl2sdk"
-    CACHE PATH "Path to the hl2sdk checkout (cs2 branch)")
+set(CS2SDKTEST_HL2SDK_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/s2sdk"
+    CACHE PATH "Path to the s2sdk checkout (cs2 branch)")
 set(CS2SDKTEST_METAMOD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/metamod-source"
     CACHE PATH "Path to the metamod-source checkout")
 set(CS2SDKTEST_GAME_DIR    ""
@@ -57,7 +57,7 @@ option(CS2SDKTEST_WITH_PROTOBUF
 # valveextensions) is what NetworkMessagesSuite needs to walk real net
 # messages - the generated CNETMsg_Tick is the round-trip subject.
 set(CS2SDKTEST_PROTO_FILES "network_connection;netmessages"
-    CACHE STRING "hl2sdk/common proto files to generate (without .proto)")
+    CACHE STRING "s2sdk/common proto files to generate (without .proto)")
 
 option(CS2SDKTEST_TIER1_KEYVALUES3
        "Also compile tier1/keyvalues3.cpp into the plugin" OFF)
@@ -248,10 +248,12 @@ target_link_libraries(cs2sdktest PRIVATE
   hl2sdk::hl2sdk
 )
 
-target_compile_features(cs2sdktest PRIVATE cxx_std_17)
+# Upstream s2sdk builds itself as C++20 (AMBuildScript, Oct 2026); matching it
+# keeps this plugin and the SDK headers under the same language rules.
+target_compile_features(cs2sdktest PRIVATE cxx_std_20)
 
 set_target_properties(cs2sdktest PROPERTIES
-  CXX_STANDARD 17
+  CXX_STANDARD 20
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
   POSITION_INDEPENDENT_CODE ON

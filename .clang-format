@@ -1,4 +1,4 @@
-# Matches the brace and indentation style used by hl2sdk and metamod-source, so
+# Matches the brace and indentation style used by s2sdk and metamod-source, so
 # this project's sources and the SDK sources they sit next to read alike.
 ---
 Language: Cpp

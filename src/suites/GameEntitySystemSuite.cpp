@@ -19,7 +19,7 @@
 #include "testkit/StructInspector.h"
 
 /**
- * hl2sdk declares `extern CGameEntitySystem* GameEntitySystem();` and never
+ * s2sdk declares `extern CGameEntitySystem* GameEntitySystem();` and never
  * defines it: the three EntityInstance*Iter_t classes and
  * CEntityIdentity::NameMatches call it, and the consumer is expected to supply
  * the pointer. That is why entity2/entitysystem.cpp compiles into this plugin
@@ -298,7 +298,7 @@ void GameEntitySystemSuite::ExerciseCalls(TestContext& context)
 void GameEntitySystemSuite::ExerciseResourceServiceAppSystem(TestContext& context)
 {
 	context.Note("[IGameResourceService] IAppSystem base slots");
-	context.Note("hl2sdk has no class body for IGameResourceService, only the version "
+	context.Note("s2sdk has no class body for IGameResourceService, only the version "
 	             "string; the cast to IAppSystem below is an assumption this section tests");
 
 	// reinterpret_cast, not static_cast: the SDK never says IGameResourceService

@@ -404,6 +404,12 @@ void Source2GameClientsSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2GameClients::unk201", "unidentified in the SDK");
 	context.SkipCall("ISource2GameClients::unk202", "unidentified in the SDK");
 	context.SkipCall("ISource2GameClients::unk203", "unidentified in the SDK");
+	context.SkipCall("ISource2GameClients::unk204",
+		"takes a name the SDK does not explain and writes into a buffer this "
+		"suite has no way to size honestly");
+	context.SkipCall("ISource2GameClients::unk205",
+		"takes a player slot and an int whose meaning the SDK does not give; "
+		"calling it blind on a live player is not worth the row");
 }
 
 // -----------------------------------------------------------------------------

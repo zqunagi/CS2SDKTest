@@ -374,6 +374,26 @@ void StructInspector::Int32(const char* field, std::size_t offset,
 	});
 }
 
+void StructInspector::UInt16(const char* field, std::size_t offset)
+{
+	const std::string target = Target(field);
+	Check(target, offset, sizeof(std::uint16_t), [&]() {
+		std::uint16_t value = 0;
+		std::memcpy(&value, BytesAt(offset), sizeof(value));
+		context_.Detail("@0x%02zx = %u", offset, static_cast<unsigned>(value));
+	});
+}
+
+void StructInspector::Int16(const char* field, std::size_t offset)
+{
+	const std::string target = Target(field);
+	Check(target, offset, sizeof(std::int16_t), [&]() {
+		std::int16_t value = 0;
+		std::memcpy(&value, BytesAt(offset), sizeof(value));
+		context_.Detail("@0x%02zx = %d", offset, static_cast<int>(value));
+	});
+}
+
 void StructInspector::UInt32(const char* field, std::size_t offset)
 {
 	const std::string target = Target(field);

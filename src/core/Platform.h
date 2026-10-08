@@ -1,5 +1,5 @@
 /**
- * Platform detection, kept deliberately independent of hl2sdk's own
+ * Platform detection, kept deliberately independent of s2sdk's own
  * public/tier0/platform.h.
  *
  * This header is included by code that also touches OS APIs directly (module

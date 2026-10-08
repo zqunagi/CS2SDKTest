@@ -2,7 +2,7 @@
  * Exercises Metamod:Source's own plugin-facing surface: ISmmAPI, and the
  * callbacks that arrive through IMetamodListener.
  *
- * This is the only suite that does not test hl2sdk, and it is here for one
+ * This is the only suite that does not test s2sdk, and it is here for one
  * reason: on Source 2, LevelInit and LevelShutdown do not exist on
  * ISource2Server. They reach a plugin *only* as IMetamodListener::OnLevelInit /
  * OnLevelShutdown, which Metamod synthesises by hooking ILoopMode::LoopInit and

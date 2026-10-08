@@ -314,12 +314,10 @@ void Source2ServerSuite::ExerciseEnumerations(TestContext& context)
 		NoteListPreview(context, events);
 	});
 
-	CS2ST_CALL(context, "ISource2Server::GetCharacterList", {
-		CUtlVector<CUtlString> characters;
-		server_->GetCharacterList(characters);
-		context.Detail("-> %d character(s)", characters.Count());
-		NoteListPreview(context, characters);
-	});
+	// GetCharacterList and the whole econ/model-name family were removed from
+	// the interface in the Oct 2026 SDK rework (moved behind the save-game
+	// slots that now close the vtable); the tail-of-vtable section below
+	// carries their successors.
 }
 
 // -----------------------------------------------------------------------------
@@ -361,28 +359,40 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2Server::PreFatalShutdown", "prepares the server to die");
 	context.SkipCall("ISource2Server::ServerConVarChanged",
 		"runs convar change handling - hooked instead");
-	context.SkipCall("ISource2Server::unk_201", "unidentified in the SDK");
 
 	// Callable in principle, but they need a structure we cannot honestly
 	// build yet. Separated from the side-effecting list so the reason is clear.
 	context.SkipCall("ISource2Server::GetNavMeshData", "needs a CNavData to fill");
 	context.SkipCall("ISource2Server::GetTaggedConVarList", "needs a KeyValues to fill");
 	context.SkipCall("ISource2Server::PrintStatus", "needs a valid entity index");
-	context.SkipCall("ISource2Server::GetEconItemNamesForModel", "needs a real model name");
-	context.SkipCall("ISource2Server::GetEconItemNamesForCharacter",
-		"needs a real character name");
-	context.SkipCall("ISource2Server::GetEconItemsInfoForModel", "needs a real model name");
-	context.SkipCall("ISource2Server::GetEconItemsInfoForCharacter",
-		"needs a real character name");
-	context.SkipCall("ISource2Server::GetDefaultScaleForModel", "needs a real model name");
-	context.SkipCall("ISource2Server::GetDefaultScaleForCharacter",
-		"needs a real character name");
-	context.SkipCall("ISource2Server::GetDefaultControlPointAutoUpdates",
-		"needs a real particle system name");
-	context.SkipCall("ISource2Server::GetCharacterNameForModel", "needs a real model name");
-	context.SkipCall("ISource2Server::GetModelNameForCharacter",
-		"needs a real character name");
-	context.SkipCall("ISource2Server::GetDefaultChoreoDirForModel", "needs a real model name");
+
+	// ---- the save-game tail the Oct 2026 rework added ------------------------
+	// Fifteen slots behind GetHitGroupEnumInfo, all named in one SDK update:
+	// KeyValues3 plumbing, save-file lookups and the async save pipeline. Each
+	// one listed so a future renaming shows as a diff rather than a gap.
+	context.SkipCall("ISource2Server::unk_101",
+		"takes a KeyValues3 the engine would read as save metadata");
+	context.SkipCall("ISource2Server::unk_102 / unk_103",
+		"resolve a save name this suite has no file for");
+	context.SkipCall("ISource2Server::GetLevelsFromSaveFile",
+		"reads a save file and fills a CCreateGameServerLoadInfo list; there "
+		"is no save to point it at");
+	context.SkipCall("ISource2Server::unk_201", "unidentified in the SDK");
+	context.SkipCall("ISource2Server::PreSaveGameLoaded",
+		"runs the game's save-loaded path out of band");
+	context.SkipCall("ISource2Server::AppendSaveGameResources",
+		"grows a live resource manifest");
+	context.SkipCall("ISource2Server::AppendTransitionResources",
+		"grows a live resource manifest");
+	context.SkipCall("ISource2Server::SaveGame",
+		"writes a save file; SaveGameParams_t is only forward-declared, so "
+		"there is nothing honest to pass either");
+	context.SkipCall("ISource2Server::unk_301 / unk_302 / unk_303",
+		"unidentified in the SDK, all bool-returning");
+	context.SkipCall("ISource2Server::FinishAsyncSave",
+		"completes a save this suite never started");
+	context.SkipCall("ISource2Server::GetEntityUniqueHammerID",
+		"needs a valid entity index to mean anything");
 }
 
 // -----------------------------------------------------------------------------

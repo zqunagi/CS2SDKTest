@@ -2657,13 +2657,13 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 			const SchemaClassFieldData_t& field = probe_fields_[i];
 			CSchemaType* type = field.m_pType;
 
-			context.Detail("%.60s @ +%d, type %p (%s, \"%.40s\") meta=%d",
+			context.Detail("%.60s @ +%d, type %p (%s, \"%.40s\") meta=%u",
 				SafeName(field.m_pszName),
 				field.m_nSingleInheritanceOffset,
 				static_cast<void*>(type),
 				type != nullptr ? TypeCategoryName(type->m_eTypeCategory) : "no type",
 				type != nullptr ? SafeName(type->m_sTypeName.Get()) : "",
-				field.m_nStaticMetadataCount);
+				static_cast<unsigned>(field.m_nStaticMetadataCount));
 
 			if (field.m_pszName == nullptr)
 			{
@@ -2673,14 +2673,13 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 			{
 				context.Fail("a schema field always has a type");
 			}
-			if (field.m_nStaticMetadataCount < 0)
-			{
-				context.Fail("a metadata count cannot be negative");
-			}
+			// m_nStaticMetadataCount is uint16 since the s2sdk rework, so the
+			// negative-count Fail from its int days dropped off: the type now
+			// guarantees what the check used to.
 			if ((field.m_nStaticMetadataCount > 0) != (field.m_pStaticMetadata != nullptr))
 			{
-				context.Fail("metadata count %d but array %p",
-					field.m_nStaticMetadataCount,
+				context.Fail("metadata count %u but array %p",
+					static_cast<unsigned>(field.m_nStaticMetadataCount),
 					static_cast<void*>(field.m_pStaticMetadata));
 			}
 
@@ -2826,8 +2825,7 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 	inspect.Int32  ("m_nSingleInheritanceOffset",
 	                                          offsetof(SchemaClassFieldData_t, m_nSingleInheritanceOffset),
 	                                          0, INT32_MAX);
-	inspect.Int32  ("m_nStaticMetadataCount", offsetof(SchemaClassFieldData_t, m_nStaticMetadataCount),
-	                                          0, INT32_MAX);
+	inspect.UInt16 ("m_nStaticMetadataCount", offsetof(SchemaClassFieldData_t, m_nStaticMetadataCount));
 	inspect.Pointer("m_pStaticMetadata",      offsetof(SchemaClassFieldData_t, m_pStaticMetadata));
 	inspect.Summarize();
 	inspect.HexDump();
@@ -3068,7 +3066,7 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 		const unsigned size = probe_enum_->m_nSize;
 		const unsigned alignment = probe_enum_->m_nAlignment;
 		context.Detail("\"%.60s\" size=%u alignment=%u enumerators=%u meta=%u "
-		               "range=[%lld, %lld] flags=0x%02x",
+		               "range=[%lld, %lld] flags=0x%04x",
 			SafeName(probe_enum_->m_pszName), size, alignment,
 			static_cast<unsigned>(probe_enum_->m_nEnumeratorCount),
 			static_cast<unsigned>(probe_enum_->m_nStaticMetadataCount),
@@ -3115,7 +3113,9 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 
 		// SCHEMA_EF_IS_REGISTERED must be set on a binding we just looked up
 		// successfully, and the two scope bits are mutually exclusive.
-		const std::uint8_t flags = probe_enum_->m_nFlags;
+		// m_nFlags is uint16 since the s2sdk rework (the enumerators still name
+		// bits 0-5), so the reads and the mask below are 16-bit now.
+		const std::uint16_t flags = probe_enum_->m_nFlags;
 		if ((flags & SCHEMA_EF_IS_REGISTERED) == 0)
 		{
 			context.Fail("the lookup succeeded but the enum is not marked registered");
@@ -3125,23 +3125,23 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 		{
 			context.Fail("the enum claims both global and module-local type scope");
 		}
-		// Cast is explicit because | promotes the enumerators to int; the
-		// value is 0x3f, but relying on an implicit narrowing here would be one
-		// more thing for a future -Wconversion build to trip over.
-		const std::uint8_t known_flags = static_cast<std::uint8_t>(
+		// Cast is explicit because | promotes the enumerators to int; the named
+		// bits stop at bit 5, but relying on an implicit narrowing here would be
+		// one more thing for a future -Wconversion build to trip over.
+		const std::uint16_t known_flags = static_cast<std::uint16_t>(
 			SCHEMA_EF_IS_REGISTERED
 			| SCHEMA_EF_MODULE_LOCAL_TYPE_SCOPE
 			| SCHEMA_EF_GLOBAL_TYPE_SCOPE
 			| SCHEMA_EF_UNK003
 			| SCHEMA_EF_UNK004
 			| SCHEMA_EF_UNK005);
-		// Masked back down to 8 bits: ~ promotes to int, so without the cast
-		// the complement would carry 24 set bits that are not part of the field.
-		const std::uint8_t unknown_flags =
-			static_cast<std::uint8_t>(flags & static_cast<std::uint8_t>(~known_flags));
+		// Masked back down to 16 bits: ~ promotes to int, so without the cast
+		// the complement would carry 16 set bits that are not part of the field.
+		const std::uint16_t unknown_flags =
+			static_cast<std::uint16_t>(flags & static_cast<std::uint16_t>(~known_flags));
 		if (unknown_flags != 0)
 		{
-			context.Suspect("bits outside SchemaEnumFlags_t are set (0x%02x)",
+			context.Suspect("bits outside SchemaEnumFlags_t are set (0x%04x)",
 				static_cast<unsigned>(unknown_flags));
 		}
 	});
@@ -3231,21 +3231,20 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 
 		CS2ST_CALL(context, target, {
 			const SchemaEnumeratorInfoData_t& entry = enumerators[i];
-			context.Detail("%.60s = %lld, meta=%d", SafeName(entry.m_pszName),
-				static_cast<long long>(entry.m_nValue), entry.m_nStaticMetadataCount);
+			context.Detail("%.60s = %lld, meta=%u", SafeName(entry.m_pszName),
+				static_cast<long long>(entry.m_nValue),
+				static_cast<unsigned>(entry.m_nStaticMetadataCount));
 
 			if (entry.m_pszName == nullptr)
 			{
 				context.Fail("an enumerator always has a name");
 			}
-			if (entry.m_nStaticMetadataCount < 0)
-			{
-				context.Fail("a metadata count cannot be negative");
-			}
+			// uint16 since the s2sdk rework; the negative-count Fail dropped off
+			// with the signedness.
 			if ((entry.m_nStaticMetadataCount > 0) != (entry.m_pStaticMetadata != nullptr))
 			{
-				context.Fail("metadata count %d but array %p",
-					entry.m_nStaticMetadataCount,
+				context.Fail("metadata count %u but array %p",
+					static_cast<unsigned>(entry.m_nStaticMetadataCount),
 					static_cast<void*>(entry.m_pStaticMetadata));
 			}
 		});
@@ -3322,8 +3321,7 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 		&enumerators[0], sizeof(SchemaEnumeratorInfoData_t));
 	inspect.String ("m_pszName",              offsetof(SchemaEnumeratorInfoData_t, m_pszName));
 	inspect.Int64  ("m_nValue",               offsetof(SchemaEnumeratorInfoData_t, m_nValue));
-	inspect.Int32  ("m_nStaticMetadataCount", offsetof(SchemaEnumeratorInfoData_t, m_nStaticMetadataCount),
-	                                          0, INT32_MAX);
+	inspect.UInt16 ("m_nStaticMetadataCount", offsetof(SchemaEnumeratorInfoData_t, m_nStaticMetadataCount));
 	inspect.Pointer("m_pStaticMetadata",      offsetof(SchemaEnumeratorInfoData_t, m_pStaticMetadata));
 	inspect.Summarize();
 	inspect.HexDump();

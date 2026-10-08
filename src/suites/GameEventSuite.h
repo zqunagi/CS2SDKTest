@@ -11,7 +11,7 @@
  *                        actually travels.
  *
  *   IGameEventManager2   The Source 1 interface plugins still write against
- *                        (FireEvent, CreateEvent, LookupEventId). hl2sdk's cs2
+ *                        (FireEvent, CreateEvent, LookupEventId). s2sdk's cs2
  *                        branch declares the class but defines *no* interface
  *                        version constant for it - the s1 sample uses
  *                        INTERFACEVERSION_GAMEEVENTSMANAGER2, while the s2
@@ -147,10 +147,10 @@ public:
 
 	KHook::Return<void> Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl, INetworkMessageInternal* pEvent,
 	                                                const CNetMessage* pData, unsigned long nSize,
-	                                                NetChannelBufType_t bufType);
+	                                                NetChannelBufType_t bufType, bool bAllClients);
 	KHook::Return<void> Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl, INetworkMessageInternal* pEvent,
 	                                                 const CNetMessage* pData, unsigned long nSize,
-	                                                 NetChannelBufType_t bufType);
+	                                                 NetChannelBufType_t bufType, bool bAllClients);
 
 	KHook::Return<void> Pre_ProcessQueuedEvents(IGameEventSystem*);
 	KHook::Return<void> Post_ProcessQueuedEvents(IGameEventSystem*);
@@ -172,7 +172,7 @@ public:
 	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, bool, IRecipientFilter*, INetworkMessageInternal*,
 	               const CNetMessage*, unsigned long> hook_PostEventAbstractFiltered_;
 	KHook::Virtual<IGameEventSystem, void, const CBaseHandle&, INetworkMessageInternal*, const CNetMessage*, unsigned long,
-	               NetChannelBufType_t> hook_PostEntityEventAbstract_;
+	               NetChannelBufType_t, bool> hook_PostEntityEventAbstract_;
 	KHook::Virtual<IGameEventSystem, void> hook_ProcessQueuedEvents_;
 	KHook::Virtual<IGameEventSystem, void> hook_PurgeQueuedEvents_;
 

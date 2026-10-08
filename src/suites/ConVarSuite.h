@@ -144,10 +144,10 @@ private:
 
 	KHook::Return<void> Pre_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref, CSplitScreenSlot slot,
 	                                                  const char* new_value, const char* old_value,
-	                                                  void* unk01);
+	                                                  ConVarUserInfoSet_t* userinfo_data);
 	KHook::Return<void> Post_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref, CSplitScreenSlot slot,
 	                                                   const char* new_value, const char* old_value,
-	                                                   void* unk01);
+	                                                   ConVarUserInfoSet_t* userinfo_data);
 
 	KHook::Return<void> Pre_UnregisterConVarCallbacks(ICvar*, ConVarRef cvar);
 	KHook::Return<void> Post_UnregisterConVarCallbacks(ICvar*, ConVarRef cvar);
@@ -164,7 +164,7 @@ private:
 	KHook::Virtual<ICvar, void, ConCommandRef, const CCommandContext&, const CCommand&> hook_DispatchConCommand_;
 	KHook::Virtual<ICvar, void, const ConVarCreation_t&, uint64, ConVarRef*, ConVarData**> hook_RegisterConVar_;
 	KHook::Virtual<ICvar, ConCommandRef, const ConCommandCreation_t&, uint64> hook_RegisterConCommand_;
-	KHook::Virtual<ICvar, void, ConVarRefAbstract*, CSplitScreenSlot, const char*, const char*, void*> hook_CallGlobalChangeCallbacks_;
+	KHook::Virtual<ICvar, void, ConVarRefAbstract*, CSplitScreenSlot, const char*, const char*, ConVarUserInfoSet_t*> hook_CallGlobalChangeCallbacks_;
 	KHook::Virtual<ICvar, void, ConVarRef> hook_UnregisterConVarCallbacks_;
 	KHook::Virtual<ICvar, void, ConCommandRef> hook_UnregisterConCommandCallbacks_;
 

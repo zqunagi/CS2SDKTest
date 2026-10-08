@@ -8,7 +8,7 @@
 #  translation unit that includes ISmmPlugin.h needs it. Any Source 2 plugin
 #  runs protoc, whether or not it ever touches a network message itself.
 #
-#  The compiler used is the one shipped inside hl2sdk (devtools/bin), matching
+#  The compiler used is the one shipped inside s2sdk (devtools/bin), matching
 #  the manifest's protoc_path. A system protoc is deliberately not accepted:
 #  generated code and the prebuilt libprotobuf.a must come from the same
 #  protobuf release, and a mismatch shows up as link errors that name mangled
@@ -30,7 +30,7 @@ endif()
 set(CS2SDKTEST_PROTOC "${HL2SDK_ROOT}/${_protoc_relative}")
 if(NOT EXISTS "${CS2SDKTEST_PROTOC}")
   message(FATAL_ERROR
-    "hl2sdk does not ship a protoc at '${CS2SDKTEST_PROTOC}'.\n"
+    "s2sdk does not ship a protoc at '${CS2SDKTEST_PROTOC}'.\n"
     "The SDK headers require generated protobuf sources, so this is required.")
 endif()
 
@@ -56,7 +56,7 @@ set(CS2SDKTEST_PROTO_DIR "${HL2SDK_ROOT}/common")
 set(CS2SDKTEST_PROTO_OUT_DIR "${CMAKE_BINARY_DIR}/generated/protobuf")
 
 # Generates C++ sources for each named .proto (without extension, relative to
-# hl2sdk/common) and returns the generated file list.
+# s2sdk/common) and returns the generated file list.
 #
 # A generated header #includes the .pb.h of every .proto it imports, so the
 # imports have to be generated too - protoc does not emit them on its own
@@ -68,7 +68,7 @@ function(cs2sdktest_generate_protobuf out_sources_var)
   file(MAKE_DIRECTORY "${CS2SDKTEST_PROTO_OUT_DIR}")
 
   # Expands one entry of CS2SDKTEST_PROTO_FILES into itself plus the closure
-  # of its hl2sdk/common imports, appended in dependency order (imports first,
+  # of its s2sdk/common imports, appended in dependency order (imports first,
   # so a regenerating build never compiles against a stale imported .pb.h).
   function(_protobuf_closure name out_var)
     set(_result "")

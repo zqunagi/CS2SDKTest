@@ -120,6 +120,8 @@ public:
 	 */
 	void Int32(const char* field, std::size_t offset);
 	void Int32(const char* field, std::size_t offset, std::int64_t min, std::int64_t max);
+	void UInt16(const char* field, std::size_t offset);
+	void Int16(const char* field, std::size_t offset);
 	void UInt32(const char* field, std::size_t offset);
 	void Int64(const char* field, std::size_t offset);
 	void UInt64(const char* field, std::size_t offset);
