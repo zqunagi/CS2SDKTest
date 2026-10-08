@@ -55,7 +55,7 @@ version_gen.h
 
 # ---- Run logs produced at runtime ----
 /logs/
-
+/docs/
 # ---- Misc ----
 *.log
 .DS_Store
