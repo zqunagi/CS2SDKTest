@@ -222,6 +222,13 @@ bool GameEntitySystemSuite::Acquire(TestContext& context)
 		return false;
 	}
 
+	// The SDK's GameEntitySystem() - and every EntityInstanceIter/lookup helper
+	// built on it in entity2/entitysystem.cpp, which compiles into this plugin -
+	// reads this global. Nothing else fills it: the plugin's Load acquires only
+	// ICvar, so without this line those helpers dereference a null service and
+	// the suites below CRASH instead of reporting.
+	g_pGameResourceServiceServer = static_cast<IGameResourceService*>(resource_service_);
+
 	context.Note("service at %p (%s)", resource_service_,
 		GAMERESOURCESERVICESERVER_INTERFACE_VERSION);
 	return true;
