@@ -56,12 +56,13 @@
 
 #include "testkit/ITestSuite.h"
 
-// Deliberately no SDK headers beyond the forward declarations below: the
-// KHook::Virtual members name INetworkServerService only as a template
-// argument (never dereferenced in this header), and the hooked methods take
-// only POD parameters (bool, int) or pointers that never get dereferenced
-// outside the .cpp. The complete SDK types live in the .cpp.
-class INetworkServerService;
+// The hooked interface has to be complete here: the KHook::Virtual
+// constructors in the .cpp resolve vtable slots from member pointers against
+// INetworkServerService, which needs the class body (and the header that
+// declares the hooks' exact signatures). The rest of the SDK types stay in
+// the .cpp.
+#include <engine2/inetworkserverservice.h>
+
 class CNetworkGameServerBase;
 class CGlobalVars;
 
@@ -111,8 +112,11 @@ public:
 	KHook::Return<void> Pre_SetGameLoadFailed(INetworkServerService*, bool bFailed);
 	KHook::Return<void> Post_SetGameLoadFailed(INetworkServerService*, bool bFailed);
 
-	KHook::Return<void> Pre_DisconnectGameNow(INetworkServerService*, int nReason);
-	KHook::Return<void> Post_DisconnectGameNow(INetworkServerService*, int nReason);
+	// DisconnectGameNow's reason is typed ENetworkDisconnectionReason since
+	// the 2026-10 SDK (was a bare int); the handlers keep judging it through
+	// the protobuf validator rather than trusting the enum's range.
+	KHook::Return<void> Pre_DisconnectGameNow(INetworkServerService*, ENetworkDisconnectionReason nReason);
+	KHook::Return<void> Post_DisconnectGameNow(INetworkServerService*, ENetworkDisconnectionReason nReason);
 
 	KHook::Return<void> Pre_PreserveSteamID(INetworkServerService*);
 	KHook::Return<void> Post_PreserveSteamID(INetworkServerService*);
@@ -128,7 +132,7 @@ public:
 	KHook::Virtual<INetworkServerService, void, const char*, const char*, void*> hook_StartChangeLevel_;
 	KHook::Virtual<INetworkServerService, void> hook_SetGameLoadStarted_;
 	KHook::Virtual<INetworkServerService, void, bool> hook_SetGameLoadFailed_;
-	KHook::Virtual<INetworkServerService, void, int> hook_DisconnectGameNow_;
+	KHook::Virtual<INetworkServerService, void, ENetworkDisconnectionReason> hook_DisconnectGameNow_;
 	KHook::Virtual<INetworkServerService, void> hook_PreserveSteamID_;
 
 	NetworkServerSuite();

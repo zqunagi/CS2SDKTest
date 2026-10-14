@@ -6,8 +6,9 @@
 #include <cstring>
 #include <string>
 
-#include <appframework/IAppSystem.h>
+#include <appframework/iappsystem.h>
 #include <const.h>
+#include <engine2/igameeventsystem.h>
 #include <igameevents.h>
 #include <networksystem/inetworkmessages.h>
 
@@ -685,10 +686,15 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 	                                       sizeof(NetworkMessageId));
 	inspect.Raw    ("m_GroupId",           offsetof(NetMessageInfo_t, m_GroupId),
 	                                       sizeof(NetworkGroupId));
-	inspect.Raw    ("m_nFlags",            offsetof(NetMessageInfo_t, m_nFlags),
+	// The 2026-10 SDK replaced this byte's m_nFlags/m_unk001 with a named
+	// bitfield triple - m_nBufType:6, m_bCannotBeNetworked:1, m_unk001:1.
+	// offsetof() cannot name a bitfield (C2618), so the byte is addressed
+	// relative to m_GroupId, the last ordinary member before it.
+	inspect.Raw    ("m_nBufType/m_bCannotBeNetworked/m_unk001 (packed byte)",
+	                                       offsetof(NetMessageInfo_t, m_GroupId) + 1,
 	                                       sizeof(uint8));
-	inspect.Int32  ("m_unk001",            offsetof(NetMessageInfo_t, m_unk001));
-	inspect.Int32  ("m_unk002",            offsetof(NetMessageInfo_t, m_unk002));
+	inspect.Int32  ("m_nRequiredHandlerCategories",
+	                                       offsetof(NetMessageInfo_t, m_nRequiredHandlerCategories));
 	// The sharpest probe in the struct: one byte with two legal values, sitting
 	// past every field above it.
 	inspect.Bool   ("m_bOkayToRedispatch", offsetof(NetMessageInfo_t, m_bOkayToRedispatch));

@@ -6,8 +6,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include <appframework/IAppSystem.h>
-#include <tier1/bufferstring.h>
+#include <appframework/iappsystem.h>
+#include <tier0/buffer_string.h>
 
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
@@ -3714,11 +3714,16 @@ void ConVarSuite::ExerciseUserInfoCvars(TestContext& context)
 		// A stack buffer, so nothing is allocated and nothing leaks if the call
 		// faults halfway through. The range is clamped to what we actually own:
 		// the engine writes into this, and `to` is the only thing stopping it.
+		//
+		// The 2026-10 SDK turned the first parameter from a bare uint8* into a
+		// ConVarUserInfoSet_t by value - a one-pointer wrapper class, so the
+		// register the callee reads is the same one our buffer's address lands
+		// in either way.
 		constexpr int kBufferSize = 2048;
 		uint8 buffer[kBufferSize] = {};
 		const int copy_to = (total_size < kBufferSize) ? total_size : kBufferSize;
 
-		cvar_->CopyUserInfoCvarDefaults(buffer, 0, copy_to, true);
+		cvar_->CopyUserInfoCvarDefaults(ConVarUserInfoSet_t{buffer}, 0, copy_to, true);
 
 		int nonzero = 0;
 		for (int i = 0; i < copy_to; ++i)
@@ -3734,7 +3739,7 @@ void ConVarSuite::ExerciseUserInfoCvars(TestContext& context)
 
 		// The cleanup half of the same call, so the buffer is left the way the
 		// engine expects rather than half-initialised.
-		cvar_->CopyUserInfoCvarDefaults(buffer, 0, copy_to, false);
+		cvar_->CopyUserInfoCvarDefaults(ConVarUserInfoSet_t{buffer}, 0, copy_to, false);
 	});
 }
 

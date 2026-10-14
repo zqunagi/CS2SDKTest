@@ -6,17 +6,18 @@
 #include <cstdio>
 #include <cstring>
 
-#include <appframework/IAppSystem.h>
-#include <eiface.h>
-#include <engine/IEngineService.h>
-#include <globalvars.h>
+#include <appframework/iappsystem.h>
+#include <engine2/gameshareddefs.h>
+#include <engine2/iengineservicemgr.h>
+#include <engine2/inetworkgameserver.h>
+#include <engine2/ivengineserver2.h>
+#include <engine2/networkgameserverbase.h>
 #include <icvar.h>
 #include <interfaces/interfaces.h>
-#include <iserver.h>
-#include <tier1/bufferstring.h>
-#include <tier1/convar.h>
-#include <tier1/netadr.h>
-#include <tier1/utlvector.h>
+#include <tier0/buffer_string.h>
+#include <tier0/convar.h>
+#include <tier0/netadr.h>
+#include <tier0/utlvector.h>
 
 #include "core/Log.h"
 #include "hook/HookArg.h"
@@ -505,13 +506,12 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 		"unidentified in the SDK (bool-returning)");
 	context.SkipCall("INetworkServerService::unk102",
 		"unidentified in the SDK and takes an int");
-	context.SkipCall("INetworkServerService::unk103", "unidentified in the SDK");
-	context.SkipCall("INetworkServerService::unk104", "unidentified in the SDK");
-	context.SkipCall("INetworkServerService::unk105",
-		"unidentified in the SDK (bool-returning)");
-	context.SkipCall("INetworkServerService::unk106", "unidentified in the SDK");
-	context.SkipCall("INetworkServerService::unk107",
-		"unidentified in the SDK and takes a bool");
+	context.SkipCall("INetworkServerService::ThreadInPrimaryOrSecondaryMainThread",
+		"a thread-affinity query; named in the 2026-10 SDK, previously unk103");
+	context.SkipCall("INetworkServerService::EnterSyncInterval",
+		"begins a serializer sync window; previously unk104");
+	context.SkipCall("INetworkServerService::ExitSyncInterval",
+		"ends that window; previously unk105");
 }
 
 // -----------------------------------------------------------------------------
@@ -956,7 +956,8 @@ void NetworkServerSuite::ExerciseGameServerBase(TestContext& context)
 	context.SkipCall("CNetworkGameServerBase::~CNetworkGameServerBase",
 		"would destroy the running game server");
 	context.SkipCall("CNetworkGameServerBase::SetMaxClients", "changes the slot count live");
-	context.SkipCall("CNetworkGameServerBase::unk011", "unidentified in the SDK");
+	context.SkipCall("CNetworkGameServerBase::CreateClient",
+		"creates a client in a slot; named in the 2026-10 SDK, previously unk011");
 	context.SkipCall("CNetworkGameServerBase::ProcessConnectionlessPacket",
 		"would feed the engine a packet nobody sent");
 	context.SkipCall("CNetworkGameServerBase::OnConVarCreated",
@@ -965,7 +966,7 @@ void NetworkServerSuite::ExerciseGameServerBase(TestContext& context)
 	context.SkipCall("CNetworkGameServerBase::OnConCommandCreated",
 		"the same for console commands");
 	context.SkipCall("CNetworkGameServerBase::FillKV3ServerInfo",
-		"needs a KeyValues3 to fill, and tier1/keyvalues3.cpp is not in this "
+		"needs a KeyValues3 to fill, and tier0_perproject/keyvalues3.cpp is not in this "
 		"build (CS2SDKTEST_TIER1_KEYVALUES3 is off)");
 	context.SkipCall("CNetworkGameServerBase::FillServerInfo",
 		"needs a CSVCMsg_ServerInfo_t, and the netmessages protobufs are not "
@@ -1359,17 +1360,23 @@ void NetworkServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("INetworkGameServer::BroadcastPrintf", "prints to every connected client");
 	context.SkipCall("INetworkGameServer::BroadcastMessage", "sends a net message to every client");
 	context.SkipCall("INetworkGameServer::BroadcastEntityVoice", "sends voice data to every client");
-	context.SkipCall("INetworkGameServer::unk201", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk202", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk203", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk301", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk302", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk303", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk401",
-		"unidentified in the SDK; returns a bool but there is no way to know what "
-		"asking costs");
-	context.SkipCall("INetworkGameServer::unk402", "unidentified in the SDK");
-	context.SkipCall("INetworkGameServer::unk501", "unidentified in the SDK");
+	// The 2026-10 SDK named these; the row labels follow, so a diff against an
+	// old log shows renames rather than methods vanishing.
+	context.SkipCall("INetworkGameServer::SetRecyclePlayerSlot",
+		"changes slot recycling for a player slot");
+	context.SkipCall("INetworkGameServer::GetClientSignonState",
+		"named in the SDK now; reading it is safe but the slot it reads for is "
+		"only meaningful mid-connection, so the row stays off the quiet path");
+	context.SkipCall("INetworkGameServer::SetBroadcastDebugOverlays",
+		"installs a broadcast overlay object");
+	context.SkipCall("INetworkGameServer::HasReplayDirector",
+		"a query, but paired with the replay path this suite never drives");
+	context.SkipCall("INetworkGameServer::GetAverageFrameTime", "a timing query");
+	context.SkipCall("INetworkGameServer::PrepareSendClientUpdatesMainThread",
+		"drives the client update pass");
+	context.SkipCall("INetworkGameServer::PrepareSendClientUpdatesAsync",
+		"drives the client update pass");
+	context.SkipCall("INetworkGameServer::GetGameServerSteamID", "a steam id query");
 }
 
 // -----------------------------------------------------------------------------
@@ -1505,19 +1512,19 @@ KHook::Return<void> NetworkServerSuite::Post_SetGameLoadFailed(INetworkServerSer
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> NetworkServerSuite::Pre_DisconnectGameNow(INetworkServerService*, int nReason)
+KHook::Return<void> NetworkServerSuite::Pre_DisconnectGameNow(INetworkServerService*, ENetworkDisconnectionReason nReason)
 {
-	// The SDK comments the parameter as ENetworkDisconnectionReason but types it
-	// as int, so the protobuf validator is the honest way to judge it - the same
-	// check Source2GameClientsSuite runs on ClientDisconnect, against the real
-	// value set rather than a guessed range.
-	const bool known = ENetworkDisconnectionReason_IsValid(nReason);
-	CS2ST_HOOK_ENTER_ARGS(kDisconnectGameNow, "reason=%d%s", nReason,
+	// Typed as the enum since the 2026-10 SDK (was a bare int); the protobuf
+	// validator is still the honest way to judge it - the same check
+	// Source2GameClientsSuite runs on ClientDisconnect, against the real value
+	// set rather than a guessed range.
+	const bool known = ENetworkDisconnectionReason_IsValid(static_cast<int>(nReason));
+	CS2ST_HOOK_ENTER_ARGS(kDisconnectGameNow, "reason=%d%s", static_cast<int>(nReason),
 		known ? "" : " NOT-A-VALID-REASON");
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> NetworkServerSuite::Post_DisconnectGameNow(INetworkServerService*, int)
+KHook::Return<void> NetworkServerSuite::Post_DisconnectGameNow(INetworkServerService*, ENetworkDisconnectionReason)
 {
 	CS2ST_HOOK_LEAVE(kDisconnectGameNow);
 	return { KHook::Action::Ignore };

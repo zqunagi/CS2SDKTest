@@ -56,7 +56,7 @@
 // SDK in the header: IConVarListener is a base class below, and the hook
 // handlers have to spell out ConCommandRef, ConVarRef, ConVarCreation_t and
 // CCommandContext by name. icvar.h is where that whole set is declared.
-#include <icvar.h>
+#include <tier0/icvar.h>
 #include <khook.hpp>
 
 #include "testkit/ITestSuite.h"

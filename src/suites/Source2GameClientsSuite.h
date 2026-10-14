@@ -36,7 +36,7 @@
 // protobuf enum), CBufferString and CCommand - which is the whole point of the
 // suite. eiface.h is where that set is assembled; picking transitive headers
 // out of it one by one would just be guessing at which one supplies what.
-#include <eiface.h>
+#include <engine2/isource2server.h>
 #include <khook.hpp>
 
 #include "testkit/ITestSuite.h"

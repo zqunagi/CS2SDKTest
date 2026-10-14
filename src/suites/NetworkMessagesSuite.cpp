@@ -9,7 +9,6 @@
 #include <google/protobuf/descriptor.h>
 #include <networksystem/inetworkmessages.h>
 #include <networksystem/inetworkserializer.h>
-#include <networksystem/netmessage.h>
 #include <netmessages.pb.h>
 
 #include "hook/HookArg.h"
@@ -556,7 +555,7 @@ void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 //  ExerciseAllocation - the engine's allocator, and the offset oracle
 //
 //  SDK note: CNetMessagePB here is a *stub* over the engine's real class
-//  ("AMNOTE: This is a stub class over real CNetMessagePB!", netmessage.h).
+//  ("AMNOTE: This is a stub class over real CNetMessagePB!", inetworkmessages.h).
 //  Every s2sdk-cs2 plugin nonetheless writes through ToPB<T>() - the stub's
 //  layout is the ecosystem's working ABI assumption. This section measures
 //  that assumption before anything writes through it: the engine's own

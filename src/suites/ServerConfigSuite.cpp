@@ -8,16 +8,15 @@
 #include <cstring>
 #include <string>
 
-#include <appframework/IAppSystem.h>
+#include <appframework/iappsystem.h>
 #include <const.h>
-#include <eiface.h>
+#include <engine2/isource2serverconfig.h>
 #include <icvar.h>
-#include <iloopmode.h>
 #include <interfaces/interfaces.h>
 #include <steam/steamuniverse.h>
-#include <tier1/bufferstring.h>
-#include <tier1/utlstring.h>
-#include <tier1/utlvector.h>
+#include <tier0/buffer_string.h>
+#include <tier0/utlstring.h>
+#include <tier0/utlvector.h>
 
 #include "core/Log.h"
 #include "testkit/PrivateField.h"
@@ -235,8 +234,6 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 	context.Note("[ISource2ServerConfig] the startup questions; the tick interval "
 	             "is what NetworkServerSuite's GetTime formula consumes");
 
-	float tick_interval = -1.0f;
-
 	CS2ST_CALL(context, "ISource2ServerConfig::GetGameDescription", {
 		const char* description = config_->GetGameDescription();
 		context.Detail("-> \"%s\"", description != nullptr ? description : "(null)");
@@ -428,19 +425,21 @@ void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
 		context.Detail("-> %f (bits 0x%08X)", value, bits);
 	});
 
-	CS2ST_CALL(context, "ISource2ServerConfig::unk201 [slot 25, bool]", {
-		context.Detail("-> %s", config_->unk201() ? "true" : "false");
+	// Slots 25-27 were unk201-203 until the 2026-10 SDK named them. The row
+	// labels keep no memory of that; a diff against an old log shows renames.
+	CS2ST_CALL(context, "ISource2ServerConfig::ShouldMapCommandChangeLevel [slot 25, bool]", {
+		context.Detail("-> %s", config_->ShouldMapCommandChangeLevel() ? "true" : "false");
 	});
 
-	CS2ST_CALL(context, "ISource2ServerConfig::unk202 [slot 26, bool]", {
-		context.Detail("-> %s", config_->unk202() ? "true" : "false");
+	CS2ST_CALL(context, "ISource2ServerConfig::ShouldAllocateNewClients [slot 26, bool]", {
+		context.Detail("-> %s", config_->ShouldAllocateNewClients() ? "true" : "false");
 	});
 
-	CS2ST_CALL(context, "ISource2ServerConfig::unk203 [slot 27, bool]", {
-		context.Detail("-> %s", config_->unk203() ? "true" : "false");
+	CS2ST_CALL(context, "ISource2ServerConfig::Uses64TickInterval [slot 27, bool]", {
+		context.Detail("-> %s", config_->Uses64TickInterval() ? "true" : "false");
 	});
 
-	context.SkipCall("ISource2ServerConfig::unk204 [slot 28]",
+	context.SkipCall("ISource2ServerConfig::InitGameEvents [slot 28]",
 		"the game-event ensure-and-register hook; the probe era established it "
 		"caches GameEventSystemServerV001 in a server-DLL global and returns a "
 		"bool, but its body also walks the event dictionary, which is engine "

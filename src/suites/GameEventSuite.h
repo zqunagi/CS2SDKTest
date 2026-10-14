@@ -61,7 +61,7 @@
 // NetChannelBufType_t, CBaseHandle, IRecipientFilter*, CUtlSlot* and
 // CUtlAbstractDelegate - and a paraphrase would compile and then hand every
 // handler garbage. This header is where the SDK assembles that set.
-#include <engine/igameeventsystem.h>
+#include <engine2/igameeventsystem.h>
 #include <khook.hpp>
 
 #include "testkit/ITestSuite.h"

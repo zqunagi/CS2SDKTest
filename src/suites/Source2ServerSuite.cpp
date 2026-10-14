@@ -3,10 +3,12 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <appframework/IAppSystem.h>
-#include <eiface.h>
-#include <tier1/utlstring.h>
-#include <tier1/utlvector.h>
+#include <appframework/iappsystem.h>
+#include <engine2/isource2server.h>
+#include <tier0/buffer_string.h>
+#include <tier0/utlbuffer.h>
+#include <tier0/utlstring.h>
+#include <tier0/utlvector.h>
 
 #include "core/Log.h"
 #include "hook/HookArg.h"
@@ -193,12 +195,11 @@ void Source2ServerSuite::ExerciseServerState(TestContext& context)
 		context.Detail("-> 0x%08x", server_->GetServerGameDLLFlags());
 	});
 
-	CS2ST_CALL(context, "ISource2Server::unk_001", {
-		// Unidentified in the SDK, but const and nullary so it is safe to ask.
-		// Recording the answer is the point: if it ever changes, somebody has a
-		// starting clue about what it does.
-		context.Detail("-> %s (unidentified in the SDK)",
-			server_->unk_001() ? "true" : "false");
+	CS2ST_CALL(context, "ISource2Server::IsValveDS", {
+		// unk_001 until the 2026-10 SDK named it. We are not a Valve dedicated
+		// server, so false is the expected answer - and the one cross-check this
+		// row has: true on a community box would mean the slot moved.
+		context.Detail("-> %s", server_->IsValveDS() ? "true" : "false");
 	});
 
 	CS2ST_CALL(context, "ISource2Server::ShouldHideFromMasterServer", {
@@ -213,9 +214,12 @@ void Source2ServerSuite::ExerciseServerState(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "ISource2Server::GetMatchmakingTags", {
-		char tags[256] = {0};
-		server_->GetMatchmakingTags(tags, sizeof(tags));
-		context.Detail("-> \"%s\"", tags);
+		// The (char*, size_t) era ended in the 2026-10 SDK: the pair of tag
+		// getters now share one shape, CBufferString, with GetMatchmakingGameData
+		// below - same heap-allocation-off trick too.
+		CBufferStringN<512> tags(false);
+		server_->GetMatchmakingTags(tags);
+		context.Detail("-> \"%s\"", tags.Get());
 	});
 
 	CS2ST_CALL(context, "ISource2Server::GetMatchmakingGameData", {
@@ -245,16 +249,47 @@ void Source2ServerSuite::ExerciseServerState(TestContext& context)
 			classes->Count());
 	});
 
-	CS2ST_CALL(context, "ISource2Server::GetSpawnDebugInterface", {
-		context.Detail("-> %p", server_->GetSpawnDebugInterface());
+	CS2ST_CALL(context, "ISource2Server::GetBugReportAttachment", {
+		// GetSpawnDebugInterface until the 2026-10 SDK reworked the slot into
+		// the bug-report pipeline. Index 0 is attachment slot zero, not an
+		// entity; the callee decides whether it has anything to attach. The
+		// out-strings are read-only to us, and CUtlBuffer's stack form cannot
+		// leak, so the probe stays honest without any structure of ours.
+		CUtlBuffer buf;
+		CUtlString name;
+		CUtlString description;
+		const bool have = server_->GetBugReportAttachment(0, buf, name, description);
+		context.Detail("-> %s, name \"%s\", description \"%s\", %d byte(s)",
+			have ? "true" : "false",
+			name.Get() != nullptr ? name.Get() : "(null)",
+			description.Get() != nullptr ? description.Get() : "(null)",
+			buf.TellPut());
 	});
 
 	CS2ST_CALL(context, "ISource2Server::GetToolGameSimulationAPI", {
 		context.Detail("-> %p", static_cast<void*>(server_->GetToolGameSimulationAPI()));
 	});
 
+	// Returns a forward-declared-only type, so the pointer is all this row can
+	// honestly say - same shape as GetToolGameSimulationAPI above it.
+	CS2ST_CALL(context, "ISource2Server::GetDebugOverlays", {
+		context.Detail("-> %p",
+			static_cast<void*>(server_->GetDebugOverlays()));
+	});
+
 	CS2ST_CALL(context, "ISource2Server::GetEconItemSystem", {
 		context.Detail("-> %p", server_->GetEconItemSystem());
+	});
+
+	// The GC identity getters: nullary, read-only, and only meaningful with a GC
+	// connection this sweep's community box does not have - 0 is the expected
+	// answer, which is exactly what makes a non-zero answer a finding.
+	CS2ST_CALL(context, "ISource2Server::GetMatchID", {
+		context.Detail("-> %llu", static_cast<unsigned long long>(server_->GetMatchID()));
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetSteamGroupAccountID", {
+		context.Detail("-> %u", server_->GetSteamGroupAccountID());
 	});
 
 	CS2ST_CALL(context, "ISource2Server::FilterPlayerCounts", {
@@ -282,10 +317,12 @@ void Source2ServerSuite::ExerciseEnumerations(TestContext& context)
 {
 	context.Note("[ISource2Server] enumerations - contents are the finding here");
 
-	CS2ST_CALL(context, "ISource2Server::GetHitGroupEnumInfo", {
+	CS2ST_CALL(context, "ISource2Server::GetHitGroupInfo", {
+		// GetHitGroupEnumInfo until the 2026-10 SDK renamed it; parameters and
+		// vtable slot are unchanged, so the row keeps comparing against old logs.
 		CUtlVector<int> values;
 		CUtlVector<CUtlString> names;
-		server_->GetHitGroupEnumInfo(values, names);
+		server_->GetHitGroupInfo(values, names);
 
 		context.Detail("-> %d value(s), %d name(s)", values.Count(), names.Count());
 		if (values.Count() != names.Count())
@@ -342,7 +379,6 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 		"creates string tables");
 	context.SkipCall("ISource2Server::WriteSignonMessages",
 		"writes into a network buffer");
-	context.SkipCall("ISource2Server::GetEntityInfo", "causes a crash if called");
 	context.SkipCall("ISource2Server::ApplyGameSettings",
 		"applies lobby settings - hooked instead");
 	context.SkipCall("ISource2Server::ServerHibernationUpdate",
@@ -365,19 +401,25 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2Server::GetNavMeshData", "needs a CNavData to fill");
 	context.SkipCall("ISource2Server::GetTaggedConVarList", "needs a KeyValues to fill");
 	context.SkipCall("ISource2Server::PrintStatus", "needs a valid entity index");
+	context.SkipCall("ISource2Server::GetEntity2Networkable",
+		"needs a CEntityIndex-backed out-struct this suite has no honest value for");
 
 	// ---- the save-game tail the Oct 2026 rework added ------------------------
-	// Fifteen slots behind GetHitGroupEnumInfo, all named in one SDK update:
-	// KeyValues3 plumbing, save-file lookups and the async save pipeline. Each
-	// one listed so a future renaming shows as a diff rather than a gap.
-	context.SkipCall("ISource2Server::unk_101",
-		"takes a KeyValues3 the engine would read as save metadata");
-	context.SkipCall("ISource2Server::unk_102 / unk_103",
-		"resolve a save name this suite has no file for");
+	// The slots behind GetHitGroupInfo, now all named in the SDK (unk_101/102/
+	// 103/201/301-303 in older logs). KeyValues3 plumbing, save-file lookups
+	// and the async save pipeline; each listed so a future renaming shows as a
+	// diff rather than a gap.
+	context.SkipCall("ISource2Server::WriteStatusJson",
+		"appends the game's fields into a live status_json KeyValues3");
+	context.SkipCall("ISource2Server::SaveGame_CalcFileName",
+		"resolves a save name this suite has no file for");
+	context.SkipCall("ISource2Server::GetRequiredAddonsFromSaveFile",
+		"reads a save file this suite has none of");
 	context.SkipCall("ISource2Server::GetLevelsFromSaveFile",
 		"reads a save file and fills a CCreateGameServerLoadInfo list; there "
 		"is no save to point it at");
-	context.SkipCall("ISource2Server::unk_201", "unidentified in the SDK");
+	context.SkipCall("ISource2Server::ClearSaveDirectory",
+		"deletes the save directory's contents");
 	context.SkipCall("ISource2Server::PreSaveGameLoaded",
 		"runs the game's save-loaded path out of band");
 	context.SkipCall("ISource2Server::AppendSaveGameResources",
@@ -387,12 +429,73 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2Server::SaveGame",
 		"writes a save file; SaveGameParams_t is only forward-declared, so "
 		"there is nothing honest to pass either");
-	context.SkipCall("ISource2Server::unk_301 / unk_302 / unk_303",
-		"unidentified in the SDK, all bool-returning");
+	context.SkipCall("ISource2Server::IsAsyncSaveInProgress / "
+		"ProcessPendingSaveRequest / HasPendingSaveRequest",
+		"query and drive a save pipeline this suite never started");
 	context.SkipCall("ISource2Server::FinishAsyncSave",
 		"completes a save this suite never started");
 	context.SkipCall("ISource2Server::GetEntityUniqueHammerID",
 		"needs a valid entity index to mean anything");
+
+	// ---- the VData/GC tail, named in the same SDK update --------------------
+	// Another fifteen slots past GetEntityUniqueHammerID: VData scope lookups,
+	// GC notifications and the user-command capture path. Mostly queries, but
+	// each either needs an argument this suite has no honest value for (a
+	// scope file, a designer name, an account id) or touches GC state.
+	context.SkipCall("ISource2Server::GetVDataClassName / "
+		"GetVDataClassNameByDataType / GetSubclassNamesInScope / "
+		"GetSubclassNamesInScopeByDataType / GetAllSubclassNames",
+		"VData scope lookups; the empty-scope form would enumerate the whole "
+		"dictionary, which belongs to SchemaSystemSuite's side of the fence");
+	context.SkipCall("ISource2Server::GetSubclassDesignerName / "
+		"GetDesignerNamesForClass",
+		"need a designer name / class name to look up");
+	context.SkipCall("ISource2Server::UpdateGCInformation",
+		"pushes GC state updates");
+	context.SkipCall("ISource2Server::unk_101",
+		"unidentified in the SDK; AMNOTE says it does nothing in CS2");
+	context.SkipCall("ISource2Server::ReportGCQueuedMatchStart",
+		"feeds a GC match-start reservation with account ids");
+	context.SkipCall("ISource2Server::unk_201",
+		"unidentified in the SDK; AMNOTE says it forwards main-loop timing to "
+		"the game rules, which ignore it in CS2");
+	context.SkipCall("ISource2Server::GetNativeClassForScriptClass / "
+		"GetScriptClassForDesignerName / IsScriptClassDerivedFrom",
+		"script-class lookups needing a class name this suite has none of");
+	context.SkipCall("ISource2Server::ShouldHoldGameServerReservation",
+		"an idle-reservation policy question the engine asks on its own "
+		"schedule; asking it out of band with 0s elapsed is a factoid, not a "
+		"probe");
+	context.SkipCall("ISource2Server::OnBroadcastRelayRequestSucceeded / "
+		"OnClientHltvReplayStart / OnClientHltvReplayStop",
+		"engine-to-game notifications; calling them would announce events "
+		"that did not happen");
+	context.SkipCall("ISource2Server::SendServerFrameTime",
+		"feeds the game's frame-time tracking out of band");
+	context.SkipCall("ISource2Server::FormatSerializerFieldValue",
+		"needs a FlattenedSerializerSpewField_t to fill");
+	context.SkipCall("ISource2Server::CaptureUserCommands / "
+		"CreateUserCommandsMessage",
+		"the user-command capture path the engine drives at frame time");
+	context.SkipCall("ISource2Server::ProcessClientStringCommand / "
+		"OnPreMatchInterfaceCommand / SetPlayerTeammatePreferredColor / "
+		"UpdateCompTeammateColors",
+		"execute or answer client command / GC color state");
+	context.SkipCall("ISource2Server::GetClientConnectRejectReason / "
+		"ClientConnectionValidatePreNetChan",
+		"need a real connecting SteamID to mean anything");
+	context.SkipCall("ISource2Server::LogForHTTPListeners",
+		"would inject a line into the game's HTTP log listeners");
+	context.SkipCall("ISource2Server::unk_301 / unk_302 / unk_303 / unk_304",
+		"unidentified in the SDK; AMNOTE says all four do nothing in CS2");
+	context.SkipCall("ISource2Server::RegisterClientNetMessageHandlers",
+		"mutates a live net channel's handler table");
+	context.SkipCall("ISource2Server::GetAddonForMap",
+		"needs a map name this suite does not own");
+	context.SkipCall("ISource2Server::OnSteamAuthWarning",
+		"an engine-to-game warning callback");
+	context.SkipCall("ISource2Server::OnNetworkGameServerActivated",
+		"an engine-to-game activation callback");
 }
 
 // -----------------------------------------------------------------------------

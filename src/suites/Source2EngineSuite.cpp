@@ -3,8 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <appframework/IAppSystem.h>
-#include <eiface.h>
+#include <appframework/iappsystem.h>
+#include <engine2/isource2engine.h>
+#include <engine2/ivengineserver2.h>
+#include <engine2/gameshareddefs.h>
 
 #include "core/Log.h"
 #include "testkit/StructInspector.h"
@@ -447,18 +449,12 @@ void Source2EngineSuite::ExercisePlayerQueries(TestContext& context)
 			engine_->GetClientListening(slot, slot) ? "true" : "false");
 	});
 
-	CS2ST_CALL(context, "IVEngineServer2::IsUserIDInUse", {
-		// -1 is never a live user id, so false is the only correct answer.
-		const bool in_use = engine_->IsUserIDInUse(-1);
-		context.Detail("-> %s for userID -1", in_use ? "true" : "false");
-		if (in_use)
-		{
-			context.Fail("userID -1 reported in use");
-		}
-	});
-
-	CS2ST_CALL(context, "IVEngineServer2::GetLoadingProgressForUserID", {
-		context.Detail("-> %d for userID -1", engine_->GetLoadingProgressForUserID(-1));
+	// IsUserIDInUse / GetLoadingProgressForUserID were TERROR-era leftovers
+	// the 2026-10 SDK removed; GetClientDeltaTick is the named resident of
+	// that vtable neighbourhood now. -1 is the documented invalid-slot answer.
+	CS2ST_CALL(context, "IVEngineServer2::GetClientDeltaTick", {
+		context.Detail("-> %d for the empty slot (SDK documents -1 as invalid)",
+			engine_->GetClientDeltaTick(slot));
 	});
 
 	context.SkipCall("IVEngineServer2::GetPlayerInfo",

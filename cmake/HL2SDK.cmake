@@ -44,18 +44,17 @@ set(HL2SDK_ENGINE_CODE 25)
 add_library(hl2sdk_headers INTERFACE)
 add_library(hl2sdk::headers ALIAS hl2sdk_headers)
 
-# Mirrors "include_paths" in manifests/cs2.json.
+# Mirrors "include_paths" in manifests/cs2.json. The SDK's Oct 2026 reorg
+# moved the engine headers to public/engine2 and folded tier1 into tier0
+# (Valve's lowercase names); public/engine and public/tier1 are gone.
 set(_hl2sdk_includes
   "${HL2SDK_ROOT}"
   "${HL2SDK_ROOT}/public"
-  "${HL2SDK_ROOT}/public/engine"
+  "${HL2SDK_ROOT}/public/engine2"
   "${HL2SDK_ROOT}/public/mathlib"
   "${HL2SDK_ROOT}/public/tier0"
-  "${HL2SDK_ROOT}/public/tier1"
   "${HL2SDK_ROOT}/public/entity2"
-  "${HL2SDK_ROOT}/public/game/server"
   "${HL2SDK_ROOT}/game/shared"
-  "${HL2SDK_ROOT}/game/server"
   "${HL2SDK_ROOT}/common"
   "${HL2SDK_ROOT}/thirdparty/protobuf-3.21.8/src"
 )
@@ -153,17 +152,18 @@ endif()
 # -----------------------------------------------------------------------------
 #  hl2sdk::tier1
 #
-#  There is no prebuilt tier1 on this branch: public/tier1/*.h is header-only
-#  template code, and the few real translation units live in s2sdk/tier1/.
-#  convar.cpp is mandatory for anything that registers a ConVar/ConCommand.
+#  There is no prebuilt tier1 on this branch: the headers are template-only
+#  code and the few real translation units live in s2sdk/tier0_perproject/
+#  (moved there from tier1/ in the Oct 2026 reorg). convar.cpp is mandatory
+#  for anything that registers a ConVar/ConCommand.
 # -----------------------------------------------------------------------------
-set(_hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier1/convar.cpp")
+set(_hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier0_perproject/convar.cpp")
 
 if(CS2SDKTEST_TIER1_KEYVALUES3)
-  list(APPEND _hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier1/keyvalues3.cpp")
+  list(APPEND _hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier0_perproject/keyvalues3.cpp")
 endif()
 if(CS2SDKTEST_TIER1_BITBUF)
-  list(APPEND _hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier1/bitbuf.cpp")
+  list(APPEND _hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier0_perproject/bitbuf.cpp")
 endif()
 
 add_library(hl2sdk_tier1 STATIC ${_hl2sdk_tier1_sources})

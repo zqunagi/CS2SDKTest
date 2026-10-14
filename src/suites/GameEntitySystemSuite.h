@@ -4,22 +4,20 @@
  *
  * Three things make this suite different from the others.
  *
- * 1. There is no interface to query for.
+ * 1. There is no interface to hand you the pointer.
  *
  *    "GameResourceServiceServerV001" @ engine2 resolves to IGameResourceService,
- *    and s2sdk declares exactly two things about that type: a forward
- *    declaration in interfaces.h and a version string. No class body, no
- *    methods, no way to ask it for the entity system. Every plugin in the
- *    ecosystem instead reads a raw pointer out of the service object at a
- *    hard-coded byte offset - 0x58 on Windows, 0x50 on Linux - and hopes.
- *
- *    That offset is the single most fragile assumption in the CS2 plugin
- *    ecosystem, so this suite does not hard-code it and move on: it reads the
- *    slot the ecosystem assumes, validates the candidate, and if that fails
- *    sweeps the neighbouring slots and reports which one actually holds the
- *    entity system. A log line saying "found at +0x60, not the assumed +0x50"
- *    is worth more than the rest of the suite put together, because every
- *    other plugin will be reading the wrong eight bytes that day.
+ *    and the SDK's own GameEntitySystem() accessor reaches the entity system
+ *    through the members that class declares (CGameResourceService derives from
+ *    it in igameresourceservice.h). The byte offset that route implies is the
+ *    same one the plugin ecosystem hard-codes - 0x58 on Windows, 0x50 on Linux -
+ *    so this suite does not trust it and move on: it reads the slot the
+ *    ecosystem assumes, validates the candidate, and if that fails sweeps the
+ *    neighbouring slots and reports which one actually holds the entity system.
+ *    A log line saying "found at +0x60, not the assumed +0x50" is worth more
+ *    than the rest of the suite put together, because every other plugin will
+ *    be reading the wrong eight bytes that day. The SDK's accessor is then
+ *    cross-checked against the scan's answer.
  *
  *    Validation is deliberately not "the pointer is non-null". A candidate has
  *    to have a vtable pointer landing inside a module the game has mapped, an
@@ -95,7 +93,7 @@
 // The SDK header has to be here rather than forward-declared: this suite *is*
 // an IEntityListener, so the base class must be complete where the class is
 // declared. It also drags in CGameEntitySystem, which is the type of a member.
-#include <entity2/entitysystem.h>
+#include <gameentitysystem.h>
 
 #include "testkit/ITestSuite.h"
 
@@ -177,9 +175,9 @@ private:
 	// ---- state -------------------------------------------------------------
 
 	/**
-	 * "GameResourceServiceServerV001". Held as void* because that is all the
-	 * SDK gives us - IGameResourceService is a forward declaration with no
-	 * body anywhere in s2sdk.
+	 * "GameResourceServiceServerV001". Held as void* because the suite treats
+	 * it as raw bytes for its slot scan; the typed view the SDK declares is
+	 * CGameResourceService in engine2/igameresourceservice.h.
 	 */
 	void* resource_service_ = nullptr;
 

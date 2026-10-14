@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdio>
 
-#include <appframework/IAppSystem.h>
-#include <tier1/bufferstring.h>
+#include <appframework/iappsystem.h>
+#include <engine2/isource2server.h>
+#include <engine2/ivengineserver2.h>
+#include <tier0/buffer_string.h>
 
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
@@ -253,12 +255,11 @@ void Source2GameClientsSuite::ExercisePlayerQueries(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "ISource2GameClients::GetPlayerTickBase", {
-		const int tick_base = clients_->GetPlayerTickBase(slot);
-		context.Detail("-> %d (tickcount %d)", tick_base, globals_->tickcount);
-		if (tick_base < 0)
-		{
-			context.Fail("a tick base cannot be negative");
-		}
+		// uint32 since the 2026-10 SDK; the old int return made a negative
+		// tick base a Fail, but an unsigned one cannot be negative - so the
+		// row now records, and the tickcount beside it stays the oracle.
+		const uint32 tick_base = clients_->GetPlayerTickBase(slot);
+		context.Detail("-> %u (tickcount %d)", tick_base, globals_->tickcount);
 	});
 
 	CS2ST_CALL(context, "ISource2GameClients::ClientCanPause", {
@@ -285,13 +286,14 @@ void Source2GameClientsSuite::ExercisePlayerQueries(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "ISource2GameClients::GetPlayerHltvDelay", {
+		// int seconds since the 2026-10 SDK (was float); the replay entity
+		// out-parameter is unchanged, so the row keeps both halves.
 		CEntityIndex replay_entity(-1);
-		const float delay = clients_->GetPlayerHltvDelay(slot, replay_entity);
-		context.Detail("-> %.3f s, replay entity %d",
-			static_cast<double>(delay), replay_entity.Get());
-		if (std::isnan(delay) || std::isinf(delay) || delay < 0.0f)
+		const int delay = clients_->GetPlayerHltvDelay(slot, replay_entity);
+		context.Detail("-> %d s, replay entity %d", delay, replay_entity.Get());
+		if (delay < 0)
 		{
-			context.Fail("a delay must be a finite, non-negative number of seconds");
+			context.Fail("a delay cannot be a negative number of seconds");
 		}
 	});
 
@@ -396,20 +398,32 @@ void Source2GameClientsSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2GameClients::ClientDiagnostic",
 		"CCLCMsg_Diagnostic is only forward-declared here; hookable, but there "
 		"would be nothing to read out of the pointer");
-	context.SkipCall("ISource2GameClients::ReplayLastPlayerKill",
-		"second parameter is a void* out block of unknown size");
+	context.SkipCall("ISource2GameClients::ClientReplayEvent",
+		"ClientReplayEventParams_t is only forward-declared, so its second "
+		"argument is a block this suite cannot size");
 	context.SkipCall("ISource2GameClients::unk101",
-		"unidentified in the SDK and takes a player slot; calling it blind on a "
-		"live player is not worth the one line it would produce");
-	context.SkipCall("ISource2GameClients::unk201", "unidentified in the SDK");
-	context.SkipCall("ISource2GameClients::unk202", "unidentified in the SDK");
-	context.SkipCall("ISource2GameClients::unk203", "unidentified in the SDK");
-	context.SkipCall("ISource2GameClients::unk204",
-		"takes a name the SDK does not explain and writes into a buffer this "
-		"suite has no way to size honestly");
-	context.SkipCall("ISource2GameClients::unk205",
-		"takes a player slot and an int whose meaning the SDK does not give; "
-		"calling it blind on a live player is not worth the row");
+		"unidentified in the SDK and takes a player slot plus a void* out "
+		"block; calling it blind on a live player is not worth the one line "
+		"it would produce");
+
+	// The interface's tail, unk201-205 until the 2026-10 SDK named them:
+	// HLTV password/auth plumbing and config-command validation. None of it
+	// is reachable without a live HLTV client or a config this suite owns.
+	context.SkipCall("ISource2GameClients::CheckHltvPasswordMatch",
+		"the admission check for an HLTV connection attempt; needs a real "
+		"client password and CSteamID to mean anything");
+	context.SkipCall("ISource2GameClients::ShouldSendMessageDuringHltvReplay",
+		"an HLTV relay policy question; needs a live NetMessageInfo_t and "
+		"message pair");
+	context.SkipCall("ISource2GameClients::GetMessageEncryptionKey",
+		"answers encryption-key policy for a live message; calling it on "
+		"fabricated arguments is a factoid, not a probe");
+	context.SkipCall("ISource2GameClients::ValidateConfigCommands",
+		"parses and executes config-command validation over a config string "
+		"this suite does not own");
+	context.SkipCall("ISource2GameClients::ShouldKickClientForSteamAuthFailure",
+		"a kick-policy question for a failure that has not happened; needs a "
+		"live player mid-auth to mean anything");
 }
 
 // -----------------------------------------------------------------------------

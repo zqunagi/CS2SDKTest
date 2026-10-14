@@ -3,8 +3,9 @@
 #include <cstddef>
 #include <cstring>
 
-#include <eiface.h>
-#include <tier1/convar.h>
+#include <engine2/isource2serverconfig.h>
+#include <engine2/ivengineserver2.h>
+#include <tier0/convar.h>
 
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"

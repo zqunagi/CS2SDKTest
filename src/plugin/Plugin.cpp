@@ -1,6 +1,6 @@
 #include "plugin/Plugin.h"
 
-#include <tier1/convar.h>
+#include <tier0/convar.h>
 
 #include "core/FileSystemUtil.h"
 #include "core/Log.h"

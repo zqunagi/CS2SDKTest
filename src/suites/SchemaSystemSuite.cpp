@@ -6,10 +6,10 @@
 #include <cstring>
 #include <string>
 
-#include <appframework/IAppSystem.h>
+#include <appframework/iappsystem.h>
 #include <schemasystem/schemasystem.h>
-#include <tier1/bufferstring.h>
-#include <tier1/utlvector.h>
+#include <tier0/buffer_string.h>
+#include <tier0/utlvector.h>
 
 #include "testkit/StructInspector.h"
 
@@ -499,14 +499,14 @@ void SchemaSystemSuite::InspectSchemaSystemLayout(TestContext& context)
 		const int modules = schema_concrete_->m_LoadedModules.Count();
 		const int manifests = schema_concrete_->m_ResourceManifestDescs.Count();
 		const int mismatches = schema_concrete_->m_DetectedSchemaMismatches.Count();
-		const int callbacks = schema_concrete_->m_CompleteModuleRegistrationCallbacks.Count();
-		context.Detail("modules=%d manifests=%d mismatches=%d callbacks=%d",
-			modules, manifests, mismatches, callbacks);
+		// m_CompleteModuleRegistrationCallbacks lived here until the 2026-10
+		// SDK removed it; old logs have a callbacks=%d this row no longer prints.
+		context.Detail("modules=%d manifests=%d mismatches=%d",
+			modules, manifests, mismatches);
 
 		if (modules < 0 || modules > kMaxPlausibleCount
 			|| manifests < 0 || manifests > kMaxPlausibleCount
-			|| mismatches < 0 || mismatches > kMaxPlausibleCount
-			|| callbacks < 0 || callbacks > kMaxPlausibleCount)
+			|| mismatches < 0 || mismatches > kMaxPlausibleCount)
 		{
 			context.Fail("one of these is not a count");
 		}
@@ -567,8 +567,6 @@ void SchemaSystemSuite::InspectSchemaSystemLayout(TestContext& context)
 	inspect.Int32  ("m_nRedundant",  offsetof(CSchemaSystem, m_nRedundant), 0, INT32_MAX);
 	inspect.UInt64 ("m_nIgnoredBytes",
 	                                 offsetof(CSchemaSystem, m_nIgnoredBytes));
-	inspect.Raw    ("m_CompleteModuleRegistrationCallbacks",
-	                                 offsetof(CSchemaSystem, m_CompleteModuleRegistrationCallbacks), 16);
 	inspect.Summarize();
 }
 

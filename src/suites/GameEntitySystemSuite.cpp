@@ -6,10 +6,12 @@
 #include <cstdio>
 #include <cstring>
 
-#include <appframework/IAppSystem.h>
-#include <eiface.h>
+#include <appframework/iappsystem.h>
+#include <engine2/igameresourceservice.h>
+#include <engine2/ivengineserver2.h>
 #include <entity2/entityclass.h>
 #include <entity2/entityinstance.h>
+#include <gameentitysystem.h>
 #include <interfaces/interfaces.h>
 
 #include "core/Log.h"
@@ -19,24 +21,12 @@
 #include "testkit/StructInspector.h"
 
 /**
- * s2sdk declares `extern CGameEntitySystem* GameEntitySystem();` and never
- * defines it: the three EntityInstance*Iter_t classes and
- * CEntityIdentity::NameMatches call it, and the consumer is expected to supply
- * the pointer. That is why entity2/entitysystem.cpp compiles into this plugin
- * but does not link on its own.
- *
- * So this is the definition, and it is deliberately the *only* place the
- * resolved pointer escapes the suite. It is set once ResolveEntitySystem has
- * validated a candidate and cleared again if resolution fails, so an iterator
- * constructed before the entity system was found gets a null rather than a
- * stale pointer from a previous map.
+ * s2sdk declares `extern CGameEntitySystem* GameEntitySystem();` and defines it
+ * in entity2/entitysystem.cpp - which is why that file compiles into this
+ * plugin - by walking g_pGameResourceServiceServer's declared members, not a
+ * hard-coded byte offset. ResolveEntitySystem cross-checks that accessor
+ * against this suite's own independent slot scan.
  */
-static CGameEntitySystem* g_sdk_entity_system = nullptr;
-
-CGameEntitySystem* GameEntitySystem()
-{
-	return g_sdk_entity_system;
-}
 
 namespace cs2st
 {
@@ -251,7 +241,6 @@ void GameEntitySystemSuite::ExerciseCalls(TestContext& context)
 	named_identity_ = nullptr;
 	named_entity_name_ = nullptr;
 	active_entity_count_ = 0;
-	g_sdk_entity_system = nullptr;
 
 	ExerciseResourceServiceAppSystem(context);
 	ResolveEntitySystem(context);
@@ -298,15 +287,16 @@ void GameEntitySystemSuite::ExerciseCalls(TestContext& context)
 void GameEntitySystemSuite::ExerciseResourceServiceAppSystem(TestContext& context)
 {
 	context.Note("[IGameResourceService] IAppSystem base slots");
-	context.Note("s2sdk has no class body for IGameResourceService, only the version "
-	             "string; the cast to IAppSystem below is an assumption this section tests");
+	context.Note("the SDK declares IGameResourceService in engine2/igameresourceservice.h; "
+	             "the cast to IAppSystem below is an assumption this section tests");
 
-	// reinterpret_cast, not static_cast: the SDK never says IGameResourceService
-	// derives from IAppSystem, so there is no inheritance for the compiler to
-	// walk. It is registered through a module's CreateInterface like every
-	// other app system, which puts the IAppSystem subobject at offset 0 - and
-	// if that is wrong, GetTier() below calls something else entirely and the
-	// answers stop making sense immediately.
+	// static_cast would now walk the SDK's own inheritance (CGameResourceService
+	// derives from IEngineService derives from IAppSystem), but this section
+	// exists to test the premise rather than repeat it: the service is
+	// registered through a module's CreateInterface like every other app
+	// system, which puts the IAppSystem subobject at offset 0 - and if that is
+	// wrong, GetTier() below calls something else entirely and the answers stop
+	// making sense immediately.
 	IAppSystem* app_system = reinterpret_cast<IAppSystem*>(resource_service_);
 
 	CS2ST_CALL(context, "IGameResourceService::GetTier", {
@@ -440,9 +430,9 @@ bool GameEntitySystemSuite::LooksLikeEntitySystem(const void* candidate,
 void GameEntitySystemSuite::ResolveEntitySystem(TestContext& context)
 {
 	context.Note("[CGameEntitySystem] locating the instance");
-	context.Note("the SDK cannot do this: IGameResourceService has no class body, so the "
-	             "pointer is fished out of the service object at a byte offset the whole "
-	             "plugin ecosystem agrees on and nobody verifies");
+	context.Note("the SDK's GameEntitySystem() reads the service's declared members; "
+	             "this scan reads raw slots at the offset the plugin ecosystem "
+	             "agrees on and nobody verifies");
 
 	// Printed whether or not the assumed offset works, because the raw slot
 	// values are what someone reads when it stops working.
@@ -554,9 +544,20 @@ void GameEntitySystemSuite::ResolveEntitySystem(TestContext& context)
 		}
 	});
 
-	// Published for the SDK's own iterator implementations, which call
-	// GameEntitySystem() rather than taking the pointer as an argument.
-	g_sdk_entity_system = entity_system_;
+	// The SDK's own accessor walks g_pGameResourceServiceServer's declared
+	// members - a description that shares no code with this suite's byte-offset
+	// scan. Agreement is an oracle for both; disagreement means the declared
+	// layout (or the ecosystem's offset) has drifted.
+	CS2ST_CALL(context, "CGameEntitySystem vs the SDK's own GameEntitySystem()", {
+		CGameEntitySystem* from_sdk = GameEntitySystem();
+		context.Detail("-> SDK accessor %p, slot scan %p",
+			static_cast<void*>(from_sdk), static_cast<void*>(entity_system_));
+		if (from_sdk != entity_system_)
+		{
+			context.Fail("the SDK's GameEntitySystem() and this suite's scan disagree; "
+			             "one of them is reading the wrong member");
+		}
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -621,9 +622,12 @@ void GameEntitySystemSuite::ExerciseEntitySystemVirtuals(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "CEntitySystem::GetSpawnGroupWorldId", {
+		// WorldGroupId_t lost its GetHashCode()/IsValid() helpers in the
+		// 2026-10 SDK - the AMNOTE on the class says the high bit marks
+		// client-side groups and -1 (all bits set) is invalid, so the bits
+		// carry all the meaning this row ever had.
 		const WorldGroupId_t world_id = entity_system_->GetSpawnGroupWorldId(0);
-		context.Detail("-> hash 0x%08x for spawn group 0 (valid=%s)",
-			world_id.GetHashCode(), world_id.IsValid() ? "true" : "false");
+		context.Detail("-> id 0x%08x for spawn group 0", world_id.m_nId);
 	});
 
 	// The ten IEntityResourceManifestBuilder slots, one line each. Every one of
@@ -1474,14 +1478,18 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 			}
 		});
 
-		CS2ST_CALL(context, "CEntityInstance::GetChangeAccessorPathInfo_1", {
+		CS2ST_CALL(context, "CEntityInstance::GetChangeAccessorPathInfo", {
 			context.Detail("-> %p",
-				static_cast<void*>(probe_instance_->GetChangeAccessorPathInfo_1()));
+				static_cast<void*>(probe_instance_->GetChangeAccessorPathInfo()));
 		});
 
-		CS2ST_CALL(context, "CEntityInstance::GetChangeAccessorPathInfo_2", {
+		CS2ST_CALL(context, "CEntityInstance::GetChangeAccessorPathInfo (const)", {
+			// The const/non-const overload pair (GetChangeAccessorPathInfo_1/_2
+			// until the 2026-10 SDK named them) shares one address in a call
+			// sweep; both rows exist so the pair's two vtable slots each have
+			// their own line to diff.
 			context.Detail("-> %p",
-				static_cast<void*>(probe_instance_->GetChangeAccessorPathInfo_2()));
+				static_cast<void*>(probe_instance_->GetChangeAccessorPathInfo()));
 		});
 
 		// An oracle across two subsystems: the schema binding reached through
@@ -1626,17 +1634,26 @@ void GameEntitySystemSuite::InspectEntitySystemLayout(TestContext& context)
 	inspect.Float("m_flChangeCallbackSpewThreshold",
 		offsetof(CEntitySystem, m_flChangeCallbackSpewThreshold));
 
-	// Seven consecutive bools. The sharpest run of probes in the struct: random
+	// The bool block, m_Unk1-6 / m_bEnableAutoDeletionExecution until the
+	// 2026-10 SDK named them. The sharpest run of probes in the struct: random
 	// bytes clear a single bool about 127 times in 128, and seven in a row is a
 	// different proposition entirely.
-	inspect.Bool("m_Unk1", offsetof(CEntitySystem, m_Unk1));
-	inspect.Bool("m_Unk2", offsetof(CEntitySystem, m_Unk2));
-	inspect.Bool("m_Unk3", offsetof(CEntitySystem, m_Unk3));
-	inspect.Bool("m_bEnableAutoDeletionExecution",
-		offsetof(CEntitySystem, m_bEnableAutoDeletionExecution));
-	inspect.Bool("m_Unk4", offsetof(CEntitySystem, m_Unk4));
-	inspect.Bool("m_Unk5", offsetof(CEntitySystem, m_Unk5));
-	inspect.Bool("m_Unk6", offsetof(CEntitySystem, m_Unk6));
+	inspect.Bool("m_bPerformDeletionPostCreation",
+		offsetof(CEntitySystem, m_bPerformDeletionPostCreation));
+	inspect.Bool("m_bPerformDeallocationPostCreation",
+		offsetof(CEntitySystem, m_bPerformDeallocationPostCreation));
+	inspect.Bool("m_bInvokePostDataUpdates",
+		offsetof(CEntitySystem, m_bInvokePostDataUpdates));
+	inspect.Bool("m_bAutoExecuteQueuedDeletion",
+		offsetof(CEntitySystem, m_bAutoExecuteQueuedDeletion));
+	inspect.Bool("m_bProfilingResourceSystem",
+		offsetof(CEntitySystem, m_bProfilingResourceSystem));
+	inspect.Bool("m_bInRestoreActivation",
+		offsetof(CEntitySystem, m_bInRestoreActivation));
+	inspect.Bool("m_unk101", offsetof(CEntitySystem, m_unk101));
+	// New in the same SDK update, and the eighth bool in the run.
+	inspect.Bool("m_bProcessingQueuedActivatesAndPostDataUpdates",
+		offsetof(CEntitySystem, m_bProcessingQueuedActivatesAndPostDataUpdates));
 
 	inspect.Raw("m_queuedCreations", offsetof(CEntitySystem, m_queuedCreations), 24);
 	inspect.Raw("m_queuedPostDataUpdates",
