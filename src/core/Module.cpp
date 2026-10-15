@@ -6,6 +6,7 @@
 	#define WIN32_LEAN_AND_MEAN
 	#define NOMINMAX
 	#include <Windows.h>
+	#include <TlHelp32.h>
 #else
 	#include <dlfcn.h>
 	#include <link.h>
@@ -38,6 +39,53 @@ std::size_t ImageSizeFromHeaders(const void* base)
 	return static_cast<std::size_t>(nt->OptionalHeader.SizeOfImage);
 }
 
+/**
+ * The game's own copy of a module whose name Metamod also uses: its loader is
+ * built as server.dll, and GetModuleHandle returns whichever same-named image
+ * was mapped first. A copy under an addons\ directory is never the game's, so
+ * it is the answer only when no other module carries the name. Toolhelp is
+ * kernel32's, so this needs no extra import library either.
+ */
+HMODULE FindPreferredModule(const std::string& file_name)
+{
+	HANDLE snapshot = ::CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, ::GetCurrentProcessId());
+	if (snapshot == INVALID_HANDLE_VALUE)
+	{
+		return ::GetModuleHandleA(file_name.c_str());
+	}
+
+	HMODULE fallback = nullptr;
+	HMODULE preferred = nullptr;
+	MODULEENTRY32 entry{};
+	entry.dwSize = sizeof(entry);
+	for (BOOL more = ::Module32First(snapshot, &entry); more && preferred == nullptr;
+	     more = ::Module32Next(snapshot, &entry))
+	{
+		if (::_stricmp(entry.szModule, file_name.c_str()) != 0)
+		{
+			continue;
+		}
+		char lowered[MAX_PATH] = {0};
+		for (std::size_t i = 0; i + 1 < sizeof(lowered) && entry.szExePath[i] != '\0'; ++i)
+		{
+			const char c = entry.szExePath[i];
+			lowered[i] = (c == '/') ? '\\' : static_cast<char>((c >= 'A' && c <= 'Z') ? c + 32 : c);
+		}
+		if (std::strstr(lowered, "\\addons\\") != nullptr)
+		{
+			if (fallback == nullptr)
+			{
+				fallback = entry.hModule;
+			}
+			continue;
+		}
+		preferred = entry.hModule;
+	}
+	::CloseHandle(snapshot);
+
+	return (preferred != nullptr) ? preferred : fallback;
+}
+
 #else
 
 struct ImageBounds
@@ -63,6 +111,16 @@ int CollectImageBounds(struct dl_phdr_info* info, std::size_t /*info_size*/, voi
 		return 0;
 	}
 	if (std::strcmp(BaseName(info->dlpi_name), out->wanted) != 0)
+	{
+		return 0;
+	}
+
+	// Two mapped objects can share a file name: Metamod's loader is itself
+	// built as libserver.so and is mapped before the game's. A copy under an
+	// addons/ directory is never the game's own module, so it only wins when
+	// nothing else answers to the name - and the walk goes on looking.
+	const bool under_addons = std::strstr(info->dlpi_name, "/addons/") != nullptr;
+	if (out->found && under_addons)
 	{
 		return 0;
 	}
@@ -94,7 +152,7 @@ int CollectImageBounds(struct dl_phdr_info* info, std::size_t /*info_size*/, voi
 	out->size = (saw_load && hi > lo) ? static_cast<std::size_t>(hi - lo) : 0;
 	out->path = info->dlpi_name;
 	out->found = true;
-	return 1; // stop iterating
+	return under_addons ? 0 : 1; // stop only once the game's own copy is found
 }
 
 #endif // CS2ST_WINDOWS
@@ -177,7 +235,7 @@ Module Module::FindExact(const std::string& file_name)
 #if CS2ST_WINDOWS
 	// GetModuleHandle does not take a reference, which is exactly what we
 	// want: the engine owns these modules and we are only looking.
-	HMODULE handle = ::GetModuleHandleA(file_name.c_str());
+	HMODULE handle = FindPreferredModule(file_name);
 	if (handle == nullptr)
 	{
 		return module;
@@ -194,9 +252,18 @@ Module Module::FindExact(const std::string& file_name)
 		module.path_ = path;
 	}
 #else
+	// The object is chosen from the loader's list first, then opened by its
+	// full path: dlopen by bare name returns whichever same-named object the
+	// loader met first, which for libserver.so is Metamod's shim, and the
+	// handle (dlsym) and the bounds (scans) must describe the same image.
+	ImageBounds bounds;
+	bounds.wanted = file_name.c_str();
+	::dl_iterate_phdr(&CollectImageBounds, &bounds);
+
 	// RTLD_NOLOAD returns a handle only if the library is already mapped, so
 	// this stays a query rather than turning into a load.
-	void* handle = ::dlopen(file_name.c_str(), RTLD_NOW | RTLD_NOLOAD);
+	void* handle = ::dlopen(bounds.found ? bounds.path.c_str() : file_name.c_str(),
+		RTLD_NOW | RTLD_NOLOAD);
 	if (handle == nullptr)
 	{
 		return module;
@@ -205,9 +272,6 @@ Module Module::FindExact(const std::string& file_name)
 	module.handle_ = handle;
 	module.owns_handle_ = true; // RTLD_NOLOAD still bumps the refcount
 
-	ImageBounds bounds;
-	bounds.wanted = file_name.c_str();
-	::dl_iterate_phdr(&CollectImageBounds, &bounds);
 	if (bounds.found)
 	{
 		module.base_ = bounds.base;

@@ -1,0 +1,246 @@
+# CS2 gamedata for the gamedata test suite.
+#
+# Everything CounterStrikeSharp and its plugin ecosystem resolve out of band
+# lives here: byte signatures for unexported functions, vtable slots the SDK
+# does not declare, and struct byte offsets nobody publishes. The file is the
+# input of GamedataSuite, which resolves every entry against the live server
+# and exercises what it can - a key that only scans is a key nobody verified.
+#
+# Conventions, so a reader never has to guess what a number means:
+#   [signatures.<key>]   byte pattern, hex, '?'/xx as wildcard, resolved by
+#                        scanning the module named by library
+#   [vtables.<key>]      vtable slot index on the named class (0-based, the
+#                        way KHook::GetVtableIndex counts)
+#   [offsets.<key>]      byte offset inside a struct or object
+# windows/linux give per-platform values; a shared value is written once in
+# the platform-neutral `value`/`pattern` key.
+
+# ---------------------------------------------------------------------------
+# signatures - server.dll / libserver.so
+# ---------------------------------------------------------------------------
+
+[signatures.UTIL_ClientPrintAll]
+library = "server"
+windows = "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC ? 8B E9 49 8B D9"
+linux   = "55 48 89 E5 41 57 4D 89 CF 41 56 4D 89 C6 41 55 49 89 CD 41 54 49 89 D4 53 48 8D 5D"
+
+[signatures.ClientPrint]
+library = "server"
+windows = "48 85 C9 0F 84 ? ? ? ? 48 89 5C 24 ? 55"
+linux   = "55 48 8D 05 ? ? ? ? 48 89 E5 41 57 4D 89 CF"
+
+[signatures.CCSPlayerController_SwitchTeam]
+library = "server"
+windows = "40 53 57 48 81 EC ? ? ? ? 48 8B D9 8B FA"
+linux   = "55 48 89 E5 41 54 49 89 FC 89 F7"
+
+[signatures.CBasePlayerController_SetPawn]
+library = "server"
+windows = "44 88 4C 24 ? 53 57 41 54"
+linux   = "55 48 8D 87 ? ? ? ? 48 89 E5 41 57 41 56 41 89 CE 41 55 45 89 CD"
+
+[signatures.CCSPlayerPawnBase_PostThink]
+library = "server"
+windows = "40 55 56 41 54 48 8B EC 48 83 EC ? 4C 89 AC 24 ? ? ? ? 48 8B F1 E8 ? ? ? ? 80 BE ? ? ? ? ?"
+linux   = "55 48 89 E5 41 56 41 55 41 54 53 48 89 FB 48 83 EC ? E8 ? ? ? ? 80 BB"
+
+[signatures.CGameEventManager_Init]
+library = "server"
+windows = "40 53 48 83 EC ? 48 8B 01 48 8B D9 FF 50 ? 48 8B 03"
+linux   = "55 48 89 E5 53 48 89 FB 48 83 EC ? 48 8B 07 FF 50 ? 48 8B 03"
+
+[signatures.GiveNamedItem]
+library = "server"
+windows = "48 89 5C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 44 89 44 24"
+linux   = "55 48 89 E5 41 57 41 56 41 55 41 54 53 48 81 EC ? ? ? ? 48 89 BD ? ? ? ? 89 95 ? ? ? ? 48 89 8D ? ? ? ? 44 89 85"
+
+[signatures.UTIL_Remove]
+library = "server"
+windows = "48 85 C9 74 ? 48 8B D1 48 8B 0D"
+linux   = "48 89 FE 48 85 FF 74 ? 48 8D 05 ? ? ? ? 48"
+
+[signatures.CBaseModelEntity_SetModel]
+library = "server"
+windows = "40 53 48 83 EC ? 48 8B D9 4C 8B C2 48 8B 0D ? ? ? ? 48 8D 54 24 ? 48 8B 01 FF 50 ? 48 8B 54 24 ? 48 8B CB E8 ? ? ? ? 48 83 C4 ? 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 5C 24"
+linux   = "55 48 89 E5 53 48 89 FB 48 83 EC ? 48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 50 ? 48 89 DF 48 8B 5D ? C9 48 89 C6 E9 ? ? ? ? CC CC CC CC 55"
+
+[signatures.CCSPlayer_WeaponServices_CanUse]
+library = "server"
+windows = "48 89 5C 24 ? 48 89 6C 24 ? 56 57 41 54 41 56 41 57 48 83 EC ? 48 8B 01 48 8B FA"
+linux   = "55 48 8D 15 ? ? ? ? 48 89 E5 41 55 41 54 49 89 F4 53 48 89 FB 48 83 EC ? 48 8B 07 48 8B 80 ? ? ? ? 48 39 D0 0F 85 ? ? ? ? 80 BF"
+
+[signatures.CCSPlayer_ItemServices_CanAcquire]
+library = "server"
+windows = "44 89 44 24 ? 48 89 54 24 ? 48 89 4C 24 ? 55 53 56 57 41 54 41 55 41 56 41 57 48 8B EC"
+linux   = "55 48 89 E5 41 57 41 56 49 89 F6 41 55 41 54 49 89 CC 53 48 89 FB 48 83 EC 78"
+
+[signatures.GetCSWeaponDataFromKey]
+library = "server"
+windows = "48 89 5C 24 ? 57 48 83 EC ? 33 FF 4C 8B CA 8B D9"
+linux   = "48 85 F6 0F 84 ? ? ? ? 55 48 89 E5 41 57 41 56 41 55 49 89 F5 41 54 53 48 81 EC ? ? ? ? 80 3E ? 75 ? 31 C0 48 81 C4 ? ? ? ? 5B 41 5C 41 5D 41 5E 41 5F 5D C3 0F 1F 80 ? ? ? ? 4C 8D A5 ? ? ? ? 89 FB"
+
+[signatures.CCSGameRules_TerminateRound]
+library = "server"
+windows = "48 8B C4 4C 89 48 ? 48 89 48 ? 55 41 54"
+linux   = "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 81 EC ? ? ? ? 48 8D 05 ? ? ? ? F3 0F 11 85 ? ? ? ? 89 B5"
+
+[signatures.UTIL_CreateEntityByName]
+library = "server"
+windows = "48 83 EC ? C6 44 24 ? ? 4C 8B C1"
+linux   = "48 8D 05 ? ? ? ? 55 48 89 FA"
+
+[signatures.CBaseEntity_DispatchSpawn]
+library = "server"
+windows = "48 89 5C 24 ? 57 48 83 EC ? 48 8B DA 48 8B F9 48 85 C9 0F 84 ? ? ? ? 48 85 D2"
+linux   = "48 85 FF 74 ? 55 48 89 E5 41 55 41 54 49 89 FC"
+
+[signatures.CBaseEntity_EmitSoundFilter]
+library = "server"
+windows = "40 53 48 83 EC ? 4C 89 4C 24 ? 48 8B D9 45 8B C8"
+linux   = "55 48 89 E5 53 48 89 FB 48 83 EC ? E8 ? ? ? ? 48 89 D8 48 8B 5D ? C9 C3 CC CC CC CC CC CC 48 B8"
+
+[signatures.CEntityInstance_AcceptInput]
+library = "server"
+windows = "48 89 5C 24 ? 48 89 6C 24 ? 56 57 41 56 48 81 EC ? ? ? ? 4D 8B F0 48 8B F1"
+linux   = "55 48 89 E5 41 57 49 89 FF 41 56 48 8D BD ? ? ? ? 41 55 4C 8D AD"
+
+[signatures.CEntitySystem_AddEntityIOEvent]
+library = "server"
+windows = "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC ? 49 8B F1 48 8B F9"
+linux   = "55 48 89 E5 41 55 49 89 CD 41 54 49 89 FC 53 BB"
+
+[signatures.LegacyGameEventListener]
+library = "server"
+windows = "48 8B 15 ? ? ? ? 48 85 D2 74 ? 85 C9"
+linux   = "48 8B 05 ? ? ? ? 48 85 C0 74 ? 83 FF ? 77 ? 48 63 FF 48 C1 E7 ? 48 8D 44 38"
+
+[signatures.CBasePlayerPawn_RemovePlayerItem]
+library = "server"
+windows = "48 85 D2 0F 84 ? ? ? ? 48 89 5C 24 ? 57 48 83 EC ? 48 8B DA 48 8B F9 E8"
+linux   = "55 48 89 E5 41 54 49 89 FC 53 48 89 F3 E8 ? ? ? ? 48 39 C3"
+
+[signatures.CBaseEntity_TakeDamageOld]
+library = "server"
+windows = "40 55 53 56 57 41 54 48 8D 6C 24 ? 48 81 EC ? ? ? ? 4D 8B E0"
+linux   = "55 66 0F EF C0 48 89 E5 41 57 41 56 41 55 49 89 FD 31 FF"
+
+[signatures.CBaseTrigger_StartTouch]
+library = "server"
+windows = "40 57 41 56 48 83 EC ? 48 8B 01"
+linux   = "55 48 89 E5 41 56 41 55 49 89 F5 41 54 49 89 FC 53 BB"
+
+[signatures.CBaseTrigger_EndTouch]
+library = "server"
+windows = "40 53 41 55 48 83 EC ? 83 BA"
+linux   = "55 BA ? ? ? ? 48 89 E5 41 57 41 56 41 55 49 89 F5 41 54 49 89 FC"
+
+[signatures.CEntityIOOutput_FireOutputInternal]
+library = "server"
+windows = "48 8B C4 48 89 58 ? 48 89 70 ? 48 89 48 ? 55"
+linux   = "55 48 89 E5 41 57 49 89 FF 41 56 41 55 41 54 49 89 D4 53 48 89 F3 48 81 EC ? ? ? ? 48 8D 05"
+
+[signatures.IGameSystem_InitAllSystems_pFirst]
+library = "server"
+windows = "48 8B 1D ? ? ? ? 48 85 DB 0F 84 ? ? ? ? BD"
+linux   = "4C 8B 35 ? ? ? ? 4D 85 F6 75 ? E9"
+
+[signatures.NetworkStateChanged]
+library = "server"
+windows = "4C 8B C2 48 8B D1 48 8B 09"
+linux   = "48 8B 07 48 85 C0 74 ? 48 8B 50"
+
+[signatures.Host_Say]
+library = "server"
+windows = "44 89 4C 24 ? 44 88 44 24"
+linux   = "55 48 89 E5 41 57 49 89 F7 41 56 41 55 41 89 D5"
+
+[signatures.CCSNavArea_IsValidNavMesh]
+library = "server"
+windows = "48 83 3D ? ? ? ? ? 0F 95 C0 C3 CC CC CC CC C2"
+linux   = "48 8D 05 ? ? ? ? 48 83 38 ? 0F 95 C0 C3"
+
+# ---------------------------------------------------------------------------
+# vtables - slot indexes, 0-based, counted the way KHook::GetVtableIndex does
+# ---------------------------------------------------------------------------
+
+[vtables.CCSPlayerController_ChangeTeam]
+windows = 105
+linux   = 104
+
+[vtables.CCSPlayerController_Respawn]
+windows = 274
+linux   = 276
+
+[vtables.CCSPlayer_ItemServices_GiveNamedItem]
+windows = 23
+linux   = 24
+
+[vtables.CCSPlayer_ItemServices_DropActivePlayerWeapon]
+windows = 26
+linux   = 27
+
+[vtables.CCSPlayer_ItemServices_RemoveWeapons]
+windows = 27
+linux   = 28
+
+[vtables.CGameSceneNode_GetSkeletonInstance]
+windows = 12
+linux   = 13
+
+[vtables.CCSGameRules_FindPickerEntity]
+windows = 25
+linux   = 26
+
+[vtables.CBaseEntity_IsPlayerPawn]
+windows = 171
+linux   = 170
+
+[vtables.CBasePlayerPawn_CommitSuicide]
+value = 387
+
+[vtables.CBaseEntity_Teleport]
+windows = 165
+linux   = 164
+
+[vtables.GameEventManager]
+# vtable slot of ISource2Server whose return value, minus 8, is the
+# IGameEventManager2 - see GameEventSuite for why nothing calls it blindly
+value = 93
+
+[vtables.CEntityResourceManifest_AddResource]
+windows = 2
+linux   = 0
+
+[vtables.SetStateChanged]
+windows = 28
+linux   = 29
+
+[vtables."ISource2GameEntities::CheckTransmit"]
+windows = 12
+linux   = 13
+
+[vtables.CServerSideClient]
+# not a slot either: CSS hands it to its RTTI FindVirtualTable as the expected
+# vtable-offset discriminator on Linux; Windows ignores it
+windows = 8
+linux   = -48
+
+# ---------------------------------------------------------------------------
+# offsets - byte offsets inside a struct or object
+# ---------------------------------------------------------------------------
+
+[offsets.GameEntitySystem]
+# where CGameEntitySystem* sits inside the GameResourceService object - the
+# same hypothesis GameEntitySystemSuite measures (0x58 / 0x50)
+windows = 88
+linux   = 80
+
+[offsets.CheckTransmitPlayerSlot]
+# offsetof(CCheckTransmitInfo, m_nPlayerSlot): where the player slot sits
+# inside each CCheckTransmitInfo the CheckTransmit hook is handed
+value = 576
+
+[offsets.CTakeDamageInfo_HitGroup]
+# byte offset inside CTakeDamageInfo of the pointer chain CSS walks to the
+# hit group (m_unk104 in the ecosystem's layout)
+value = 104

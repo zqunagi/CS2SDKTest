@@ -10,6 +10,7 @@ Test suites live here — one per SDK interface being exercised.
   NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t layout + 15 cross-checks + 6 hooks)
   NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout + protobuf round trip)
   ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
+  GamedataSuite            configs/gamedata.toml                         (46 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not s2sdk, and it
@@ -111,6 +112,38 @@ own pointer to the protobuf sub-object) has to equal this build's computed
 ToPB address, or set_tick is refused and the round trip reports SKIP with
 that reason. The same comparison run as a *finding* rather than a gate is in
 the allocation section, where a mismatch is Suspect, printed, never fatal.
+
+GamedataSuite is the only suite whose subject is a file rather than an SDK
+interface: the 46 keys CounterStrikeSharp and its ecosystem resolve out of
+band — byte signatures for unexported functions, vtable slots for methods no
+header declares, byte offsets into structs nobody publishes. It is the only
+suite that reads an external config (configs/gamedata.toml, in TOML rather
+than the ecosystem's JSON because a file people hand-edit on update day
+should be readable while doing it), the only one that does signature
+scanning, and the only one whose calls go through raw function pointers
+typed from the ecosystem's own declarations rather than the SDK's.
+
+The check is three-layered, matching the three kinds of key. Signatures are
+scanned and must land on exactly one address — zero matches is the headline
+the file exists for, two is a too-short pattern reported as Suspect rather
+than guessed at. The subset with a safe call gets the behavioural check:
+an info_target is created by name, spawned with null keyvalues and removed,
+with each step proving the pointer from the step before; the weapon table
+must answer "weapon_ak47" and refuse a name no build contains; the navmesh
+stub's answer is compared against the global it reads. Slots and offsets
+with an SDK oracle — ISource2GameEntities::CheckTransmit and
+IEntityResourceManifest::AddResource through KHook::GetVtableIndex,
+CCheckTransmitInfo::m_nPlayerSlot and CGameResourceService's entity-system
+member through offsetof — are two independent sources agreeing on one
+number. Everything else resolves-and-reports, because finding that a key no
+longer resolves is the part that breaks on update day.
+
+Its hooks are the ecosystem's two most-detoured functions — Host_Say and
+CEntityInstance_AcceptInput — installed only after the sweep has matched
+their patterns, observation only. One key is deliberately never used:
+GameEventManager (slot 93 on ISource2Server), the ecosystem's route to
+IGameEventManager2; GameEventSuite records why this project will not
+blind-call server vtable slots, and this suite reports the number instead.
 
 Vocabulary: a *module* in this codebase is always a loaded shared library
 (engine2.so, server.so — see data/GameModules.h). A *suite* is one of these

@@ -121,6 +121,14 @@ configure_file(
   @ONLY
 )
 
+# GamedataSuite reads this from <plugin_dir>/configs beside the binary, so the
+# package layout and the installed layout both have to carry it.
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
+  "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/configs/gamedata.toml"
+  COPYONLY
+)
+
 # -----------------------------------------------------------------------------
 #  The plugin
 # -----------------------------------------------------------------------------
@@ -131,6 +139,8 @@ set(CS2SDKTEST_SOURCES
   src/core/Log.cpp
   src/core/Module.cpp
   src/core/FileSystemUtil.cpp
+  src/core/TomlData.cpp
+  src/core/SignatureScan.cpp
 
   src/data/GameModules.cpp
 
@@ -152,6 +162,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/NetworkMessagesSuite.cpp
   src/suites/MetamodListenerSuite.cpp
   src/suites/ServerConfigSuite.cpp
+  src/suites/GamedataSuite.cpp
 )
 
 set(CS2SDKTEST_HEADERS
@@ -161,6 +172,8 @@ set(CS2SDKTEST_HEADERS
   src/core/Log.h
   src/core/Module.h
   src/core/FileSystemUtil.h
+  src/core/TomlData.h
+  src/core/SignatureScan.h
 
   src/data/GameModules.h
 
@@ -185,6 +198,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/NetworkMessagesSuite.h
   src/suites/MetamodListenerSuite.h
   src/suites/ServerConfigSuite.h
+  src/suites/GamedataSuite.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:
@@ -318,6 +332,9 @@ install(TARGETS cs2sdktest
 )
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/package/addons/metamod/${CS2SDKTEST_ALIAS}.vdf"
   DESTINATION "addons/metamod"
+)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
+  DESTINATION "addons/${CS2SDKTEST_ALIAS}/configs"
 )
 
 # `cmake --build . --target deploy` drops the package straight into a server.
