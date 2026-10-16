@@ -37,9 +37,12 @@
  *                proves the pointer is an entity, the removal proves the
  *                whole chain against the entity list afterwards.
  *   GetCSWeaponDataFromKey
- *                the weapon table lookup every GiveNamedItem goes through:
- *                "weapon_ak47" must resolve, "cs2sdktest_no_such_weapon"
- *                must not.
+ *                the weapon table lookup every GiveNamedItem goes through.
+ *                The key is the item definition index as decimal text (the
+ *                game formats m_iItemDefinitionIndex with "%d"), the int a
+ *                category filter, -1 for none: (-1, "7") must resolve the
+ *                AK-47, the vdata's own category must resolve it again, a
+ *                different category and an unknown key must not.
  *   CCSNavArea_IsValidNavMesh
  *                a boolean fact with a knowable answer on a loaded map.
  *   the scan-only signatures (ExerciseSignatureBehaviours)
@@ -49,24 +52,27 @@
  *                unchanged, the game-event listener table is a pure
  *                function with a computable answer, the game-system list
  *                walks its own links. The player-shaped ones run against
- *                a bot this suite adds through ServerCommand("bot_add")
- *                and kicks afterwards - one run ahead of the exercise,
- *                because a queued command lands on the next frame and the
- *                sweep is synchronous. Every raw offset those calls read
- *                (the pawn's team byte, the controller's pawn handle, the
+ *                a bot (a fake client, m_steamID 0) already in the server -
+ *                start the server with +bot_quota 1. With none, the run
+ *                queues one "bot_add t", skips those rows saying so, and
+ *                leaves the bot in place for the next run; nothing is
+ *                ever kicked. Every raw offset those calls read
+ *                (the controller's team byte and pawn handle, the
  *                item-services pointer) is resolved through the schema
  *                system first, so the binary and the schema must agree
  *                before anything is called - two independent sources, one
  *                number, the same discipline as the vtable rows.
  *
- * What still only resolves-and-reports: CGameEventManager_Init and
- * NetworkStateChanged (verified by decoding their bytes, in
- * ExerciseCodeDecodes), ClientPrint on Windows (its Linux pattern anchors
- * a lea the decode reads; the Windows pattern anchors the prologue), and
- * CBaseTrigger_StartTouch, whose pattern matches nothing on the builds
- * checked. Finding the bytes is the part that breaks on update day, and a
- * row that says "pattern no longer matches anything" is the headline that
- * row exists for.
+ * Output: every key in the file gets exactly one row, in file order. A
+ * signature row carries where the scan landed and what the behaviour check
+ * saw; a FAIL names the stage that failed ("scan:", "setup:", "decode:",
+ * "behaviour:"), and a SKIP says which prerequisite was missing.
+ *
+ * Verified by decoding their bytes rather than calling: CGameEventManager_Init
+ * and NetworkStateChanged. Scan only: CBaseTrigger_StartTouch (no call that
+ * leaves a live trigger untouched) and the two hook targets. Finding the bytes
+ * is the part that breaks on update day, and a row that says "pattern
+ * matches nothing" is the headline that row exists for.
  *
  * Hooks: Host_Say and CEntityInstance_AcceptInput, installed only after the
  * sweep has validated the addresses. They are the two functions a plugin most
@@ -84,10 +90,12 @@
 #define CS2SDKTEST_SUITES_GAMEDATASUITE_H_
 
 #include <cstddef>
+#include <map>
 #include <string>
 
 #include <khook.hpp>
 
+#include "core/Platform.h"
 #include "core/TomlData.h"
 #include "testkit/ITestSuite.h"
 
@@ -121,25 +129,97 @@ public:
 	bool HooksInstalled() const override { return hooks_installed_; }
 
 private:
-	/** One signature key resolved against the server module. */
-	bool ExerciseSignature(TestContext& context, const std::string& table);
+	/** Where one signature key's pattern landed, or why it did not. */
+	struct ScanHit
+	{
+		const void* address = nullptr;
+		std::size_t rva = 0;
+		std::size_t pattern_bytes = 0;
+		std::string error; // empty on a single, clean match
+	};
 
-	/** Behavioural checks on the signatures that can be called safely. */
-	void ExerciseRoundTrip(TestContext& context);
-	void ExerciseWeaponData(TestContext& context);
-	void ExerciseNavMesh(TestContext& context);
-
-	/** Signatures verified by decoding their bytes where calling is unsafe. */
-	void ExerciseCodeDecodes(TestContext& context);
+	/** A behaviour check, run inside the key's own row. */
+	using Verifier = void (GamedataSuite::*)(TestContext&);
 
 	/**
-	 * The scan-only signatures, called: standalone ones first (a local
-	 * object or a global is the whole setup), then the ones that need a
-	 * player, against a bot this suite adds and kicks.
+	 * What one signature key is checked with: the prerequisites it needs
+	 * (kNeeds* bits, see the .cpp) and either a verifier or, for the keys
+	 * no safe call exists for, the reason the row is scan-only.
 	 */
-	void ExerciseSignatureBehaviours(TestContext& context);
-	void ExerciseStandaloneBehaviours(TestContext& context);
-	void ExerciseBotBehaviours(TestContext& context);
+	struct SignatureCheck
+	{
+		const char* name;
+		unsigned needs;
+		Verifier verify;
+		const char* scan_only_reason;
+	};
+
+	/** The check table, looked up by key name. Null for an unknown key. */
+	static const SignatureCheck* FindCheck(const std::string& name);
+
+	/** Scans one key's pattern; the result is kept, no row is written. */
+	ScanHit ScanSignature(TestContext& context, const std::string& table);
+
+	/**
+	 * One row per signature key: scan result plus behaviour verdict. A
+	 * failed scan fails the row, a missing prerequisite skips the behaviour
+	 * with the reason, and otherwise the verifier decides.
+	 */
+	void ExerciseSignatureRow(TestContext& context, const std::string& table);
+
+	/** The first prerequisite in `needs` this run lacks, or null. */
+	const char* MissingPrerequisite(unsigned needs) const;
+
+	/** Address a key resolved to this run, or null. */
+	void* Address(const char* name) const;
+
+	/** Detail for the current row, prefixed with where the scan landed. */
+	void RowDetail(TestContext& context, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
+
+	/** A scratch entity to call against, spawned when DispatchSpawn resolved. */
+	void* CreateScratchEntity(bool spawn, const char* classname = "info_target");
+	void RemoveScratchEntity(void* entity);
+
+	/** The AK-47's weapon vdata, through the key format the game uses. */
+	void* LookupAk47VData();
+
+	/**
+	 * Finds the bot the player-shaped rows need. A bot's pawn is made by the
+	 * controller's own think, a frame after bot_add, so a sweep cannot add a
+	 * bot and use it in the same call. This neither waits nor restarts: with
+	 * no bot in the server it queues one 'bot_add t' that is then left in
+	 * place (never kicked), and the bot rows skip with that reason. Starting
+	 * the server with `+bot_quota 1` has the bot there from the first run.
+	 */
+	void PrepareBot(TestContext& context);
+
+	// ---- verifiers, one per signature key that has a safe call ------------
+
+	void VerifyClientPrintAll(TestContext& context);
+	void VerifyClientPrint(TestContext& context);
+	void VerifySwitchTeam(TestContext& context);
+	void VerifySetPawn(TestContext& context);
+	void VerifyPostThink(TestContext& context);
+	void VerifyEventManagerInit(TestContext& context);
+	void VerifyGiveNamedItem(TestContext& context);
+	void VerifyUtilRemove(TestContext& context);
+	void VerifySetModel(TestContext& context);
+	void VerifyCanUse(TestContext& context);
+	void VerifyCanAcquire(TestContext& context);
+	void VerifyWeaponData(TestContext& context);
+	void VerifyTerminateRound(TestContext& context);
+	void VerifyCreateEntityByName(TestContext& context);
+	void VerifyDispatchSpawn(TestContext& context);
+	void VerifyEmitSoundFilter(TestContext& context);
+	void VerifyAddEntityIOEvent(TestContext& context);
+	void VerifyLegacyListener(TestContext& context);
+	void VerifyRemovePlayerItem(TestContext& context);
+	void VerifyTakeDamageOld(TestContext& context);
+	void VerifyEndTouch(TestContext& context);
+	void VerifyFireOutputInternal(TestContext& context);
+	void VerifyGameSystemList(TestContext& context);
+	void VerifyNetworkStateChanged(TestContext& context);
+	void VerifyNavMesh(TestContext& context);
 
 	/**
 	 * (class name, field name) -> byte offset, off the server module's
@@ -153,11 +233,14 @@ private:
 	                     std::size_t& offset);
 
 	/**
-	 * Finds the bot's controller/pawn pair by walking the entity list for
-	 * CCSPlayerController entities named cs_bot, then the pawn handle off
-	 * the controller. False when no bot is in the server.
+	 * Finds a bot by walking the entity list for CCSPlayerController
+	 * entities with a zero m_steamID (fake clients). `name` receives the
+	 * bot's m_iszPlayerName. The pawn is the
+	 * controller's m_hPawn resolved through the entity system, and stays
+	 * null while the bot has not spawned yet. False when no bot is in the
+	 * server.
 	 */
-	bool FindBotPair(CEntityInstance*& controller, CEntityInstance*& pawn);
+	bool FindBotPair(CEntityInstance*& controller, CEntityInstance*& pawn, std::string& name);
 
 	/**
 	 * Walks the active entity list matching the C++ class name off each
@@ -166,8 +249,9 @@ private:
 	 */
 	CEntityInstance* FindEntityByCppClassname(const char* cpp_class_name);
 
-	/** vtable slots cross-checked against SDK-computed indexes. */
+	/** vtable slots, one row per key, in file order. */
 	void ExerciseVtableSlots(TestContext& context);
+	void VerifyGameEventManagerSlot(TestContext& context, const TomlData::Entry& entry);
 
 	/** byte offsets cross-checked against offsetof() where the SDK declares. */
 	void ExerciseStructOffsets(TestContext& context);
@@ -197,49 +281,37 @@ private:
 	/** ISource2Server, whose vtables.GameEventManager slot is decoded. */
 	void* server_ = nullptr;
 
-	/** ServerCommand - the bot_add / bot_kick route. Null is not fatal. */
+	/** ServerCommand - the bot_add route. Null is not fatal. */
 	IVEngineServer2* engine_ = nullptr;
 
 	/** The schema system and the server module's type scope, for offsets. */
 	ISchemaSystem* schema_ = nullptr;
 	CSchemaSystemTypeScope* server_scope_ = nullptr;
+	std::string server_scope_key_; // the spelling that found it
 
 	/**
-	 * Resolved addresses the hooks and behavioural calls need, filled by the
-	 * sweep. Null until a run has matched the corresponding pattern.
+	 * Every signature key's scan, by key name (no "signatures." prefix),
+	 * filled before any row is written so a row can call another key's
+	 * function. Reset on every run.
 	 */
-	void* host_say_ = nullptr;
-	void* accept_input_ = nullptr;
-	void* create_entity_ = nullptr;
-	void* dispatch_spawn_ = nullptr;
-	void* util_remove_ = nullptr;
-	void* weapon_data_ = nullptr;
-	void* navmesh_ = nullptr;
-	void* event_manager_init_ = nullptr;
-	void* network_state_changed_ = nullptr;
+	std::map<std::string, ScanHit> scans_;
 
-	/** The scan-only signatures the behavioural layer calls. */
-	void* client_print_all_ = nullptr;
-	void* client_print_ = nullptr;
-	void* switch_team_ = nullptr;
-	void* set_pawn_ = nullptr;
-	void* post_think_ = nullptr;
-	void* give_named_item_ = nullptr;
-	void* set_model_ = nullptr;
-	void* can_use_ = nullptr;
-	void* can_acquire_ = nullptr;
-	void* terminate_round_ = nullptr;
-	void* emit_sound_filter_ = nullptr;
-	void* add_entity_io_event_ = nullptr;
-	void* legacy_listener_ = nullptr;
-	void* remove_player_item_ = nullptr;
-	void* take_damage_old_ = nullptr;
-	void* end_touch_ = nullptr;
-	void* fire_output_internal_ = nullptr;
-	void* gamesystem_pfirst_ = nullptr;
+	/** "server+0x..." for the row being written; RowDetail's prefix. */
+	std::string row_location_;
 
-	/** The navmesh global the IsValidNavMesh stub compares, decoded by the sweep. */
-	void* navmesh_slot_ = nullptr;
+	/** The bot the player-shaped rows call against, when one is in the server. */
+	CEntityInstance* bot_controller_ = nullptr;
+	CEntityInstance* bot_pawn_ = nullptr;
+	std::string bot_name_;
+
+	/** Why the bot rows skip, when PrepareBot found no usable bot. */
+	std::string bot_skip_reason_;
+
+	/** The bot pawn's m_pItemServices, resolved through the schema. */
+	void* item_services_ = nullptr;
+
+	/** The AK the GiveNamedItem row handed the bot; later rows use it. */
+	void* weapon_ = nullptr;
 
 	/** Addresses verified by the sweep; InstallHooks refuses otherwise. */
 	bool signatures_verified_ = false;

@@ -127,7 +127,7 @@ linux   = "55 66 0F EF C0 48 89 E5 41 57 41 56 41 55 49 89 FD 31 FF"
 [signatures.CBaseTrigger_StartTouch]
 library = "server"
 windows = "40 57 41 56 48 83 EC ? 48 8B 01"
-linux   = "55 48 89 E5 41 56 41 55 49 89 F5 41 54 49 89 FC 53 BB"
+linux   = "55 48 89 E5 41 56 41 55 49 89 FD 41 54 49 89 F4 53 BB"
 
 [signatures.CBaseTrigger_EndTouch]
 library = "server"

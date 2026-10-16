@@ -1,5 +1,6 @@
 #include "suites/GamedataSuite.h"
 
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -13,6 +14,7 @@
 #include <entity2/entitysystem.h>
 #include <gameentitysystem.h>
 #include <interfaces/interfaces.h>
+#include <recipientfilter.h>
 #include <schemasystem/schemasystem.h>
 #include <tier0/convar.h>
 
@@ -96,9 +98,12 @@ using SetModel_t = void (*)(void*);
 using CanUse_t = int (*)(void*, void*);
 using CanAcquire_t = int (*)(void*, void*, int, int*);
 using TerminateRound_t = void (*)(void*, int, long long, float);
-// EmitSoundFilter(filter, ent, params): forwards rsi/rdx untouched and
-// returns rdi - the filter pointer - back to the caller.
-using EmitSoundFilter_t = void* (*)(void*, int, const void*);
+// EmitSoundFilter(out, filter, entindex, params): returns its sound-event guid
+// through the hidden first argument (32 bytes at the callers, seeded with
+// 0xFFFFFFFF00000000) and hands that pointer back. The filter is a
+// CRecipientFilter-derived object whose virtuals the body calls, so it must
+// have a real vtable.
+using EmitSoundFilter_t = void* (*)(void*, const void*, unsigned, const void*);
 using AddEntityIOEvent_t = void (*)(void*, void*, const char*, void*, void*,
                                     void*, float, void*, void*);
 using LegacyListener_t = void* (*)(int);
@@ -173,16 +178,32 @@ bool InModule(const Module& module, const void* address)
 }
 
 /**
- * Schema class names the pawn's team byte lives in, most derived first. A
- * field is declared once, in its declaring class; walking down finds that
+ * Schema class names the pawn's service pointers live in, most derived first.
+ * A field is declared once, in its declaring class; walking down finds that
  * declaration wherever the dump put it.
  */
-constexpr const char* kPawnTeamClasses[] = {"CCSPlayerPawn", "CCSPlayerPawnBase",
-                                            "CBasePlayerPawn", "CBaseEntity", nullptr};
-
-/** The item-services pointer every GiveNamedItem call reads off the pawn. */
 constexpr const char* kItemServicesClasses[] = {"CCSPlayerPawn", "CCSPlayerPawnBase",
                                                 "CBasePlayerPawn", nullptr};
+
+/**
+ * The key format GetCSWeaponDataFromKey takes: the item definition index as
+ * decimal text. The game's own callers (build 25947352, sub_1456760) format
+ * m_iItemDefinitionIndex with "%d" and pass category 1; 7 is the AK-47.
+ */
+constexpr const char* kAk47Key = "7";
+
+/** The category filter that disables the check in GetCSWeaponDataFromKey. */
+constexpr int kAnyWeaponCategory = -1;
+
+// Prerequisite bits for SignatureCheck::needs. Each names something a row
+// borrows from elsewhere in the run; MissingPrerequisite turns the first one
+// absent into the row's skip reason.
+constexpr unsigned kNeedsNothing = 0;
+constexpr unsigned kNeedsCreate = 1u << 0;       // UTIL_CreateEntityByName resolved
+constexpr unsigned kNeedsBot = 1u << 1;          // a bot is in the server
+constexpr unsigned kNeedsItemServices = 1u << 2; // the bot pawn's m_pItemServices
+constexpr unsigned kNeedsWeapon = 1u << 3;       // the GiveNamedItem row's AK
+constexpr unsigned kNeedsWeaponData = 1u << 4;   // GetCSWeaponDataFromKey resolved
 
 } // namespace
 
@@ -231,6 +252,14 @@ bool GamedataSuite::Acquire(TestContext& context)
 		             "compared as numbers only",
 			GAMERESOURCESERVICESERVER_INTERFACE_VERSION);
 	}
+	else
+	{
+		// The SDK's GameEntitySystem() reads this global, and nothing but
+		// GameEntitySystemSuite's Acquire fills it - so `meta_test run
+		// gamedata` on its own saw a null entity system in every row that
+		// walks the entity list or queues through it.
+		g_pGameResourceServiceServer = static_cast<IGameResourceService*>(resource_service_);
+	}
 
 	// The object vtables.GameEventManager is read from. Not fatal either: that
 	// row fails on its own when the interface is absent.
@@ -246,9 +275,37 @@ bool GamedataSuite::Acquire(TestContext& context)
 	// fatal, the checks that need an offset skip.
 	schema_ = static_cast<ISchemaSystem*>(context.QueryInterface(
 		"schemasystem", SCHEMASYSTEM_INTERFACE_VERSION));
+	server_scope_ = nullptr;
+	server_scope_key_.clear();
 	if (schema_ != nullptr)
 	{
-		server_scope_ = schema_->FindTypeScopeForModule("server");
+		// Which spelling the schema system keys its scopes by is undocumented
+		// (SchemaSystemSuite enumerates m_TypeScopes to find out): "server"
+		// finds nothing on Linux, where the scope is the module's file name.
+		// The loaded module's own name goes first, then the known spellings;
+		// FindTypeScopeForModule only looks, it never creates a scope.
+		const Module& server_module = context.GetModule("server");
+		const std::string module_name = server_module.IsValid() ? server_module.name()
+		                                                        : std::string();
+		const char* const candidates[] = {module_name.c_str(), "libserver.so",
+		                                  "server.dll", "server", nullptr};
+		for (const char* const* key = candidates; *key != nullptr && server_scope_ == nullptr;
+		     ++key)
+		{
+			if (**key != '\0')
+			{
+				server_scope_ = schema_->FindTypeScopeForModule(*key);
+				if (server_scope_ != nullptr)
+				{
+					server_scope_key_ = *key;
+				}
+			}
+		}
+		if (server_scope_ == nullptr)
+		{
+			context.Note("schema: no type scope under any of the known server names; rows "
+			             "that read an offset through the schema will fail at setup");
+		}
 	}
 
 	return true;
@@ -261,37 +318,34 @@ bool GamedataSuite::Acquire(TestContext& context)
 void GamedataSuite::ExerciseCalls(TestContext& context)
 {
 	// A run can be repeated; each one re-resolves from the file as written.
-	host_say_ = nullptr;
-	accept_input_ = nullptr;
-	create_entity_ = nullptr;
-	dispatch_spawn_ = nullptr;
-	util_remove_ = nullptr;
-	weapon_data_ = nullptr;
-	navmesh_ = nullptr;
-	navmesh_slot_ = nullptr;
-	event_manager_init_ = nullptr;
-	network_state_changed_ = nullptr;
-	client_print_all_ = nullptr;
-	client_print_ = nullptr;
-	switch_team_ = nullptr;
-	set_pawn_ = nullptr;
-	post_think_ = nullptr;
-	give_named_item_ = nullptr;
-	set_model_ = nullptr;
-	can_use_ = nullptr;
-	can_acquire_ = nullptr;
-	terminate_round_ = nullptr;
-	emit_sound_filter_ = nullptr;
-	add_entity_io_event_ = nullptr;
-	legacy_listener_ = nullptr;
-	remove_player_item_ = nullptr;
-	take_damage_old_ = nullptr;
-	end_touch_ = nullptr;
-	fire_output_internal_ = nullptr;
-	gamesystem_pfirst_ = nullptr;
+	scans_.clear();
+	bot_controller_ = nullptr;
+	bot_pawn_ = nullptr;
+	bot_name_.clear();
+	bot_skip_reason_.clear();
+	item_services_ = nullptr;
+	weapon_ = nullptr;
 	signatures_verified_ = false;
 
-	context.Note("[signatures] byte patterns scanned against the live server module");
+	// Every pattern is scanned before any row is written: a row's behaviour
+	// check may call another key's function (the entity rows all create
+	// through UTIL_CreateEntityByName), wherever that key sits in the file.
+	for (const std::string& table : data_.tables())
+	{
+		if (table.rfind(kSignaturesPrefix, 0) == 0)
+		{
+			scans_[table.substr(std::strlen(kSignaturesPrefix))] = ScanSignature(context, table);
+		}
+	}
+
+	// Hooks need exactly two of those addresses, each landed on by one match.
+	signatures_verified_ =
+		(Address(kHostSay) != nullptr && Address(kAcceptInput) != nullptr);
+
+	PrepareBot(context);
+
+	context.Note("[signatures] one row per key: pattern scan, then a behaviour check "
+	             "where a safe call exists");
 
 	int resolved = 0;
 	int total = 0;
@@ -302,20 +356,13 @@ void GamedataSuite::ExerciseCalls(TestContext& context)
 			continue;
 		}
 		++total;
-		if (ExerciseSignature(context, table))
+		if (scans_[table.substr(std::strlen(kSignaturesPrefix))].error.empty())
 		{
 			++resolved;
 		}
+		ExerciseSignatureRow(context, table);
 	}
 
-	// Hooks need exactly two of those addresses, each landed on by one match.
-	signatures_verified_ = (host_say_ != nullptr && accept_input_ != nullptr);
-
-	ExerciseRoundTrip(context);
-	ExerciseWeaponData(context);
-	ExerciseNavMesh(context);
-	ExerciseCodeDecodes(context);
-	ExerciseSignatureBehaviours(context);
 	ExerciseVtableSlots(context);
 	ExerciseStructOffsets(context);
 
@@ -324,32 +371,34 @@ void GamedataSuite::ExerciseCalls(TestContext& context)
 		resolved, total, signatures_verified_ ? "" : "NOT ");
 }
 
-bool GamedataSuite::ExerciseSignature(TestContext& context, const std::string& table)
+GamedataSuite::ScanHit GamedataSuite::ScanSignature(TestContext& context,
+                                                    const std::string& table)
 {
-	const std::string name = table.substr(std::strlen(kSignaturesPrefix));
-	const std::string target = "signatures." + name;
+	ScanHit hit;
 
-	bool ok = false;
-
-	CS2ST_CALL(context, target, {
+	// Guarded like any call: the scan reads the whole mapped image, and an
+	// unreadable page is a finding rather than a reason to take the server down.
+	FaultInfo fault;
+	const CallOutcome outcome = InvokeGuarded([&]() {
 		const Module& server = context.GetModule("server");
 		if (!server.IsValid())
 		{
-			context.Detail("-> the server module is not loaded");
+			hit.error = "scan: the server module is not loaded";
 			return;
 		}
 
 		const TomlData::Entry* library = data_.Find(table + ".library");
 		if (library == nullptr || library->text != "server")
 		{
-			context.Fail("no library = \"server\" key; this suite only scans the server module");
+			hit.error = "scan: no library = \"server\" key; this suite only scans the server module";
 			return;
 		}
 
 		const TomlData::Entry* pattern_entry = data_.FindPlatform(table, CS2ST_WINDOWS != 0);
 		if (pattern_entry == nullptr || pattern_entry->is_number)
 		{
-			context.Fail("no %s pattern in the file", CS2ST_WINDOWS ? "windows" : "linux");
+			hit.error = std::string("scan: no ") + (CS2ST_WINDOWS ? "windows" : "linux")
+				+ " pattern in the file";
 			return;
 		}
 
@@ -357,17 +406,20 @@ bool GamedataSuite::ExerciseSignature(TestContext& context, const std::string& t
 		const char* parse_error = ParseBytePattern(pattern_entry->text, pattern);
 		if (parse_error != nullptr)
 		{
-			context.Fail("pattern does not parse: %s", parse_error);
+			hit.error = std::string("scan: pattern does not parse: ") + parse_error;
 			return;
 		}
+		hit.pattern_bytes = pattern.size();
 
 		const PatternScanResult result = ScanModule(server, pattern);
+		char text[160];
 		if (result.matches == 0)
 		{
 			// The headline this file exists for: an engine update moved the
 			// bytes, and every plugin carrying this key stopped loading.
-			context.Fail("%zu-byte pattern matches nothing in %s",
+			std::snprintf(text, sizeof(text), "scan: %zu-byte pattern matches nothing in %s",
 				pattern.size(), server.name().c_str());
+			hit.error = text;
 			return;
 		}
 		if (result.matches > 1)
@@ -375,721 +427,1113 @@ bool GamedataSuite::ExerciseSignature(TestContext& context, const std::string& t
 			// Two hits is how a too-short pattern announces itself. The first
 			// hit is not more likely the function than the second, so neither
 			// is kept.
-			context.Suspect("pattern matches twice (%p and %p); it does not name one function",
+			std::snprintf(text, sizeof(text),
+				"scan: pattern matches more than once (%p and %p); it does not name one function",
 				result.first, result.second);
+			hit.error = text;
 			return;
 		}
 
-		const unsigned char* hit = static_cast<const unsigned char*>(result.first);
-		const std::size_t rva = static_cast<std::size_t>(
-			hit - static_cast<const unsigned char*>(server.base()));
-		context.Detail("-> %p (%s+0x%zx, %zu-byte pattern)",
-			result.first, server.name().c_str(), rva, pattern.size());
+		hit.address = result.first;
+		hit.rva = static_cast<std::size_t>(static_cast<const unsigned char*>(result.first)
+			- static_cast<const unsigned char*>(server.base()));
+	}, &fault);
 
-		if (name == "Host_Say")
-		{
-			host_say_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CEntityInstance_AcceptInput")
-		{
-			accept_input_ = const_cast<void*>(result.first);
-		}
-		else if (name == "UTIL_CreateEntityByName")
-		{
-			create_entity_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBaseEntity_DispatchSpawn")
-		{
-			dispatch_spawn_ = const_cast<void*>(result.first);
-		}
-		else if (name == "UTIL_Remove")
-		{
-			util_remove_ = const_cast<void*>(result.first);
-		}
-		else if (name == "GetCSWeaponDataFromKey")
-		{
-			weapon_data_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CCSNavArea_IsValidNavMesh")
-		{
-			navmesh_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CGameEventManager_Init")
-		{
-			event_manager_init_ = const_cast<void*>(result.first);
-		}
-		else if (name == "NetworkStateChanged")
-		{
-			network_state_changed_ = const_cast<void*>(result.first);
-		}
-		else if (name == "UTIL_ClientPrintAll")
-		{
-			client_print_all_ = const_cast<void*>(result.first);
-		}
-		else if (name == "ClientPrint")
-		{
-			client_print_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CCSPlayerController_SwitchTeam")
-		{
-			switch_team_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBasePlayerController_SetPawn")
-		{
-			set_pawn_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CCSPlayerPawnBase_PostThink")
-		{
-			post_think_ = const_cast<void*>(result.first);
-		}
-		else if (name == "GiveNamedItem")
-		{
-			give_named_item_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBaseModelEntity_SetModel")
-		{
-			set_model_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CCSPlayer_WeaponServices_CanUse")
-		{
-			can_use_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CCSPlayer_ItemServices_CanAcquire")
-		{
-			can_acquire_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CCSGameRules_TerminateRound")
-		{
-			terminate_round_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBaseEntity_EmitSoundFilter")
-		{
-			emit_sound_filter_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CEntitySystem_AddEntityIOEvent")
-		{
-			add_entity_io_event_ = const_cast<void*>(result.first);
-		}
-		else if (name == "LegacyGameEventListener")
-		{
-			legacy_listener_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBasePlayerPawn_RemovePlayerItem")
-		{
-			remove_player_item_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBaseEntity_TakeDamageOld")
-		{
-			take_damage_old_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CBaseTrigger_EndTouch")
-		{
-			end_touch_ = const_cast<void*>(result.first);
-		}
-		else if (name == "CEntityIOOutput_FireOutputInternal")
-		{
-			fire_output_internal_ = const_cast<void*>(result.first);
-		}
-		else if (name == "IGameSystem_InitAllSystems_pFirst")
-		{
-			gamesystem_pfirst_ = const_cast<void*>(result.first);
-		}
-
-		ok = true;
-	});
-
-	return ok;
+	if (outcome == CallOutcome::kCrashed)
+	{
+		hit = ScanHit{};
+		hit.error = "scan: faulted - " + fault.description;
+	}
+	return hit;
 }
 
-// -----------------------------------------------------------------------------
-//  Behavioural checks - calling what the scan found
-// -----------------------------------------------------------------------------
-
-void GamedataSuite::ExerciseRoundTrip(TestContext& context)
+const GamedataSuite::SignatureCheck* GamedataSuite::FindCheck(const std::string& name)
 {
-	context.Note("[behaviour] entity round trip: create -> spawn -> remove");
+	// Every key the file carries, with the check its row runs. The order is
+	// irrelevant here - rows follow the file - but the prerequisites are not:
+	// a row needing kNeedsWeapon only runs after the GiveNamedItem row, which
+	// the file puts first.
+	static const SignatureCheck kChecks[] = {
+		{"UTIL_ClientPrintAll", kNeedsNothing, &GamedataSuite::VerifyClientPrintAll, nullptr},
+		{"ClientPrint", kNeedsNothing, &GamedataSuite::VerifyClientPrint, nullptr},
+		{"CCSPlayerController_SwitchTeam", kNeedsBot, &GamedataSuite::VerifySwitchTeam, nullptr},
+		{"CBasePlayerController_SetPawn", kNeedsBot, &GamedataSuite::VerifySetPawn, nullptr},
+		{"CCSPlayerPawnBase_PostThink", kNeedsBot, &GamedataSuite::VerifyPostThink, nullptr},
+		{"CGameEventManager_Init", kNeedsNothing, &GamedataSuite::VerifyEventManagerInit, nullptr},
+		{"GiveNamedItem", kNeedsBot | kNeedsItemServices, &GamedataSuite::VerifyGiveNamedItem,
+			nullptr},
+		{"UTIL_Remove", kNeedsCreate, &GamedataSuite::VerifyUtilRemove, nullptr},
+		{"CBaseModelEntity_SetModel", kNeedsNothing, &GamedataSuite::VerifySetModel, nullptr},
+		{"CCSPlayer_WeaponServices_CanUse", kNeedsBot | kNeedsCreate,
+			&GamedataSuite::VerifyCanUse, nullptr},
+		{"CCSPlayer_ItemServices_CanAcquire", kNeedsBot | kNeedsItemServices | kNeedsWeaponData,
+			&GamedataSuite::VerifyCanAcquire, nullptr},
+		{"GetCSWeaponDataFromKey", kNeedsNothing, &GamedataSuite::VerifyWeaponData, nullptr},
+		{"CCSGameRules_TerminateRound", kNeedsNothing, &GamedataSuite::VerifyTerminateRound,
+			nullptr},
+		{"UTIL_CreateEntityByName", kNeedsNothing, &GamedataSuite::VerifyCreateEntityByName,
+			nullptr},
+		{"CBaseEntity_DispatchSpawn", kNeedsCreate, &GamedataSuite::VerifyDispatchSpawn, nullptr},
+		{"CBaseEntity_EmitSoundFilter", kNeedsNothing, &GamedataSuite::VerifyEmitSoundFilter,
+			nullptr},
+		{"CEntityInstance_AcceptInput", kNeedsNothing, nullptr,
+			"hook target; detoured by 'meta_test hooks' once the scan holds"},
+		{"CEntitySystem_AddEntityIOEvent", kNeedsCreate, &GamedataSuite::VerifyAddEntityIOEvent,
+			nullptr},
+		{"LegacyGameEventListener", kNeedsNothing, &GamedataSuite::VerifyLegacyListener, nullptr},
+		{"CBasePlayerPawn_RemovePlayerItem", kNeedsBot | kNeedsWeapon,
+			&GamedataSuite::VerifyRemovePlayerItem, nullptr},
+		{"CBaseEntity_TakeDamageOld", kNeedsBot, &GamedataSuite::VerifyTakeDamageOld, nullptr},
+		{"CBaseTrigger_StartTouch", kNeedsNothing, nullptr,
+			"no safe call: StartTouch appends to a live trigger's touch list"},
+		{"CBaseTrigger_EndTouch", kNeedsNothing, &GamedataSuite::VerifyEndTouch, nullptr},
+		{"CEntityIOOutput_FireOutputInternal", kNeedsNothing,
+			&GamedataSuite::VerifyFireOutputInternal, nullptr},
+		{"IGameSystem_InitAllSystems_pFirst", kNeedsNothing,
+			&GamedataSuite::VerifyGameSystemList, nullptr},
+		{"NetworkStateChanged", kNeedsNothing, &GamedataSuite::VerifyNetworkStateChanged,
+			nullptr},
+		{"Host_Say", kNeedsNothing, nullptr,
+			"hook target; detoured by 'meta_test hooks' once the scan holds"},
+		{"CCSNavArea_IsValidNavMesh", kNeedsNothing, &GamedataSuite::VerifyNavMesh, nullptr},
+	};
 
-	if (create_entity_ == nullptr || dispatch_spawn_ == nullptr || util_remove_ == nullptr)
+	for (const SignatureCheck& check : kChecks)
 	{
-		context.SkipCall("entity round trip (create -> spawn -> remove)",
-			"one of the three signatures did not resolve to one address");
+		if (name == check.name)
+		{
+			return &check;
+		}
+	}
+	return nullptr;
+}
+
+void GamedataSuite::ExerciseSignatureRow(TestContext& context, const std::string& table)
+{
+	const std::string name = table.substr(std::strlen(kSignaturesPrefix));
+	const ScanHit& hit = scans_[name];
+
+	if (!hit.error.empty())
+	{
+		CS2ST_CALL(context, table, {
+			context.Fail("%s", hit.error.c_str());
+		});
 		return;
 	}
 
-	const auto create = reinterpret_cast<CreateEntityByName_t>(create_entity_);
-	const auto spawn = reinterpret_cast<DispatchSpawn_t>(dispatch_spawn_);
-	const auto remove = reinterpret_cast<UtilRemove_t>(util_remove_);
+	char location[64];
+	std::snprintf(location, sizeof(location), "server+0x%zx", hit.rva);
+	row_location_ = location;
 
-	void* entity = nullptr;
-
-	CS2ST_CALL(context, "UTIL_CreateEntityByName(info_target)", {
-		// The second argument is the entity index to force, -1 for "any free
-		// slot": the function forwards it as-is to the entity system's create
-		// call (Linux build 25815307). 0 would ask for worldspawn's slot.
-		entity = create("info_target", -1);
-		context.Detail("-> %p", entity);
-		if (entity == nullptr)
-		{
-			context.Fail("no entity came back; either the signature is stale or this "
-			             "build has no info_target class");
-			return;
-		}
-		if (!LooksLikeObjectPointer(entity))
-		{
-			context.Fail("the call returned something that is not a pointer");
-			entity = nullptr;
-		}
-	});
-
-	if (entity == nullptr)
+	const SignatureCheck* check = FindCheck(name);
+	if (check == nullptr || check->verify == nullptr)
 	{
-		context.SkipCall("CBaseEntity_DispatchSpawn(kv=nullptr)", "no entity to spawn");
-		context.SkipCall("UTIL_Remove(entity)", "no entity to remove");
+		CS2ST_CALL(context, table, {
+			RowDetail(context, "scan only (%s)",
+				check != nullptr ? check->scan_only_reason
+				                 : "no behaviour check is written for this key");
+		});
 		return;
 	}
 
-	CS2ST_CALL(context, "CBaseEntity_DispatchSpawn(kv=nullptr)", {
-		// CSS calls this with a null CEntityKeyValues* - spawn with no overrides.
-		// void* here rather than the SDK type: only null is ever passed, and the
-		// ABI is the same.
-		spawn(entity, nullptr);
-
-		// The proof the pointer is what the name says: an entity the engine
-		// spawned carries an identity with an index into the fixed table.
-		CEntityInstance* instance = static_cast<CEntityInstance*>(entity);
-		CEntityIdentity* identity = instance->m_pEntity;
-		if (!LooksLikeObjectPointer(identity))
-		{
-			context.Fail("spawned, but the object carries no identity; the pointer is "
-			             "not a CEntityInstance");
-			return;
-		}
-		const int index = identity->GetEntityIndex().Get();
-		context.Detail("-> spawned, entity index %d", index);
-		if (index < 0 || index >= MAX_TOTAL_ENTITIES)
-		{
-			context.Fail("index %d is outside the fixed identity table", index);
-		}
-	});
-
-	CS2ST_CALL(context, "UTIL_Remove(entity)", {
-		remove(entity);
-
-		// UTIL_Remove marks for deletion rather than freeing, so the flag read
-		// back is the evidence the call reached the entity system at all.
-		CEntityInstance* instance = static_cast<CEntityInstance*>(entity);
-		if (!LooksLikeObjectPointer(instance->m_pEntity))
-		{
-			context.Detail("-> called; the entity no longer carries a plausible identity");
-			return;
-		}
-		const bool marked =
-			(instance->m_pEntity->m_flags & EF_MARKED_FOR_DELETE) != 0;
-		context.Detail("-> called, EF_MARKED_FOR_DELETE %s", marked ? "set" : "not set");
-		if (!marked)
-		{
-			// Suspect rather than Fail: the deletion pass may simply not have
-			// run yet, and that is the benign reading until proven otherwise.
-			context.Suspect("the entity is not marked for deletion yet");
-		}
-	});
-}
-
-void GamedataSuite::ExerciseWeaponData(TestContext& context)
-{
-	context.Note("[behaviour] GetCSWeaponDataFromKey (the table GiveNamedItem reads)");
-
-	if (weapon_data_ == nullptr)
+	const char* missing = MissingPrerequisite(check->needs);
+	if (missing != nullptr)
 	{
-		context.SkipCall("GetCSWeaponDataFromKey",
-			"the signature did not resolve to one address");
+		context.SkipCall(table, "%s | scan ok, behaviour not run: %s",
+			row_location_.c_str(), missing);
 		return;
 	}
 
-	const auto lookup = reinterpret_cast<WeaponDataFromKey_t>(weapon_data_);
-
-	CS2ST_CALL(context, "GetCSWeaponDataFromKey(weapon_ak47)", {
-		// CSS declares this as Func<int, string, CCSWeaponBaseVData>; the int is
-		// unknown to the ecosystem and every caller passes 0, so 0 it is.
-		void* vdata = lookup(0, "weapon_ak47");
-		context.Detail("-> %p", vdata);
-		if (vdata == nullptr)
-		{
-			context.Fail("the AK-47's vdata did not resolve; every GiveNamedItem goes "
-			             "through this table");
-		}
-		else if (!LooksLikeObjectPointer(vdata))
-		{
-			context.Fail("the table returned something that is not a pointer");
-		}
-	});
-
-	CS2ST_CALL(context, "GetCSWeaponDataFromKey(absent name)", {
-		// A lookup that only ever says yes is as broken as one that only ever
-		// says no, and the negative half is free to test.
-		void* vdata = lookup(0, "cs2sdktest_no_such_weapon");
-		context.Detail("-> %p", vdata);
-		if (vdata != nullptr)
-		{
-			context.Fail("a weapon name no build contains resolved to vdata");
-		}
+	const Verifier verify = check->verify;
+	CS2ST_CALL(context, table, {
+		(this->*verify)(context);
 	});
 }
 
-void GamedataSuite::ExerciseNavMesh(TestContext& context)
+const char* GamedataSuite::MissingPrerequisite(unsigned needs) const
 {
-	context.Note("[behaviour] CCSNavArea_IsValidNavMesh (a stub that reads one global)");
-
-	if (navmesh_ == nullptr)
+	if ((needs & kNeedsCreate) != 0 && Address("UTIL_CreateEntityByName") == nullptr)
 	{
-		context.SkipCall("CCSNavArea_IsValidNavMesh",
-			"the signature did not resolve to one address");
+		return "needs UTIL_CreateEntityByName, which did not resolve";
+	}
+	if ((needs & kNeedsWeaponData) != 0 && Address("GetCSWeaponDataFromKey") == nullptr)
+	{
+		return "needs GetCSWeaponDataFromKey, which did not resolve";
+	}
+	if ((needs & kNeedsBot) != 0 && bot_pawn_ == nullptr)
+	{
+		return bot_skip_reason_.empty() ? "needs a bot, and none is in the server"
+		                                : bot_skip_reason_.c_str();
+	}
+	if ((needs & kNeedsItemServices) != 0 && item_services_ == nullptr)
+	{
+		return "needs the bot pawn's m_pItemServices, which did not resolve";
+	}
+	if ((needs & kNeedsWeapon) != 0 && weapon_ == nullptr)
+	{
+		return "needs the AK the GiveNamedItem row gives; that row produced none";
+	}
+	return nullptr;
+}
+
+void* GamedataSuite::Address(const char* name) const
+{
+	const auto it = scans_.find(name);
+	return it != scans_.end() ? const_cast<void*>(it->second.address) : nullptr;
+}
+
+void GamedataSuite::RowDetail(TestContext& context, const char* format, ...)
+{
+	char text[1024];
+	va_list args;
+	va_start(args, format);
+	std::vsnprintf(text, sizeof(text), format, args);
+	va_end(args);
+	context.Detail("%s | %s", row_location_.c_str(), text);
+}
+
+void* GamedataSuite::CreateScratchEntity(bool spawn, const char* classname)
+{
+	// The second argument is the entity index to force, -1 for "any free
+	// slot": the function forwards it as-is to the entity system's create
+	// call (Linux build 25815307). 0 would ask for worldspawn's slot.
+	void* entity = reinterpret_cast<CreateEntityByName_t>(
+		Address("UTIL_CreateEntityByName"))(classname, -1);
+	if (entity == nullptr || !LooksLikeObjectPointer(entity))
+	{
+		return nullptr;
+	}
+	void* dispatch = Address("CBaseEntity_DispatchSpawn");
+	if (spawn && dispatch != nullptr)
+	{
+		// CSS calls this with a null CEntityKeyValues* - spawn with no
+		// overrides. A spawned entity is one UTIL_Remove marks rather than
+		// frees, which keeps its identity readable after the removal.
+		reinterpret_cast<DispatchSpawn_t>(dispatch)(entity, nullptr);
+	}
+	return entity;
+}
+
+void GamedataSuite::RemoveScratchEntity(void* entity)
+{
+	void* remove = Address("UTIL_Remove");
+	if (entity != nullptr && remove != nullptr)
+	{
+		reinterpret_cast<UtilRemove_t>(remove)(entity);
+	}
+}
+
+void* GamedataSuite::LookupAk47VData()
+{
+	return reinterpret_cast<WeaponDataFromKey_t>(Address("GetCSWeaponDataFromKey"))(
+		kAnyWeaponCategory, kAk47Key);
+}
+
+// -----------------------------------------------------------------------------
+//  The bot the player-shaped rows call against
+// -----------------------------------------------------------------------------
+
+void GamedataSuite::PrepareBot(TestContext& context)
+{
+	const auto none = [&](const std::string& reason) {
+		bot_skip_reason_ = reason;
+		context.Note("bot: %s; the player-shaped rows skip", reason.c_str());
+	};
+
+	if (engine_ == nullptr)
+	{
+		none(std::string("engine2 does not answer ") + INTERFACEVERSION_VENGINESERVER);
 		return;
 	}
 
-	// The function body is `cmp qword ptr [rip+disp32], 0 / setne / ret`: three
-	// opcode bytes, then the disp32, then the rest of the instruction (8 bytes
-	// on Windows, 7 on Linux) - which lands exactly on the navmesh global.
-	// That is the ecosystem's decode, transcribed rather than reinvented.
-	CS2ST_CALL(context, "CCSNavArea_IsValidNavMesh (global decode)", {
-		const unsigned char* fn = static_cast<const unsigned char*>(navmesh_);
-		std::int32_t disp = 0;
-		std::memcpy(&disp, fn + 3, sizeof(disp));
-		const unsigned char* slot = fn + disp + (CS2ST_WINDOWS ? 8 : 7);
+	// Without these offsets FindBotPair finds nothing whether or not a bot is
+	// there, and adding one every run would leave a trail of them.
+	std::size_t unused = 0;
+	if (!SchemaOffset("CBasePlayerController", "m_steamID", unused)
+		|| !SchemaOffset("CBasePlayerController", "m_hPawn", unused)
+		|| !SchemaOffset("CBasePlayerController", "m_iszPlayerName", unused))
+	{
+		none(server_scope_ == nullptr
+			? "no server type scope in the schema system, so a bot cannot be told from "
+			  "any other controller"
+			: "CBasePlayerController.m_steamID/m_hPawn/m_iszPlayerName did not resolve "
+			  "through the schema");
+		return;
+	}
 
-		void* navmesh = SlotAt(slot, 0);
-		navmesh_slot_ = navmesh;
+	CEntityInstance* controller = nullptr;
+	CEntityInstance* pawn = nullptr;
+	std::string name;
+	if (!FindBotPair(controller, pawn, name))
+	{
+		// bot_add is queued, and the pawn is made a frame after the controller,
+		// so it cannot be used in this call. The bot stays: nothing kicks it.
+		// No profile name: the argument after the difficulty is a bot profile
+		// lookup, and an unknown one ("cs_bot") adds no bot at all.
+		engine_->ServerCommand("bot_add t\n");
+		none("no bot in the server - 'bot_add t' queued and left in place, so the next run "
+		     "has one (start the server with +bot_quota 1 to have it from the first)");
+		return;
+	}
+	if (pawn == nullptr)
+	{
+		none("bot '" + name + "' has a controller but no pawn (dead, or still spawning)");
+		return;
+	}
 
-		context.Detail("-> global %p holds %p", static_cast<const void*>(slot), navmesh);
-		if (navmesh != nullptr && !LooksLikeObjectPointer(navmesh))
-		{
-			context.Fail("the decoded global holds something that is not a pointer");
-		}
-	});
+	bot_controller_ = controller;
+	bot_pawn_ = pawn;
+	bot_name_ = name;
 
-	CS2ST_CALL(context, "CCSNavArea_IsValidNavMesh()", {
-		// Two independent readings of one fact: executing the stub, and reading
-		// the global it compares. A signature that landed on the wrong bytes
-		// cannot keep the two in agreement.
-		const bool valid = reinterpret_cast<NavMeshBool_t>(navmesh_)();
-		context.Detail("-> %s (the global it reads is %s)",
-			valid ? "true" : "false",
-			navmesh_slot_ != nullptr ? "set" : "null");
-		if ((navmesh_slot_ != nullptr) != valid)
-		{
-			context.Fail("the stub's answer and the global it reads disagree");
-		}
-	});
+	std::size_t itemservices_offset = 0;
+	if (SchemaOffsetAny(kItemServicesClasses, "m_pItemServices", itemservices_offset))
+	{
+		void* services = SlotAt(pawn, itemservices_offset);
+		item_services_ = LooksLikeObjectPointer(services) ? services : nullptr;
+	}
+
+	context.Note("bot: '%s' (controller %p, pawn %p, item services %p)",
+		bot_name_.c_str(), static_cast<void*>(controller), static_cast<void*>(pawn),
+		item_services_);
 }
 
 // -----------------------------------------------------------------------------
-//  Code decodes - signatures checked by what their bytes do, not by calling
+//  Verifiers - each runs inside its key's row, after the scan has held
 // -----------------------------------------------------------------------------
 
-void GamedataSuite::ExerciseCodeDecodes(TestContext& context)
+void GamedataSuite::VerifyClientPrintAll(TestContext& context)
 {
-	context.Note("[decode] signatures checked by their bytes, not called");
-
-	// How far into a function body the decodes below look. Both functions do
-	// what is being checked within their first few instructions.
-	constexpr std::size_t kDecodeWindow = 0x80;
-
-	// Not called on purpose: Init first calls the manager's Reset, which drops
-	// every event descriptor and the listeners hanging off them - every later
-	// test that listens for an event would silently hear nothing. What makes
-	// the address Init is the first file it loads, so that is what is checked.
-	CS2ST_CALL(context, "CGameEventManager_Init (decode)", {
-		if (event_manager_init_ == nullptr)
-		{
-			context.Fail("the signature did not resolve to one address");
-			return;
-		}
-		const Module& server = context.GetModule("server");
-		const auto* fn = static_cast<const unsigned char*>(event_manager_init_);
-
-		// lea r64, [rip+disp32]: REX.W 8D, then a ModRM with mod=00 rm=101.
-		static const char kExpected[] = "resource/core.gameevents";
-		for (std::size_t i = 0; i + 7 <= kDecodeWindow; ++i)
-		{
-			if ((fn[i] != 0x48 && fn[i] != 0x4C) || fn[i + 1] != 0x8D
-				|| (fn[i + 2] & 0xC7) != 0x05)
-			{
-				continue;
-			}
-			std::int32_t disp = 0;
-			std::memcpy(&disp, fn + i + 3, sizeof(disp));
-			const char* text = reinterpret_cast<const char*>(fn + i + 7 + disp);
-			if (!InModule(server, text) || !InModule(server, text + sizeof(kExpected) - 1))
-			{
-				continue;
-			}
-			if (std::memcmp(text, kExpected, sizeof(kExpected)) == 0)
-			{
-				context.Detail("-> +0x%zx loads \"%s\"", i, kExpected);
-				return;
-			}
-		}
-		context.Fail("no rip-relative lea in the first 0x%zx bytes names \"%s\"; the address "
-		             "is not CGameEventManager::Init", kDecodeWindow, kExpected);
-	});
-
-	// NetworkStateChanged ends in a call through the entity's own vtable - the
-	// slot vtables.SetStateChanged names. The displacement of that load is a
-	// second, independent statement of the same slot number.
-	CS2ST_CALL(context, "NetworkStateChanged (decode)", {
-		if (network_state_changed_ == nullptr)
-		{
-			context.Fail("the signature did not resolve to one address");
-			return;
-		}
-		const TomlData::Entry* entry = data_.FindPlatform("vtables.SetStateChanged",
-			CS2ST_WINDOWS != 0);
-		if (entry == nullptr || !entry->is_number)
-		{
-			context.Fail("vtables.SetStateChanged is missing from the file");
-			return;
-		}
-		const auto* fn = static_cast<const unsigned char*>(network_state_changed_);
-
-		// The first mov r64, [r64+disp32] (REX.W 8B, ModRM mod=10): every field
-		// read before it fits a disp8, a vtable slot past 15 does not.
-		for (std::size_t i = 0; i + 7 <= kDecodeWindow; ++i)
-		{
-			if ((fn[i] & 0xF8) != 0x48 || fn[i + 1] != 0x8B || (fn[i + 2] & 0xC0) != 0x80
-				|| (fn[i + 2] & 0x07) == 0x04)
-			{
-				continue;
-			}
-			std::int32_t disp = 0;
-			std::memcpy(&disp, fn + i + 3, sizeof(disp));
-			context.Detail("-> +0x%zx loads vtable +0x%x = slot %d; gamedata %lld",
-				i, static_cast<unsigned>(disp), disp / 8, entry->number);
-			if (disp % 8 != 0 || disp / 8 != entry->number)
-			{
-				context.Fail("the slot the code calls and the gamedata disagree");
-			}
-			return;
-		}
-		context.Fail("no vtable load in the first 0x%zx bytes; the address is not "
-		             "NetworkStateChanged", kDecodeWindow);
-	});
-}
-
-// -----------------------------------------------------------------------------
-//  Behavioural checks - the scan-only signatures, called for real
-// -----------------------------------------------------------------------------
-
-void GamedataSuite::ExerciseSignatureBehaviours(TestContext& context)
-{
-	// The standalone half runs wherever the server is; the bot half needs a
-	// player, and adds one. Order matters: the bot is queued and kicked
-	// around ExerciseBotBehaviours, so nothing player-shaped runs after it.
-	ExerciseStandaloneBehaviours(context);
-	ExerciseBotBehaviours(context);
-}
-
-void GamedataSuite::ExerciseStandaloneBehaviours(TestContext& context)
-{
-	context.Note("[behaviour] scan-only signatures: stateless calls");
-
-	// FireOutputInternal on an output with no connections. The binary (build
-	// 25947352) reads connections at output+8, finds null, and returns its
-	// first argument untouched - an address that is not this function cannot
-	// reproduce that identity under seven arguments.
-	if (fire_output_internal_ != nullptr)
-	{
-		struct ZeroOutput
-		{
-			void* vtable;
-			void* connections;
-			void* desc;
-		};
-		ZeroOutput output{nullptr, nullptr, nullptr};
-
-		CS2ST_CALL(context, "CEntityIOOutput_FireOutputInternal(no connections)", {
-			// The ecosystem's typedef, called the way its detour forwards:
-			// null activator/caller, a null CVariant (the binary switches on
-			// value[8] only when firing, which no connection means it never
-			// reads), zero delay.
-			void* returned = reinterpret_cast<FireOutputInternal_t>(fire_output_internal_)(
-				&output, nullptr, nullptr, nullptr, 0.0f, nullptr, nullptr);
-			context.Detail("-> %p (passed %p)", returned, static_cast<void*>(&output));
-			if (returned != &output)
-			{
-				context.Fail("a zeroed CEntityIOOutput did not come back unchanged; the "
-				             "address is not FireOutputInternal");
-			}
-		});
-	}
-
-	// LegacyGameEventListener is a pure function of one global: slot <= 0x3F
-	// and the table non-null -> table+16*slot+64; anything else -> null. Both
-	// halves are computable without calling, so both are asserted.
-	if (legacy_listener_ != nullptr)
-	{
-		const auto listener = reinterpret_cast<LegacyListener_t>(legacy_listener_);
-		void* table = nullptr;
-
-		CS2ST_CALL(context, "LegacyGameEventListener(global decode)", {
-			// mov rax,[rip+d]; test rax,rax; jz -> the global is at +6 past the
-			// load. Reading it is the negative half's expected value.
-			const unsigned char* fn = static_cast<const unsigned char*>(legacy_listener_);
-			std::int32_t disp = 0;
-			std::memcpy(&disp, fn + 3, sizeof(disp));
-			table = SlotAt(fn + 7 + disp, 0);
-
-			context.Detail("-> global %p holds %p",
-				static_cast<const void*>(fn + 7 + disp), table);
-			if (table != nullptr && !LooksLikeObjectPointer(table))
-			{
-				context.Fail("the decoded table holds something that is not a pointer");
-				table = nullptr;
-			}
-		});
-
-		CS2ST_CALL(context, "LegacyGameEventListener(slot 0)", {
-			void* listener_at_zero = listener(0);
-			const void* expected = (table != nullptr) ? static_cast<const void*>(
-				static_cast<const unsigned char*>(table) + 64) : nullptr;
-			context.Detail("-> %p (the table is %s)", listener_at_zero,
-				table != nullptr ? "live" : "null");
-			if (listener_at_zero != expected)
-			{
-				context.Fail("slot 0 did not answer table+64 (or null); the address is "
-				             "not LegacyGameEventListener");
-			}
-		});
-
-		CS2ST_CALL(context, "LegacyGameEventListener(slot 0x40)", {
-			// 0x40 is the first slot past the table: whatever the global holds,
-			// the answer must be null - `ja` out, no table arithmetic.
-			void* past_end = listener(0x40);
-			context.Detail("-> %p", past_end);
-			if (past_end != nullptr)
-			{
-				context.Fail("slot 64 did not answer null; the address is not "
-				             "LegacyGameEventListener");
-			}
-		});
-	}
-
-	// IGameSystem_InitAllSystems_pFirst names the instruction that walks the
-	// game-system linked list in InitAllSystems. What it proves is that the
-	// list is live: the global the load reads is non-null on a running server.
-	if (gamesystem_pfirst_ != nullptr)
-	{
-		CS2ST_CALL(context, "IGameSystem_InitAllSystems_pFirst (global decode)", {
-			// mov r14,[rip+d]; test r14,r14; jnz -> the load at +3; the global
-			// at +7+disp32 must be the head of a list this server walked to
-			// get where it is.
-			const unsigned char* fn = static_cast<const unsigned char*>(gamesystem_pfirst_);
-			std::int32_t disp = 0;
-			std::memcpy(&disp, fn + 3, sizeof(disp));
-			void* head = SlotAt(fn + 7 + disp, 0);
-
-			context.Detail("-> global %p holds %p (%s)",
-				static_cast<const void*>(fn + 7 + disp), head,
-				LooksLikeObjectPointer(head) ? "plausible" : "NOT plausible");
-			if (head == nullptr)
-			{
-				context.Fail("the game-system list head global is null on a running "
-				             "server; the decoded address is not the list head");
-			}
-			else if (!LooksLikeObjectPointer(head))
-			{
-				context.Fail("the decoded global holds something that is not a pointer");
-			}
-		});
-	}
-
 	// UTIL_ClientPrintAll sends a TextMsg to everyone; on a dedicated server
 	// with no human client the message is still routed, so the call must
 	// simply survive it. The name strings are read by strlen, nulls are not
 	// an option for a caller that passes them.
-	if (client_print_all_ != nullptr)
+	reinterpret_cast<ClientPrintAll_t>(Address("UTIL_ClientPrintAll"))(
+		4, "cs2sdktest gamedata behaviour sweep", nullptr, nullptr, nullptr, nullptr);
+	RowDetail(context, "HUD_PRINTTALK line sent to all clients, call returned");
+}
+
+void GamedataSuite::VerifyClientPrint(TestContext& context)
+{
+	// ClientPrint(out, ...) fills a message-builder object. Every pointer
+	// argument but the last is dereferenced before the builder is touched
+	// (build 25947352: the filter's callback at +8, two vectors out of a3,
+	// a5[0] and a5[2], sixteen bytes out of a6 plus its second qword) - so
+	// each rides its own zeroed buffer, and a zeroed buffer is the shape
+	// whose callback slot is null, which the body branches on and handles.
+	unsigned char out[384] = {0};
+	unsigned char filter_bytes[64] = {0};
+	unsigned char origin[32] = {0}; // two unaligned loads reach +27
+	unsigned char unknown12[12] = {0};
+	unsigned char unknown32[32] = {0};
+	reinterpret_cast<ClientPrint_t>(Address("ClientPrint"))(
+		out, filter_bytes, origin, 4, unknown12, unknown32, 0, nullptr);
+
+	// The binary writes a module vtable into out[0] before anything else; a
+	// null out[0] means nothing was built.
+	void* first = nullptr;
+	std::memcpy(&first, out, sizeof(first));
+	RowDetail(context, "builder out[0] = %p", first);
+	if (first == nullptr)
 	{
-		CS2ST_CALL(context, "UTIL_ClientPrintAll(HUD_PRINTTALK, one line)", {
-			reinterpret_cast<ClientPrintAll_t>(client_print_all_)(
-				4, "cs2sdktest gamedata behaviour sweep", nullptr, nullptr, nullptr,
-				nullptr);
-			context.Detail("-> returned (message routed to all recipients)");
-		});
+		context.Fail("behaviour: the builder came back empty (out[0] null); the address is "
+		             "not ClientPrint");
+	}
+	else if (!InModule(context.GetModule("server"), first))
+	{
+		context.Fail("behaviour: out[0] does not point into the server module; the builder's "
+		             "vtable is wrong");
+	}
+}
+
+void GamedataSuite::VerifySwitchTeam(TestContext& context)
+{
+	// The ecosystem calls this on the controller (CSS's
+	// CCSPlayerController.SwitchTeam), and the body compares the requested
+	// team with the byte at this+m_iTeamNum before switching: that byte is
+	// both the input and the assertion. CBaseEntity declares the field, so
+	// one schema offset serves the controller.
+	std::size_t team_offset = 0;
+	if (!SchemaOffset("CBaseEntity", "m_iTeamNum", team_offset))
+	{
+		context.Fail("setup: CBaseEntity.m_iTeamNum did not resolve through the schema");
+		return;
+	}
+	auto* bytes = reinterpret_cast<unsigned char*>(bot_controller_);
+	const auto switch_team = reinterpret_cast<SwitchTeam_t>(Address(
+		"CCSPlayerController_SwitchTeam"));
+
+	const std::uint8_t before = bytes[team_offset];
+	const std::uint8_t target = (before == 3) ? 2 : 3;
+	switch_team(bot_controller_, target);
+	const std::uint8_t after = bytes[team_offset];
+
+	// Restore: back to the team the round started the bot in.
+	if (after != before && (before == 2 || before == 3))
+	{
+		switch_team(bot_controller_, before);
+	}
+	const std::uint8_t restored = bytes[team_offset];
+
+	RowDetail(context, "controller team %u -> %u (asked %u) -> restored %u",
+		before, after, target, restored);
+	if (after != target)
+	{
+		context.Fail("behaviour: m_iTeamNum did not follow the call; the address is not "
+		             "SwitchTeam");
+	}
+}
+
+void GamedataSuite::VerifySetPawn(TestContext& context)
+{
+	// SetPawn(controller, null) is the engine's own pawn-drop path: the
+	// controller's m_hPawn is cleared. Handing the old pawn back must put the
+	// original handle back - a round trip null -> old pawn proves both
+	// directions, and leaves the bot whole.
+	std::size_t hpawn_offset = 0;
+	if (!SchemaOffset("CBasePlayerController", "m_hPawn", hpawn_offset))
+	{
+		context.Fail("setup: CBasePlayerController.m_hPawn did not resolve through the schema");
+		return;
+	}
+	const auto read_handle = [&]() {
+		std::uint32_t bits = 0;
+		std::memcpy(&bits, reinterpret_cast<const unsigned char*>(bot_controller_)
+			+ hpawn_offset, sizeof(bits));
+		return bits;
+	};
+	const auto set_pawn = reinterpret_cast<SetPawn_t>(Address("CBasePlayerController_SetPawn"));
+
+	const std::uint32_t original = read_handle();
+	set_pawn(bot_controller_, nullptr, false, false, false, false);
+	const std::uint32_t cleared = read_handle();
+	set_pawn(bot_controller_, bot_pawn_, false, false, false, false);
+	const std::uint32_t restored = read_handle();
+
+	RowDetail(context, "m_hPawn 0x%08x -> null call 0x%08x -> restored 0x%08x",
+		original, cleared, restored);
+	if (restored != original)
+	{
+		context.Fail("behaviour: handing the pawn back did not restore m_hPawn");
+	}
+	else if (cleared == original)
+	{
+		context.Suspect("behaviour: m_hPawn did not change on the null call");
+	}
+}
+
+void GamedataSuite::VerifyPostThink(TestContext& context)
+{
+	// PostThink runs the pawn's per-tick bookkeeping - buy-zone events
+	// included, which is the anchor its signature carries. Calling it once
+	// out of band must simply complete: the observable (the game event) fires
+	// only on a zone transition, which this call does not cause.
+	reinterpret_cast<PostThink_t>(Address("CCSPlayerPawnBase_PostThink"))(bot_pawn_);
+	RowDetail(context, "ran once on the bot pawn %p, returned", static_cast<void*>(bot_pawn_));
+}
+
+void GamedataSuite::VerifyEventManagerInit(TestContext& context)
+{
+	// Not called on purpose: Init first calls the manager's Reset, which drops
+	// every event descriptor and the listeners hanging off them - every later
+	// test that listens for an event would silently hear nothing. What makes
+	// the address Init is the first file it loads, so that is what is checked.
+	constexpr std::size_t kDecodeWindow = 0x80;
+	static const char kExpected[] = "resource/core.gameevents";
+
+	const Module& server = context.GetModule("server");
+	const auto* fn = static_cast<const unsigned char*>(Address("CGameEventManager_Init"));
+
+	// lea r64, [rip+disp32]: REX.W 8D, then a ModRM with mod=00 rm=101.
+	for (std::size_t i = 0; i + 7 <= kDecodeWindow; ++i)
+	{
+		if ((fn[i] != 0x48 && fn[i] != 0x4C) || fn[i + 1] != 0x8D
+			|| (fn[i + 2] & 0xC7) != 0x05)
+		{
+			continue;
+		}
+		std::int32_t disp = 0;
+		std::memcpy(&disp, fn + i + 3, sizeof(disp));
+		const char* text = reinterpret_cast<const char*>(fn + i + 7 + disp);
+		if (!InModule(server, text) || !InModule(server, text + sizeof(kExpected) - 1))
+		{
+			continue;
+		}
+		if (std::memcmp(text, kExpected, sizeof(kExpected)) == 0)
+		{
+			RowDetail(context, "decode: +0x%zx loads \"%s\" (not called: Init resets every "
+			                   "listener)", i, kExpected);
+			return;
+		}
+	}
+	RowDetail(context, "decode: no match in the first 0x%zx bytes", kDecodeWindow);
+	context.Fail("decode: no rip-relative lea names \"%s\"; the address is not "
+	             "CGameEventManager::Init", kExpected);
+}
+
+void GamedataSuite::VerifyGiveNamedItem(TestContext& context)
+{
+	// The ecosystem's own call shape: subType 0, no info pointer, no default
+	// attributes, no script scope. The name table check runs first,
+	// "weapon_ak47" passes it, and the vdata path creates and returns the
+	// entity - which the CanUse and RemovePlayerItem rows then use.
+	void* weapon = reinterpret_cast<GiveNamedItem_t>(Address("GiveNamedItem"))(
+		item_services_, "weapon_ak47", 0, nullptr, false, nullptr, 0.0, 0.0f);
+	if (weapon == nullptr)
+	{
+		RowDetail(context, "weapon_ak47 -> (nil)");
+		// Not Fail: GiveNamedItem can refuse for live-game reasons (freezetime,
+		// buy restrictions) that say nothing about the signature.
+		context.Suspect("behaviour: no entity came back; live-game rules may have refused "
+		                "the give");
+		return;
+	}
+	if (!LooksLikeObjectPointer(weapon))
+	{
+		RowDetail(context, "weapon_ak47 -> %p", weapon);
+		context.Fail("behaviour: the call returned something that is not a pointer");
+		return;
 	}
 
-	// EmitSoundFilter forwards (ent, params) into the sound system and hands
-	// the filter back. A call that comes back with the same filter pointer
-	// reached the sound system and came home.
-	if (emit_sound_filter_ != nullptr)
+	CEntityIdentity* identity = static_cast<CEntityInstance*>(weapon)->m_pEntity;
+	const char* designer = LooksLikeObjectPointer(identity) ? identity->GetClassname() : nullptr;
+	RowDetail(context, "weapon_ak47 -> entity %p (%s)", weapon,
+		designer != nullptr ? designer : "no identity");
+	if (designer == nullptr || std::strcmp(designer, "weapon_ak47") != 0)
 	{
-		CS2ST_CALL(context, "CBaseEntity_EmitSoundFilter(identity)", {
-			// A recipient filter with no bits set: the engine's CRecipientFilter
-			// constructor default (vtable slot 0 unknown, everything else
-			// zeroed), same as the game builds on the stack for a quiet call.
-			unsigned char filter_bytes[64] = {0};
+		context.Fail("behaviour: the entity that came back is not a weapon_ak47");
+		return;
+	}
+	weapon_ = weapon;
+}
 
-			// EmitSound_t with just the name set - CSS's EntityEmitSoundFilter
-			// fills exactly these members before its call.
-			struct EmitParams
-			{
-				const char* name;
-				float origin[3];
-				float volume;
-				float sound_time;
-				int speaker_entity;
-				unsigned int force_guid;
-				int source_soundscape;
-				unsigned short pitch;
-				unsigned char flags;
-			};
-			EmitParams params{};
-			params.name = "UI.ButtonRollout";
-			params.volume = 1.0f;
-			params.pitch = 100;
+void GamedataSuite::VerifyUtilRemove(TestContext& context)
+{
+	void* entity = CreateScratchEntity(true);
+	if (entity == nullptr)
+	{
+		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity to remove");
+		return;
+	}
+	reinterpret_cast<UtilRemove_t>(Address("UTIL_Remove"))(entity);
 
-			void* returned = reinterpret_cast<EmitSoundFilter_t>(emit_sound_filter_)(
-				filter_bytes, -1, &params);
-			context.Detail("-> %p (passed %p)", returned, static_cast<void*>(filter_bytes));
-			if (returned != filter_bytes)
-			{
-				context.Fail("the filter did not come back; the address is not "
-				             "CBaseEntity_EmitSoundFilter");
-			}
-		});
+	// UTIL_Remove marks for deletion rather than freeing, so the flag read
+	// back is the evidence the call reached the entity system at all.
+	CEntityInstance* instance = static_cast<CEntityInstance*>(entity);
+	if (!LooksLikeObjectPointer(instance->m_pEntity))
+	{
+		RowDetail(context, "info_target %p removed; its identity is already gone", entity);
+		return;
+	}
+	const bool marked = (instance->m_pEntity->m_flags & EF_MARKED_FOR_DELETE) != 0;
+	RowDetail(context, "info_target %p, EF_MARKED_FOR_DELETE %s", entity,
+		marked ? "set" : "not set");
+	if (!marked)
+	{
+		// Suspect rather than Fail: the deletion pass may simply not have run
+		// yet, and that is the benign reading until proven otherwise.
+		context.Suspect("behaviour: the entity is not marked for deletion");
+	}
+}
+
+void GamedataSuite::VerifySetModel(TestContext& context)
+{
+	// Not called: SetModel(this) is a one-argument thunk that asks a global
+	// object for its default model (build 25947352: lea rax,[global];
+	// mov rdi,[rax]; mov rax,[rdi]; call [rax+0x68]) and tail-calls the
+	// two-argument SetModel with the answer. That object does not exist on a
+	// server in this state - calling faulted reading address 0 - so the row
+	// decodes the thunk and reports the global instead of walking into it.
+	constexpr std::size_t kDecodeWindow = 0x20;
+	const auto* fn = static_cast<const unsigned char*>(Address("CBaseModelEntity_SetModel"));
+	for (std::size_t i = 0; i + 7 <= kDecodeWindow; ++i)
+	{
+		const bool is_lea = fn[i] == 0x48 && fn[i + 1] == 0x8D && fn[i + 2] == 0x05;
+		const bool is_mov = fn[i] == 0x48 && fn[i + 1] == 0x8B && (fn[i + 2] & 0xC7) == 0x05;
+		if (!is_lea && !is_mov)
+		{
+			continue;
+		}
+		std::int32_t disp = 0;
+		std::memcpy(&disp, fn + i + 3, sizeof(disp));
+		const unsigned char* global = fn + i + 7 + disp;
+		void* object = SlotAt(global, 0);
+		RowDetail(context, "decode: +0x%zx reads global %p, which holds %p%s; not called "
+		                   "(the thunk dereferences it)",
+			i, static_cast<const void*>(global), object,
+			object == nullptr ? " (null on this server)" : "");
+		return;
+	}
+	RowDetail(context, "decode: no rip-relative load in the first 0x%zx bytes", kDecodeWindow);
+	context.Fail("decode: the thunk does not read a global; the address is not "
+	             "CBaseModelEntity::SetModel(this)");
+}
+
+void GamedataSuite::VerifyCanUse(TestContext& context)
+{
+	// CanUse takes the weapon services (the component that owns the arsenal),
+	// not the item services; the pawn's weapon-services pointer sits under
+	// its own schema field.
+	std::size_t weaponservices_offset = 0;
+	if (!SchemaOffsetAny(kItemServicesClasses, "m_pWeaponServices", weaponservices_offset))
+	{
+		context.Fail("setup: m_pWeaponServices did not resolve through the schema");
+		return;
+	}
+	void* weapon_services = SlotAt(bot_pawn_, weaponservices_offset);
+	if (!LooksLikeObjectPointer(weapon_services))
+	{
+		context.Fail("setup: the pawn's m_pWeaponServices is not a pointer");
+		return;
+	}
+	const auto can_use = reinterpret_cast<CanUse_t>(Address("CCSPlayer_WeaponServices_CanUse"));
+
+	// The body walks the pawn's own weapon list and answers 0 for a weapon it
+	// already holds, so the AK GiveNamedItem just handed over is the wrong
+	// question. A spawned weapon_ak47 lying in the world is the right one: not
+	// in the arsenal, and CanUse then follows what CanAcquire says.
+	void* loose = CreateScratchEntity(true, "weapon_ak47");
+	if (loose == nullptr)
+	{
+		context.Fail("setup: UTIL_CreateEntityByName(weapon_ak47) returned no entity");
+		return;
+	}
+	const int loose_answer = can_use(weapon_services, loose);
+	const int owned_answer = (weapon_ != nullptr) ? can_use(weapon_services, weapon_) : -1;
+	const int null_answer = can_use(weapon_services, nullptr);
+	RemoveScratchEntity(loose);
+
+	RowDetail(context, "loose AK %p -> %d; AK in the arsenal -> %d (0 expected); null -> %d "
+	                   "(0 expected)", loose, loose_answer, owned_answer, null_answer);
+	if (null_answer != 0)
+	{
+		context.Fail("behaviour: a null weapon was usable; the address is not CanUse");
+	}
+	else if (loose_answer == 0)
+	{
+		context.Suspect("behaviour: a loose AK was refused for the bot; team or round rules "
+		                "may apply");
+	}
+}
+
+void GamedataSuite::VerifyCanAcquire(TestContext& context)
+{
+	// CanAcquire(services, vdata, method, out): the vdata comes from the
+	// weapon table, the method is BUY VIA PICKUP (the permissive one), and
+	// the out int is where the refusal reason lands when the answer is no.
+	void* vdata = LookupAk47VData();
+	if (vdata == nullptr)
+	{
+		context.Fail("setup: GetCSWeaponDataFromKey(-1, \"%s\") returned no vdata", kAk47Key);
+		return;
+	}
+	int reason = -1;
+	const int answer = reinterpret_cast<CanAcquire_t>(
+		Address("CCSPlayer_ItemServices_CanAcquire"))(item_services_, vdata, 2, &reason);
+	RowDetail(context, "AK vdata %p -> %d (reason %d)", vdata, answer, reason);
+
+	// The real function clears the out parameter unconditionally at its top
+	// (build 25947352: `*a4 = 0` before any branch), so a surviving -1 means
+	// the address never wrote it at all.
+	if (reason == -1)
+	{
+		context.Fail("behaviour: the out parameter was never written; the address is not "
+		             "CanAcquire");
+	}
+}
+
+void GamedataSuite::VerifyWeaponData(TestContext& context)
+{
+	// GetCSWeaponDataFromKey(category, key) on build 25947352: the key is
+	// hashed into the item table, and the category is compared with
+	// vdata+8 unless it is -1. The ecosystem's old (0, "weapon_ak47") call
+	// fails both ways: names are not keys, and 0 is no weapon's category.
+	const auto lookup = reinterpret_cast<WeaponDataFromKey_t>(Address("GetCSWeaponDataFromKey"));
+
+	void* vdata = lookup(kAnyWeaponCategory, kAk47Key);
+	if (vdata == nullptr)
+	{
+		RowDetail(context, "(-1, \"%s\") -> (nil)", kAk47Key);
+		context.Fail("behaviour: (-1, \"%s\") did not resolve the AK-47's vdata; every "
+		             "GiveNamedItem goes through this table", kAk47Key);
+		return;
+	}
+	if (!LooksLikeObjectPointer(vdata))
+	{
+		RowDetail(context, "(-1, \"%s\") -> %p", kAk47Key, vdata);
+		context.Fail("behaviour: the table returned something that is not a pointer");
+		return;
 	}
 
-	// ClientPrint(out, ...) fills a message-builder object. On Linux its
-	// pattern anchors the very first instruction, a lea into the module's
-	// rdata the decode reads back; on Windows the pattern anchors the
-	// prologue, and nothing about the builder's construction is observable
-	// without a client. So the check is the Linux decode, plus the call:
-	// every pointer argument on a zeroed buffer (none of them may be null),
-	// and the builder's vtable landing in out[0] as the identity.
-	if (client_print_ != nullptr)
-	{
-		CS2ST_CALL(context, "ClientPrint(builder fill)", {
-			// Every pointer argument but the last is dereferenced before the
-			// builder is touched (build 25947352: the filter's callback at
-			// +8, two vectors out of a3, a5[0] and a5[2], sixteen bytes out
-			// of a6 plus its second qword) - so each rides its own zeroed
-			// buffer, and a zeroed buffer is the shape whose callback slot
-			// is null, which the body branches on and handles.
-			unsigned char out[384] = {0};
-			unsigned char filter_bytes[64] = {0};
-			unsigned char origin[32] = {0}; // two unaligned loads reach +27
-			unsigned char unknown12[12] = {0};
-			unsigned char unknown32[32] = {0};
-			reinterpret_cast<ClientPrint_t>(client_print_)(
-				out, filter_bytes, origin, 4, unknown12, unknown32, 0, nullptr);
-			// The binary writes a module vtable into out[0] before anything
-			// else; a null out[0] means nothing was built.
-			void* first = nullptr;
-			std::memcpy(&first, out, sizeof(first));
-			context.Detail("-> out[0] %p (%s)", first,
-				first != nullptr ? "built" : "not built");
-			if (first == nullptr)
-			{
-				context.Fail("the builder came back empty; the address is not "
-				             "ClientPrint");
-			}
-			else if (!InModule(context.GetModule("server"), first))
-			{
-				context.Fail("out[0] does not point into the server module; the "
-				             "builder's vtable is wrong");
-			}
-		});
-	}
+	std::int32_t category = 0;
+	std::memcpy(&category, static_cast<const unsigned char*>(vdata) + 8, sizeof(category));
+	void* same = lookup(category, kAk47Key);
+	void* other = lookup(category + 1, kAk47Key);
+	void* absent = lookup(kAnyWeaponCategory, "cs2sdktest_no_such_weapon");
 
-	// CBaseModelEntity_SetModel(this) is a one-argument forwarder (build
-	// 25947352: it fetches a global and tail-calls with (this, global+104)).
-	// The model name lives in the entity's own keyvalues, which a fresh
-	// info_target has none of; the observable is simply that the forward
-	// completes on an entity this suite created, before the Kill below
-	// removes it.
-	if (set_model_ != nullptr && create_entity_ != nullptr)
+	RowDetail(context, "(-1, \"%s\") -> %p; (%d) -> %p; (%d) -> %p; unknown key -> %p",
+		kAk47Key, vdata, category, same, category + 1, other, absent);
+	if (same != vdata)
 	{
-		CS2ST_CALL(context, "CBaseModelEntity_SetModel(info_target)", {
-			void* target = reinterpret_cast<CreateEntityByName_t>(create_entity_)(
-				"info_target", -1);
-			if (target == nullptr)
-			{
-				context.Fail("the round trip's create call did not answer; no target "
-				             "to set a model on");
-				return;
-			}
-			reinterpret_cast<SetModel_t>(set_model_)(target);
-			context.Detail("-> called on %p (single-arg forward, no return to assert)",
-				target);
-		});
-		// The Kill queue below is the target's cleanup; the SetModel call
-		// left no state behind that outlives the entity.
+		context.Fail("behaviour: the vdata's own category %d did not resolve it again", category);
 	}
+	else if (other != nullptr)
+	{
+		context.Fail("behaviour: category %d resolved an item of category %d; the filter "
+		             "does not filter", category + 1, category);
+	}
+	else if (absent != nullptr)
+	{
+		context.Fail("behaviour: a key no build contains resolved to vdata");
+	}
+}
 
+void GamedataSuite::VerifyTerminateRound(TestContext& context)
+{
+	// TerminateRound(gamerules, reason, _, delay): writes the round-end state
+	// into the gamerules synchronously. The gamerules object has no SDK
+	// accessor and no ecosystem global; the route that exists is the map's
+	// CCSGameRulesProxy entity, whose m_pGameRules field points at the object
+	// every map runs with.
+	std::size_t gamerules_offset = 0;
+	if (!SchemaOffset("CCSGameRulesProxy", "m_pGameRules", gamerules_offset))
+	{
+		context.Fail("setup: CCSGameRulesProxy.m_pGameRules did not resolve - %s",
+			server_scope_ == nullptr
+				? "the schema system has no server type scope"
+				: "the class or field is not in the server scope");
+		return;
+	}
+	// EntityInstanceByClassIter_t matches designer names ("cs_gamerules"
+	// here), not C++ class names, so the proxy is found by the class-info
+	// walk instead.
+	CEntityInstance* proxy = FindEntityByCppClassname("CCSGameRulesProxy");
+	if (proxy == nullptr)
+	{
+		context.Fail("setup: no CCSGameRulesProxy entity in the list");
+		return;
+	}
+	void* gamerules = SlotAt(proxy, gamerules_offset);
+	if (!LooksLikeObjectPointer(gamerules))
+	{
+		context.Fail("setup: the proxy's m_pGameRules is not a pointer");
+		return;
+	}
+	// Reason 10 is RoundDraw: no team is credited, so no scoreboard state a
+	// later suite might read is disturbed. Delay 0: the state lands this frame.
+	reinterpret_cast<TerminateRound_t>(Address("CCSGameRules_TerminateRound"))(
+		gamerules, 10, 0, 0.0f);
+	RowDetail(context, "gamerules %p (via proxy %p), round terminated as a draw, returned",
+		gamerules, static_cast<void*>(proxy));
+}
+
+void GamedataSuite::VerifyCreateEntityByName(TestContext& context)
+{
+	// Spawned so the removal below marks rather than frees; the create is
+	// what this row asserts, through the identity the entity system gave it.
+	void* entity = CreateScratchEntity(true);
+	if (entity == nullptr)
+	{
+		RowDetail(context, "info_target -> (nil)");
+		context.Fail("behaviour: no entity came back for info_target");
+		return;
+	}
+	CEntityIdentity* identity = static_cast<CEntityInstance*>(entity)->m_pEntity;
+	const char* designer = LooksLikeObjectPointer(identity) ? identity->GetClassname() : nullptr;
+	RowDetail(context, "info_target -> entity %p (%s)", entity,
+		designer != nullptr ? designer : "no identity");
+	RemoveScratchEntity(entity);
+	if (designer == nullptr || std::strcmp(designer, "info_target") != 0)
+	{
+		context.Fail("behaviour: the entity that came back is not an info_target");
+	}
+}
+
+void GamedataSuite::VerifyDispatchSpawn(TestContext& context)
+{
+	void* entity = CreateScratchEntity(false);
+	if (entity == nullptr)
+	{
+		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity to spawn");
+		return;
+	}
+	reinterpret_cast<DispatchSpawn_t>(Address("CBaseEntity_DispatchSpawn"))(entity, nullptr);
+
+	// The proof the pointer is what the name says: an entity the engine
+	// spawned carries an identity with an index into the fixed table.
+	CEntityIdentity* identity = static_cast<CEntityInstance*>(entity)->m_pEntity;
+	if (!LooksLikeObjectPointer(identity))
+	{
+		RowDetail(context, "info_target %p spawned", entity);
+		context.Fail("behaviour: the spawned object carries no identity");
+		return;
+	}
+	const int index = identity->GetEntityIndex().Get();
+	RowDetail(context, "info_target %p spawned at entity index %d", entity, index);
+	RemoveScratchEntity(entity);
+	if (index < 0 || index >= MAX_TOTAL_ENTITIES)
+	{
+		context.Fail("behaviour: index %d is outside the fixed identity table", index);
+	}
+}
+
+void GamedataSuite::VerifyEmitSoundFilter(TestContext& context)
+{
+	// EmitSoundFilter(out, filter, entindex, params): the sound-event guid comes
+	// back through `out` (the body seeds it with 0xFFFFFFFF00000000 before
+	// anything else), and `out` is returned. The filter's virtuals are called
+	// in the body, so it has to be a real CRecipientFilter - the SDK's own,
+	// built here with no recipients: a quiet call that reaches the sound
+	// system and plays to nobody.
+	void* scratch = CreateScratchEntity(true);
+	if (scratch == nullptr)
+	{
+		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity to "
+		             "emit from");
+		return;
+	}
+	CEntityIdentity* identity = static_cast<CEntityInstance*>(scratch)->m_pEntity;
+	if (!LooksLikeObjectPointer(identity))
+	{
+		context.Fail("setup: the scratch entity carries no identity, so it has no index");
+		return;
+	}
+	const unsigned entity_index = static_cast<unsigned>(identity->GetEntityIndex().Get());
+
+	CRecipientFilter filter;
+
+	// EmitSound_t as the SDK lays it out (shareddefs.h), defaults from its
+	// constructor: pitch 100, volume 1, no forced guid.
+	struct EmitParams
+	{
+		const char* name;
+		float origin[3];
+		float volume;
+		float sound_time;
+		int speaker_entity;
+		unsigned int force_guid;
+		int source_soundscape;
+		short pitch;
+		unsigned char flags;
+	};
+	EmitParams params{};
+	params.name = "UI.ButtonRollout";
+	params.volume = 1.0f;
+	params.speaker_entity = -1;
+	params.pitch = 100;
+	params.flags = 1;
+
+	unsigned char out[64] = {0};
+	void* returned = reinterpret_cast<EmitSoundFilter_t>(Address("CBaseEntity_EmitSoundFilter"))(
+		out, &filter, entity_index, &params);
+	RemoveScratchEntity(scratch);
+
+	std::uint64_t guid = 0;
+	std::memcpy(&guid, out, sizeof(guid));
+	RowDetail(context, "from info_target #%u: returned %p (out %p), guid 0x%016llx",
+		entity_index, returned, static_cast<void*>(out),
+		static_cast<unsigned long long>(guid));
+	if (returned != out)
+	{
+		context.Fail("behaviour: the output buffer did not come back; the address is not "
+		             "CBaseEntity_EmitSoundFilter");
+	}
+	else if (guid == 0)
+	{
+		context.Fail("behaviour: the guid slot is still zero; the body seeds it before "
+		             "anything else, so it never ran");
+	}
+}
+
+void GamedataSuite::VerifyAddEntityIOEvent(TestContext& context)
+{
 	// CEntitySystem_AddEntityIOEvent queues an input for the next frame's
-	// event pump. The closed loop this file can build: create an info_target
-	// (the round trip's own three calls), queue "Kill" on it, and assert the
-	// entity is gone from the list on the spot - the pump runs on the very
-	// next frame boundary, so gone-now is the wrong reading; the assert is
-	// that the call survives and the row records the queue was taken.
-	if (add_entity_io_event_ != nullptr && create_entity_ != nullptr)
+	// event pump. The pump runs on the next frame boundary, so gone-now is
+	// the wrong reading; the assert is that the call survives, and the queued
+	// Kill is the scratch entity's own cleanup.
+	CGameEntitySystem* entity_system = GameEntitySystem();
+	if (entity_system == nullptr)
 	{
-		CS2ST_CALL(context, "CEntitySystem_AddEntityIOEvent(Kill, info_target)", {
-			CGameEntitySystem* entity_system = GameEntitySystem();
-			if (entity_system == nullptr)
-			{
-				context.Fail("no entity system to queue through");
-				return;
-			}
-			void* target = reinterpret_cast<CreateEntityByName_t>(create_entity_)(
-				"info_target", -1);
-			if (target == nullptr)
-			{
-				context.Fail("the round trip's create call did not answer; the Kill "
-				             "queue has no target");
-				return;
-			}
-			// The ecosystem's call: (entitySystem, target, input, activator,
-			// caller, value, delay, unk1, unk2) with a null variant - the
-			// binary reads value[0] only when the input needs one, and Kill
-			// does not.
-			reinterpret_cast<AddEntityIOEvent_t>(add_entity_io_event_)(
-				entity_system, target, "Kill", nullptr, nullptr, nullptr, 0.0f,
-				nullptr, nullptr);
-			context.Detail("-> Kill queued on %p; the next frame's pump fires it",
-				target);
-			// No explicit cleanup: the queued Kill IS the cleanup - the pump
-			// removes the target on the next frame, and the entity was this
-			// call's own, not the map's.
-		});
+		context.Fail("setup: GameEntitySystem() is null (IGameResourceService did not "
+		             "answer); no entity system to queue through");
+		return;
+	}
+	void* target = CreateScratchEntity(true);
+	if (target == nullptr)
+	{
+		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity");
+		return;
+	}
+	// The ecosystem's call: (entitySystem, target, input, activator, caller,
+	// value, delay, unk1, unk2). `value` is never null: with unk1 null the body
+	// copies the variant unconditionally (reads *(value+8) first), which is
+	// what faulted at 0x8 with a null here. A zeroed variant is the void one -
+	// no payload, no type - which is what an input that takes no argument
+	// carries.
+	unsigned char void_variant[64] = {0};
+	reinterpret_cast<AddEntityIOEvent_t>(Address("CEntitySystem_AddEntityIOEvent"))(
+		entity_system, target, "Kill", nullptr, nullptr, void_variant, 0.0f, nullptr, nullptr);
+	RowDetail(context, "Kill queued on info_target %p through entity system %p; the next "
+	                   "frame's pump fires it", target, static_cast<void*>(entity_system));
+}
+
+void GamedataSuite::VerifyLegacyListener(TestContext& context)
+{
+	// LegacyGameEventListener is a pure function of one global: slot <= 0x3F
+	// and the table non-null -> table+16*slot+64; anything else -> null. Both
+	// halves are computable without calling, so both are asserted.
+	void* fn_address = Address("LegacyGameEventListener");
+	const auto listener = reinterpret_cast<LegacyListener_t>(fn_address);
+
+	// mov rax,[rip+d]; test rax,rax; jz -> the global is at +7 past the
+	// function start. Reading it is the expected value's base.
+	const auto* fn = static_cast<const unsigned char*>(fn_address);
+	std::int32_t disp = 0;
+	std::memcpy(&disp, fn + 3, sizeof(disp));
+	void* table = SlotAt(fn + 7 + disp, 0);
+	if (table != nullptr && !LooksLikeObjectPointer(table))
+	{
+		RowDetail(context, "decode: global %p holds %p",
+			static_cast<const void*>(fn + 7 + disp), table);
+		context.Fail("decode: the listener table global holds something that is not a pointer");
+		return;
 	}
 
+	void* at_zero = listener(0);
+	void* past_end = listener(0x40);
+	const void* expected = (table != nullptr)
+		? static_cast<const void*>(static_cast<const unsigned char*>(table) + 64) : nullptr;
+
+	RowDetail(context, "table %p; slot 0 -> %p (expected %p); slot 0x40 -> %p (expected nil)",
+		table, at_zero, expected, past_end);
+	if (at_zero != expected)
+	{
+		context.Fail("behaviour: slot 0 did not answer table+64; the address is not "
+		             "LegacyGameEventListener");
+	}
+	else if (past_end != nullptr)
+	{
+		// 0x40 is the first slot past the table: whatever the global holds,
+		// the answer must be null - `ja` out, no table arithmetic.
+		context.Fail("behaviour: slot 0x40 did not answer null; the bounds check is not there");
+	}
+}
+
+void GamedataSuite::VerifyRemovePlayerItem(TestContext& context)
+{
+	// RemovePlayerItem(pawn, item): compares against the pawn's active weapon
+	// and ends in UTIL_Remove(item) - the entity is marked for deletion, the
+	// same flag the UTIL_Remove row asserts.
+	reinterpret_cast<RemovePlayerItem_t>(Address("CBasePlayerPawn_RemovePlayerItem"))(
+		bot_pawn_, weapon_);
+	CEntityInstance* item = static_cast<CEntityInstance*>(weapon_);
+	bool marked = false;
+	if (LooksLikeObjectPointer(item->m_pEntity))
+	{
+		marked = (item->m_pEntity->m_flags & EF_MARKED_FOR_DELETE) != 0;
+	}
+	RowDetail(context, "AK %p, EF_MARKED_FOR_DELETE %s", weapon_, marked ? "set" : "not set");
+	weapon_ = nullptr; // the entity is on its way out either way
+	if (!marked)
+	{
+		context.Suspect("behaviour: the item is not marked for deletion");
+	}
+}
+
+void GamedataSuite::VerifyTakeDamageOld(TestContext& context)
+{
+	// TakeDamageOld(pawn, info, result, double, float): a zeroed info block is
+	// the shape the engine builds for environment damage. The observable is
+	// the pawn's health: build the info with 1 point of damage, read health
+	// before and after.
+	std::size_t health_offset = 0;
+	if (!SchemaOffset("CBaseEntity", "m_iHealth", health_offset))
+	{
+		context.Fail("setup: CBaseEntity.m_iHealth did not resolve through the schema");
+		return;
+	}
+	// CTakeDamageInfo as the body reads it (build 25947352): damage float at
+	// +68, damage type at +76 (0 is generic), the inflictor/attacker/ability
+	// handles at +56..64 (0xFFFFFFFF is none), a damage position at +44. The
+	// block is larger than the fields - the body writes as far as +272.
+	// `result` is null: the body builds its own when none is passed.
+	unsigned char info[0x200] = {0};
+	const float one = 1.0f;
+	const float position[3] = {1.0f, 1.0f, 1.0f};
+	const std::uint32_t none = 0xFFFFFFFFu;
+	std::memcpy(info + 68, &one, sizeof(one));
+	std::memcpy(info + 44, position, sizeof(position));
+	for (std::size_t handle = 56; handle <= 64; handle += 4)
+	{
+		std::memcpy(info + handle, &none, sizeof(none));
+	}
+
+	const auto* bytes = reinterpret_cast<const unsigned char*>(bot_pawn_);
+	std::int32_t before = 0;
+	std::memcpy(&before, bytes + health_offset, sizeof(before));
+	reinterpret_cast<TakeDamageOld_t>(Address("CBaseEntity_TakeDamageOld"))(
+		bot_pawn_, info, nullptr, 0.0, 0.0f);
+	std::int32_t after = 0;
+	std::memcpy(&after, bytes + health_offset, sizeof(after));
+
+	RowDetail(context, "bot health %d -> %d (1 point dealt)", before, after);
+	if (after >= before)
+	{
+		context.Suspect("behaviour: the pawn's health did not move; armor or warmup rules may "
+		                "have absorbed 1 point");
+	}
+}
+
+void GamedataSuite::VerifyEndTouch(TestContext& context)
+{
 	// CBaseTrigger_EndTouch(trigger, other): the binary decrements the
 	// touch-list count at trigger+3176 when the other is on the list. A
 	// hand-built trigger with an empty list takes the no-op path and must
-	// leave the count at zero - calling it on a live map trigger would be
-	// the other half, but that writes state this suite cannot restore.
-	if (end_touch_ != nullptr)
+	// leave the count at zero - calling it on a live map trigger would be the
+	// other half, but that writes state this suite cannot restore.
+	//
+	// CBaseTrigger's layout past CBaseEntity: the count at +3176 and the list
+	// pointer at +3184 (build 25947352). The body reads other's identity at
+	// +0x10 - the one touch it does before the count check - then returns
+	// outright when the count is zero: zeroed buffers take the no-op path end
+	// to end. CEntityInstance is abstract in the SDK, so `other` is a raw
+	// buffer rather than an instance.
+	unsigned char trigger[0xC80] = {0};
+	unsigned char other_bytes[0x100] = {0};
+	reinterpret_cast<EndTouch_t>(Address("CBaseTrigger_EndTouch"))(trigger, other_bytes);
+	std::int32_t count = 0;
+	std::memcpy(&count, trigger + 3176, sizeof(count));
+	RowDetail(context, "empty touch list, count after the call %d (expected 0)", count);
+	if (count != 0)
 	{
-		CS2ST_CALL(context, "CBaseTrigger_EndTouch(empty list)", {
-			// CBaseTrigger's layout past CBaseEntity: the count at +3176 and
-			// the list pointer at +3184 (build 25947352). The body reads
-			// other's identity at +0x10 - the one touch it does before the
-			// count check - then returns outright when the count is zero:
-			// zeroed buffers take the no-op path end to end. CEntityInstance
-			// is abstract in the SDK, so `other` is a raw buffer rather
-			// than an instance.
-			unsigned char trigger[0xC80] = {0};
-			unsigned char other_bytes[0x100] = {0};
-			reinterpret_cast<EndTouch_t>(end_touch_)(
-				trigger, reinterpret_cast<CEntityInstance*>(other_bytes));
-			std::int32_t count = 0;
-			std::memcpy(&count, trigger + 3176, sizeof(count));
-			context.Detail("-> count after the call %d (empty list, no-op path)", count);
-			if (count != 0)
-			{
-				context.Fail("the touch count moved on an empty list; the address is "
-				             "not EndTouch");
-			}
-		});
+		context.Fail("behaviour: the touch count moved on an empty list; the address is not "
+		             "EndTouch");
+	}
+}
+
+void GamedataSuite::VerifyFireOutputInternal(TestContext& context)
+{
+	// FireOutputInternal on an output with no connections. The binary (build
+	// 25947352) reads connections at output+8, finds null, and returns its
+	// first argument untouched - an address that is not this function cannot
+	// reproduce that identity under seven arguments.
+	struct ZeroOutput
+	{
+		void* vtable;
+		void* connections;
+		void* desc;
+	};
+	ZeroOutput output{nullptr, nullptr, nullptr};
+
+	// The ecosystem's typedef, called the way its detour forwards: null
+	// activator/caller, a null CVariant (the binary switches on value[8] only
+	// when firing, which no connection means it never reads), zero delay.
+	void* returned = reinterpret_cast<FireOutputInternal_t>(
+		Address("CEntityIOOutput_FireOutputInternal"))(
+		&output, nullptr, nullptr, nullptr, 0.0f, nullptr, nullptr);
+	RowDetail(context, "no connections: returned %p, passed %p", returned,
+		static_cast<void*>(&output));
+	if (returned != &output)
+	{
+		context.Fail("behaviour: a zeroed CEntityIOOutput did not come back unchanged; the "
+		             "address is not FireOutputInternal");
+	}
+}
+
+void GamedataSuite::VerifyGameSystemList(TestContext& context)
+{
+	// IGameSystem_InitAllSystems_pFirst names the instruction that walks the
+	// game-system linked list in InitAllSystems: mov r14,[rip+d]; test r14,r14.
+	// The global at +7+disp32 must be the head of a list this server walked
+	// to get where it is.
+	const auto* fn = static_cast<const unsigned char*>(
+		Address("IGameSystem_InitAllSystems_pFirst"));
+	std::int32_t disp = 0;
+	std::memcpy(&disp, fn + 3, sizeof(disp));
+	void* head = SlotAt(fn + 7 + disp, 0);
+
+	RowDetail(context, "decode: global %p holds list head %p",
+		static_cast<const void*>(fn + 7 + disp), head);
+	if (head == nullptr)
+	{
+		context.Fail("decode: the game-system list head is null on a running server; the "
+		             "decoded address is not the list head");
+	}
+	else if (!LooksLikeObjectPointer(head))
+	{
+		context.Fail("decode: the list head global holds something that is not a pointer");
+	}
+}
+
+void GamedataSuite::VerifyNetworkStateChanged(TestContext& context)
+{
+	// NetworkStateChanged ends in a call through the entity's own vtable - the
+	// slot vtables.SetStateChanged names. The displacement of that load is a
+	// second, independent statement of the same slot number.
+	constexpr std::size_t kDecodeWindow = 0x80;
+
+	const TomlData::Entry* entry = data_.FindPlatform("vtables.SetStateChanged",
+		CS2ST_WINDOWS != 0);
+	if (entry == nullptr || !entry->is_number)
+	{
+		context.Fail("setup: vtables.SetStateChanged is missing from the file");
+		return;
+	}
+	const auto* fn = static_cast<const unsigned char*>(Address("NetworkStateChanged"));
+
+	// The first mov r64, [r64+disp32] (REX.W 8B, ModRM mod=10): every field
+	// read before it fits a disp8, a vtable slot past 15 does not.
+	for (std::size_t i = 0; i + 7 <= kDecodeWindow; ++i)
+	{
+		if ((fn[i] & 0xF8) != 0x48 || fn[i + 1] != 0x8B || (fn[i + 2] & 0xC0) != 0x80
+			|| (fn[i + 2] & 0x07) == 0x04)
+		{
+			continue;
+		}
+		std::int32_t disp = 0;
+		std::memcpy(&disp, fn + i + 3, sizeof(disp));
+		RowDetail(context, "decode: +0x%zx loads vtable +0x%x = slot %d; "
+		                   "vtables.SetStateChanged %lld",
+			i, static_cast<unsigned>(disp), disp / 8, entry->number);
+		if (disp % 8 != 0 || disp / 8 != entry->number)
+		{
+			context.Fail("decode: the slot the code calls and vtables.SetStateChanged disagree");
+		}
+		return;
+	}
+	RowDetail(context, "decode: no match in the first 0x%zx bytes", kDecodeWindow);
+	context.Fail("decode: no vtable load found; the address is not NetworkStateChanged");
+}
+
+void GamedataSuite::VerifyNavMesh(TestContext& context)
+{
+	// The function body is `cmp qword ptr [rip+disp32], 0 / setne / ret`:
+	// three opcode bytes, then the disp32, then the rest of the instruction
+	// (8 bytes on Windows, 7 on Linux) - which lands exactly on the navmesh
+	// global. That is the ecosystem's decode, transcribed rather than
+	// reinvented.
+	void* fn_address = Address("CCSNavArea_IsValidNavMesh");
+	const auto* fn = static_cast<const unsigned char*>(fn_address);
+	std::int32_t disp = 0;
+	std::memcpy(&disp, fn + 3, sizeof(disp));
+	const unsigned char* slot = fn + disp + (CS2ST_WINDOWS ? 8 : 7);
+	void* navmesh = SlotAt(slot, 0);
+
+	if (navmesh != nullptr && !LooksLikeObjectPointer(navmesh))
+	{
+		RowDetail(context, "decode: global %p holds %p", static_cast<const void*>(slot), navmesh);
+		context.Fail("decode: the navmesh global holds something that is not a pointer");
+		return;
+	}
+
+	// Two independent readings of one fact: executing the stub, and reading
+	// the global it compares. A signature that landed on the wrong bytes
+	// cannot keep the two in agreement.
+	const bool valid = reinterpret_cast<NavMeshBool_t>(fn_address)();
+	RowDetail(context, "returned %s; global %p holds %p",
+		valid ? "true" : "false", static_cast<const void*>(slot), navmesh);
+	if ((navmesh != nullptr) != valid)
+	{
+		context.Fail("behaviour: the stub's answer and the global it reads disagree");
 	}
 }
 
@@ -1134,10 +1578,12 @@ bool GamedataSuite::SchemaOffsetAny(const char* const* class_names,
 	return false;
 }
 
-bool GamedataSuite::FindBotPair(CEntityInstance*& controller, CEntityInstance*& pawn)
+bool GamedataSuite::FindBotPair(CEntityInstance*& controller, CEntityInstance*& pawn,
+                                std::string& name)
 {
 	controller = nullptr;
 	pawn = nullptr;
+	name.clear();
 
 	CGameEntitySystem* entity_system = GameEntitySystem();
 	if (entity_system == nullptr)
@@ -1145,54 +1591,92 @@ bool GamedataSuite::FindBotPair(CEntityInstance*& controller, CEntityInstance*& 
 		return false;
 	}
 
-	// The controller: walk the active-entity chain (the same walk
-	// GameEntitySystemSuite uses) and match on two names - the designer name
-	// ServerCommand("bot_add ... cs_bot") gives the bot, and the C++ class
-	// name off the identity's class, which is what separates a controller
-	// from anything else that might carry the name.
-	CEntityIdentity* scanned = entity_system->m_EntityList.m_pFirstActiveEntity;
-	for (int walked = 0; scanned != nullptr && walked < 512;
-	     scanned = scanned->m_pNext, ++walked)
-	{
-		const char* designer = scanned->GetClassname();
-		if (designer == nullptr || std::strncmp(designer, "cs_bot", 6) != 0)
-		{
-			continue;
-		}
-		const char* cpp_name = (scanned->m_pClass != nullptr &&
-		                       scanned->m_pClass->m_pClassInfo != nullptr)
-			? scanned->m_pClass->m_pClassInfo->m_pszCPPClassname
-			: nullptr;
-		if (cpp_name == nullptr || std::strcmp(cpp_name, "CCSPlayerController") != 0)
-		{
-			continue;
-		}
-		controller = scanned->m_pInstance;
-		break;
-	}
-	if (controller == nullptr || !LooksLikeObjectPointer(controller))
+	// Every field read below goes through the schema first, so a layout
+	// change skips the bot rows instead of misreading them.
+	std::size_t steamid_offset = 0;
+	std::size_t hpawn_offset = 0;
+	std::size_t name_offset = 0;
+	if (!SchemaOffset("CBasePlayerController", "m_steamID", steamid_offset)
+		|| !SchemaOffset("CBasePlayerController", "m_hPawn", hpawn_offset)
+		|| !SchemaOffset("CBasePlayerController", "m_iszPlayerName", name_offset))
 	{
 		return false;
 	}
 
-	// The pawn: the controller's m_hPawn handle, resolved through the entity
-	// system so the pair is two views of one bot.
-	std::size_t hpawn_offset = 0;
-	if (!SchemaOffset("CBasePlayerController", "m_hPawn", hpawn_offset))
+	// Walk the active-entity chain (the same walk GameEntitySystemSuite uses)
+	// for controllers by C++ class name - every controller's designer name is
+	// cs_player_controller, bot or not - and keep the first fake client
+	// (m_steamID 0). One with a pawn is preferred over one without (SourceTV
+	// is a fake client that never gets one).
+	CEntityIdentity* scanned = entity_system->m_EntityList.m_pFirstActiveEntity;
+	for (int walked = 0; scanned != nullptr && walked < 4096;
+	     scanned = scanned->m_pNext, ++walked)
 	{
-		return false;
+		const char* cpp_name = (scanned->m_pClass != nullptr &&
+		                       scanned->m_pClass->m_pClassInfo != nullptr)
+			? scanned->m_pClass->m_pClassInfo->m_pszCPPClassname
+			: nullptr;
+		if (cpp_name == nullptr || std::strcmp(cpp_name, "CCSPlayerController") != 0
+			|| (scanned->m_flags & EF_MARKED_FOR_DELETE) != 0)
+		{
+			continue;
+		}
+		CEntityInstance* candidate = scanned->m_pInstance;
+		if (!LooksLikeObjectPointer(candidate))
+		{
+			continue;
+		}
+		const auto* bytes = reinterpret_cast<const unsigned char*>(candidate);
+
+		std::uint64_t steam_id = 0;
+		std::memcpy(&steam_id, bytes + steamid_offset, sizeof(steam_id));
+		if (steam_id != 0)
+		{
+			continue;
+		}
+
+		std::uint32_t handle_bits = 0;
+		std::memcpy(&handle_bits, bytes + hpawn_offset, sizeof(handle_bits));
+		// A bot that has not spawned yet has no pawn: the handle is invalid
+		// and the lookup answers null. That is "found, pawn pending", not
+		// "no bot"; PrepareBot skips the rows with that reason.
+		CEntityInstance* resolved = (handle_bits == 0xFFFFFFFFu)
+			? nullptr
+			: entity_system->GetEntityInstance(CEntityHandle{handle_bits});
+		if (resolved != nullptr && !LooksLikeObjectPointer(resolved))
+		{
+			resolved = nullptr;
+		}
+
+		// m_iszPlayerName is a fixed char[128]; copied bounded, and quotes
+		// dropped so the name prints cleanly in the row.
+		char player_name[128] = {0};
+		std::memcpy(player_name, bytes + name_offset, sizeof(player_name) - 1);
+		std::string candidate_name;
+		for (const char* c = player_name; *c != '\0'; ++c)
+		{
+			if (*c != '"')
+			{
+				candidate_name.push_back(*c);
+			}
+		}
+		if (candidate_name.empty())
+		{
+			continue;
+		}
+
+		if (controller == nullptr || (pawn == nullptr && resolved != nullptr))
+		{
+			controller = candidate;
+			pawn = resolved;
+			name = candidate_name;
+		}
+		if (pawn != nullptr)
+		{
+			break; // a spawned bot is the best there is
+		}
 	}
-	std::uint32_t handle_bits = 0;
-	std::memcpy(&handle_bits, static_cast<const unsigned char*>(
-		static_cast<void*>(controller)) + hpawn_offset, sizeof(handle_bits));
-	CEntityInstance* resolved =
-		entity_system->GetEntityInstance(CEntityHandle{handle_bits});
-	if (resolved == nullptr || !LooksLikeObjectPointer(resolved))
-	{
-		return false;
-	}
-	pawn = resolved;
-	return true;
+	return controller != nullptr;
 }
 
 CEntityInstance* GamedataSuite::FindEntityByCppClassname(const char* cpp_class_name)
@@ -1203,7 +1687,7 @@ CEntityInstance* GamedataSuite::FindEntityByCppClassname(const char* cpp_class_n
 		return nullptr;
 	}
 	CEntityIdentity* scanned = entity_system->m_EntityList.m_pFirstActiveEntity;
-	for (int walked = 0; scanned != nullptr && walked < 512;
+	for (int walked = 0; scanned != nullptr && walked < 4096;
 	     scanned = scanned->m_pNext, ++walked)
 	{
 		const char* cpp_name = (scanned->m_pClass != nullptr &&
@@ -1219,430 +1703,15 @@ CEntityInstance* GamedataSuite::FindEntityByCppClassname(const char* cpp_class_n
 	return nullptr;
 }
 
-void GamedataSuite::ExerciseBotBehaviours(TestContext& context)
-{
-	context.Note("[behaviour] scan-only signatures: calls against an added bot");
-
-	// Every check below needs at least one of these; none is fatal alone.
-	if (engine_ == nullptr)
-	{
-		context.SkipCall("bot-based behaviour checks",
-			"engine2 does not answer %s", INTERFACEVERSION_VENGINESERVER);
-		return;
-	}
-
-	// bot_add is queued, not executed: the sweep is synchronous inside one
-	// command callback, so the bot from this run's command is not in the
-	// entity list yet. A previous run's bot is: use it if present, else
-	// queue the add and let the next run pick it up. Either way the kick is
-	// queued at the end, so no bot survives into other suites' runs.
-	CEntityInstance* controller = nullptr;
-	CEntityInstance* pawn = nullptr;
-	const bool have_bot = FindBotPair(controller, pawn);
-
-	bool queued_add = false;
-	if (!have_bot)
-	{
-		engine_->ServerCommand("bot_add t normal cs_bot\n");
-		queued_add = true;
-	}
-
-	CS2ST_CALL(context, "bot_add round trip", {
-		if (queued_add)
-		{
-			context.Detail("-> bot_add queued this run; re-run to exercise the "
-			               "player-shaped checks against it");
-			return;
-		}
-		context.Detail("-> bot %p (pawn %p) found", static_cast<void*>(controller),
-			static_cast<void*>(pawn));
-	});
-
-	if (queued_add)
-	{
-		engine_->ServerCommand("bot_kick cs_bot\n");
-		return;
-	}
-
-	// The bot is ours and live from here; every check that changes state
-	// restores it, and the kick is queued no matter how far this gets.
-	struct BotCleanup
-	{
-		IVEngineServer2* engine;
-		~BotCleanup()
-		{
-			if (engine != nullptr)
-			{
-				engine->ServerCommand("bot_kick cs_bot\n");
-			}
-		}
-	} cleanup{engine_};
-
-	// ---- team / pawn identity ------------------------------------------
-
-	std::size_t team_offset = 0;
-	const bool have_team_offset = SchemaOffsetAny(
-		kPawnTeamClasses, "m_iTeamNum", team_offset);
-
-	if (switch_team_ != nullptr && have_team_offset)
-	{
-		// The pawn's team byte is both the input and the assertion: read
-		// before, call with the other team, read after. Team 3 only - the
-		// bot joins as T (2) and returns there, so the round's state is
-		// what it was before the sweep.
-		CS2ST_CALL(context, "CCSPlayerController_SwitchTeam(3)", {
-			std::uint8_t before = 0;
-			std::memcpy(&before, static_cast<const unsigned char*>(
-				static_cast<void*>(pawn)) + team_offset, sizeof(before));
-			reinterpret_cast<SwitchTeam_t>(switch_team_)(pawn, 3);
-			std::uint8_t after = 0;
-			std::memcpy(&after, static_cast<const unsigned char*>(
-				static_cast<void*>(pawn)) + team_offset, sizeof(after));
-			context.Detail("-> team %u -> %u", before, after);
-			if (after != 3)
-			{
-				context.Fail("the pawn's team byte did not follow the call; the address "
-				             "is not SwitchTeam");
-			}
-			// Restore: back to the team the round started the bot in.
-			if (after != before)
-			{
-				reinterpret_cast<SwitchTeam_t>(switch_team_)(pawn, before);
-			}
-		});
-	}
-
-	if (set_pawn_ != nullptr)
-	{
-		// SetPawn(controller, null) is the engine's own pawn-drop path: the
-		// controller's m_hPawn is nulled and the old pawn's controller field
-		// cleared, all observable through the same handle read FindBotPair
-		// uses. A round trip null -> old pawn proves both directions.
-		CS2ST_CALL(context, "CBasePlayerController_SetPawn(null)", {
-			reinterpret_cast<SetPawn_t>(set_pawn_)(controller, nullptr, false,
-				false, false, false);
-			std::uint32_t bits = 0;
-			std::size_t hpawn_offset = 0;
-			const bool readable = SchemaOffset("CBasePlayerController", "m_hPawn",
-				hpawn_offset);
-			if (readable)
-			{
-				std::memcpy(&bits, static_cast<const unsigned char*>(
-					static_cast<void*>(controller)) + hpawn_offset, sizeof(bits));
-			}
-			context.Detail("-> m_hPawn bits 0x%08x after the null call", bits);
-			// Restore: hand the pawn back so the bot stays whole.
-			reinterpret_cast<SetPawn_t>(set_pawn_)(controller, pawn, false,
-				false, false, false);
-			if (!readable)
-			{
-				// Nothing was asserted about the null call without the offset;
-				// say so rather than let the row read as verified.
-				context.Suspect("m_hPawn's offset did not resolve; the null was not "
-				                "observable");
-			}
-		});
-	}
-
-	// ---- weapons: give, use, acquire, remove ------------------------------
-
-	std::size_t itemservices_offset = 0;
-	const bool have_itemservices = SchemaOffsetAny(
-		kItemServicesClasses, "m_pItemServices", itemservices_offset);
-
-	void* item_services = nullptr;
-	if (have_itemservices)
-	{
-		item_services = SlotAt(pawn, itemservices_offset);
-		if (!LooksLikeObjectPointer(item_services))
-		{
-			context.Note("the pawn's m_pItemServices did not resolve to a pointer; "
-			             "the weapon checks will skip");
-			item_services = nullptr;
-		}
-	}
-
-	void* weapon = nullptr;
-
-	if (give_named_item_ != nullptr && item_services != nullptr)
-	{
-		CS2ST_CALL(context, "GiveNamedItem(weapon_ak47)", {
-			// The ecosystem's own call shape: subType 0, no info pointer, no
-			// default attributes, no script scope. The name table check runs
-			// first, "weapon_ak47" passes it, and the vdata path creates and
-			// returns the entity.
-			weapon = reinterpret_cast<GiveNamedItem_t>(give_named_item_)(
-				item_services, "weapon_ak47", 0, nullptr, false, nullptr, 0.0, 0.0f);
-			context.Detail("-> %p", weapon);
-			if (weapon == nullptr)
-			{
-				// Not Fail: GiveNamedItem can refuse for live-game reasons
-				// (freezetime, buy restrictions) that say nothing about the
-				// signature. The row records what came back, that is all.
-				context.Suspect("no entity came back; buy-zone rules may have refused "
-				                "the give");
-				return;
-			}
-			if (!LooksLikeObjectPointer(weapon))
-			{
-				context.Fail("the call returned something that is not a pointer");
-				weapon = nullptr;
-			}
-		});
-	}
-
-	if (can_use_ != nullptr && weapon != nullptr && item_services != nullptr)
-	{
-		CS2ST_CALL(context, "CCSPlayer_WeaponServices_CanUse(ak47)", {
-			// CanUse takes the weapon services (the component that owns the
-			// arsenal), not the item services; the pawn's weapon-services
-			// pointer sits under its own schema field.
-			std::size_t weaponservices_offset = 0;
-			if (!SchemaOffsetAny(kItemServicesClasses, "m_pWeaponServices",
-				weaponservices_offset))
-			{
-				context.Fail("m_pWeaponServices did not resolve through the schema; "
-				             "cannot call");
-				return;
-			}
-			void* weapon_services = SlotAt(pawn, weaponservices_offset);
-			if (!LooksLikeObjectPointer(weapon_services))
-			{
-				context.Fail("the pawn's weapon services did not resolve to a pointer");
-				return;
-			}
-			const int usable = reinterpret_cast<CanUse_t>(can_use_)(
-				weapon_services, weapon);
-			context.Detail("-> %d (an AK the game just gave the pawn)", usable);
-			if (usable == 0)
-			{
-				context.Suspect("the AK was refused; team restrictions may apply to bots");
-			}
-		});
-	}
-
-	if (can_acquire_ != nullptr && weapon != nullptr && item_services != nullptr)
-	{
-		CS2ST_CALL(context, "CCSPlayer_ItemServices_CanAcquire(ak47)", {
-			// CanAcquire(services, vdata, method, out): the vdata comes from
-			// the weapon table the sweep already proved, the method is
-			// BUY VIA PICKUP (the permissive one), and the out int is where
-			// the refusal reason lands when the answer is no.
-			if (weapon_data_ == nullptr)
-			{
-				context.Fail("GetCSWeaponDataFromKey did not resolve; no vdata to "
-				             "acquire with");
-				return;
-			}
-			void* vdata = reinterpret_cast<WeaponDataFromKey_t>(weapon_data_)(
-				0, "weapon_ak47");
-			if (vdata == nullptr)
-			{
-				context.Fail("the weapon table lookup failed on the second ask");
-				return;
-			}
-			int reason = -1;
-			const int answer = reinterpret_cast<CanAcquire_t>(can_acquire_)(
-				item_services, vdata, 2, &reason);
-			context.Detail("-> %d (refusal reason %d)", answer, reason);
-			// The real function clears the out parameter unconditionally at
-			// its top (build 25947352: `*a4 = 0` before any branch), so a
-			// surviving -1 means the address never wrote it at all.
-			if (reason == -1)
-			{
-				context.Fail("the out parameter was never written; the address is not "
-				             "CanAcquire");
-			}
-			else if (answer == 0)
-			{
-				context.Note("the acquisition was refused with reason %d; live-game "
-				             "rules may refuse a bot", reason);
-			}
-		});
-	}
-
-	if (remove_player_item_ != nullptr && weapon != nullptr)
-	{
-		CS2ST_CALL(context, "CBasePlayerPawn_RemovePlayerItem(ak47)", {
-			// RemovePlayerItem(pawn, item): compares against the pawn's active
-			// weapon and ends in UTIL_Remove(item) - the entity is marked for
-			// deletion, the same flag the round trip asserts.
-			reinterpret_cast<RemovePlayerItem_t>(remove_player_item_)(pawn, weapon);
-			CEntityInstance* item = static_cast<CEntityInstance*>(weapon);
-			bool marked = false;
-			if (LooksLikeObjectPointer(item->m_pEntity))
-			{
-				marked = (item->m_pEntity->m_flags & EF_MARKED_FOR_DELETE) != 0;
-			}
-			context.Detail("-> called, EF_MARKED_FOR_DELETE %s", marked ? "set" : "not set");
-			weapon = nullptr; // the entity is on its way out either way
-			if (!marked)
-			{
-				context.Suspect("the item is not marked for deletion yet");
-			}
-		});
-	}
-
-	// ---- health and rounds: the write-heavy ones --------------------------
-
-	if (take_damage_old_ != nullptr)
-	{
-		// TakeDamageOld(pawn, info, result, double, float): a zeroed info
-		// block is the shape the engine builds for environment damage. The
-		// observable is the pawn's health: build the info with 1 point of
-		// damage, read health before and after.
-		std::size_t health_offset = 0;
-		const bool have_health = SchemaOffset("CBaseEntity", "m_iHealth", health_offset);
-		CS2ST_CALL(context, "CBaseEntity_TakeDamageOld(1 hp)", {
-			if (!have_health)
-			{
-				context.Fail("m_iHealth did not resolve through the schema; cannot "
-				             "observe the damage");
-				return;
-			}
-			// The ecosystem's CTakeDamageInfo field order, zero-initialized
-			// except the damage float, which sits at +0x20 (build 25947352:
-			// 4 Vectors then 3 handles).
-			unsigned char info[0x70] = {0};
-			float one = 1.0f;
-			std::memcpy(info + 0x20, &one, sizeof(one));
-			unsigned char result[0x40] = {0};
-			std::int32_t before = 0;
-			std::memcpy(&before, static_cast<const unsigned char*>(
-				static_cast<void*>(pawn)) + health_offset, sizeof(before));
-			reinterpret_cast<TakeDamageOld_t>(take_damage_old_)(
-				pawn, info, result, 0.0, 0.0f);
-			std::int32_t after = 0;
-			std::memcpy(&after, static_cast<const unsigned char*>(
-				static_cast<void*>(pawn)) + health_offset, sizeof(after));
-			context.Detail("-> health %d -> %d", before, after);
-			if (after >= before)
-			{
-				context.Suspect("the pawn's health did not move; armor rules may have "
-				                "absorbed 1 point");
-			}
-			// No restore needed: 1 point off a bot the sweep kicks anyway.
-		});
-	}
-
-	if (post_think_ != nullptr)
-	{
-		CS2ST_CALL(context, "CCSPlayerPawnBase_PostThink(bot pawn)", {
-			// PostThink runs the pawn's per-tick bookkeeping - buy-zone events
-			// included, which is the anchor its signature carries. Calling it
-			// once out of band must simply complete: the observable (the game
-			// event) fires only on a zone transition, which this call does
-			// not cause.
-			reinterpret_cast<PostThink_t>(post_think_)(pawn);
-			context.Detail("-> returned (bookkeeping ran once, out of band)");
-		});
-	}
-
-	if (terminate_round_ != nullptr)
-	{
-		// TerminateRound(gamerules, reason, _, delay): writes the round-end
-		// state into the gamerules synchronously. The gamerules object has
-		// no SDK accessor and no ecosystem global; the route that exists is
-		// the map's CCSGameRulesProxy entity, whose m_pGameRules field
-		// points at the object every map runs with.
-		CS2ST_CALL(context, "CCSGameRules_TerminateRound(draw)", {
-			std::size_t gamerules_offset = 0;
-			if (!SchemaOffset("CCSGameRulesProxy", "m_pGameRules", gamerules_offset))
-			{
-				context.Fail("CCSGameRulesProxy.m_pGameRules did not resolve through "
-				             "the schema; no gamerules object to call on");
-				return;
-			}
-			// EntityInstanceByClassIter_t matches designer names
-			// ("cs_gamerules" here), not C++ class names, so the proxy is
-			// found by the class-info walk instead.
-			CEntityInstance* proxy = FindEntityByCppClassname("CCSGameRulesProxy");
-			if (proxy == nullptr)
-			{
-				context.Fail("no CCSGameRulesProxy entity in the list; the map has no "
-				             "rounds to terminate");
-				return;
-			}
-			void* gamerules = SlotAt(proxy, gamerules_offset);
-			if (!LooksLikeObjectPointer(gamerules))
-			{
-				context.Fail("the proxy's m_pGameRules is not a pointer");
-				return;
-			}
-			// Reason 10 is RoundDraw: no team is credited, so no scoreboard
-			// state a later suite might read is disturbed. Delay 0: the state
-			// lands this frame.
-			reinterpret_cast<TerminateRound_t>(terminate_round_)(
-				gamerules, 10, 0, 0.0f);
-			context.Detail("-> proxy %p -> gamerules %p, round terminated as a draw",
-				static_cast<void*>(proxy), gamerules);
-		});
-	}
-}
+// -----------------------------------------------------------------------------
+//  vtable slots - one row per key, in file order
+// -----------------------------------------------------------------------------
 
 void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 {
-	context.Note("[vtables] slot indexes (two compared against KHook::GetVtableIndex)");
+	context.Note("[vtables] slot indexes, one row per key (two compared against "
+	             "KHook::GetVtableIndex)");
 
-	CS2ST_CALL(context, "vtables.\"ISource2GameEntities::CheckTransmit\"", {
-		const TomlData::Entry* entry = data_.FindPlatform(kCheckTransmitTable,
-			CS2ST_WINDOWS != 0);
-		if (entry == nullptr || !entry->is_number)
-		{
-			context.Fail("the key is missing from the file");
-			return;
-		}
-
-		const std::int32_t sdk_index =
-			KHook::GetVtableIndex(&ISource2GameEntities::CheckTransmit);
-		context.Detail("gamedata %lld, GetVtableIndex %d", entry->number,
-			static_cast<int>(sdk_index));
-		if (sdk_index < 0)
-		{
-			context.Fail("the SDK member pointer did not decode to a slot");
-			return;
-		}
-		if (static_cast<long long>(sdk_index) != entry->number)
-		{
-			// Two independent sources, one number. Which one is wrong is a
-			// question for the binary; that they disagree is the finding.
-			context.Fail("the SDK declaration and the gamedata disagree about this slot");
-		}
-	});
-
-	CS2ST_CALL(context, kAddResourceTable, {
-		const TomlData::Entry* entry = data_.FindPlatform(kAddResourceTable,
-			CS2ST_WINDOWS != 0);
-		if (entry == nullptr || !entry->is_number)
-		{
-			context.Fail("the key is missing from the file");
-			return;
-		}
-
-		// The ecosystem's number is the one-argument AddResource. The SDK
-		// declares three overloads: MSVC groups them by name in reverse
-		// declaration order (single-argument last, slot 2), Itanium keeps
-		// declaration order (slot 0) - which is exactly the 2/0 the file
-		// carries, arrived at by the compiler rather than copied.
-		const auto single_arg = static_cast<void (IEntityResourceManifest::*)(const char*)>(
-			&IEntityResourceManifest::AddResource);
-		const std::int32_t sdk_index = KHook::GetVtableIndex(single_arg);
-		context.Detail("gamedata %lld, GetVtableIndex %d", entry->number,
-			static_cast<int>(sdk_index));
-		if (sdk_index < 0)
-		{
-			context.Fail("the SDK member pointer did not decode to a slot");
-			return;
-		}
-		if (static_cast<long long>(sdk_index) != entry->number)
-		{
-			context.Fail("the SDK declaration and the gamedata disagree about this slot");
-		}
-	});
-
-	// One row per remaining key, so each slot reads on its own line. These are
-	// reported, not proven: proving a slot moved needs the class declaration,
-	// which the SDK does not have.
 	for (const std::string& table : data_.tables())
 	{
 		if (table.rfind(kVtablesPrefix, 0) != 0)
@@ -1650,114 +1719,154 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 			continue;
 		}
 		const std::string name = table.substr(std::strlen(kVtablesPrefix));
-		if (name == "ISource2GameEntities::CheckTransmit"
-			|| name == "CEntityResourceManifest_AddResource"
-			|| name == "GameEventManager") // checked below, by decode
-		{
-			continue;
-		}
 
 		CS2ST_CALL(context, table, {
 			const TomlData::Entry* entry = data_.FindPlatform(table, CS2ST_WINDOWS != 0);
 			if (entry == nullptr || !entry->is_number)
 			{
-				context.Fail("the key is missing from the file");
+				context.Fail("the key has no %s number in the file",
+					CS2ST_WINDOWS ? "windows" : "linux");
 				return;
 			}
-			if (name == "CServerSideClient")
+
+			// The two keys an SDK declaration can also compute: two
+			// independent sources, one number. Which one is wrong is a
+			// question for the binary; that they disagree is the finding.
+			std::int32_t sdk_index = -1;
+			bool sdk_declared = false;
+			if (table == kCheckTransmitTable)
+			{
+				sdk_index = KHook::GetVtableIndex(&ISource2GameEntities::CheckTransmit);
+				sdk_declared = true;
+			}
+			else if (table == kAddResourceTable)
+			{
+				// The ecosystem's number is the one-argument AddResource. The
+				// SDK declares three overloads: MSVC groups them by name in
+				// reverse declaration order (single-argument last, slot 2),
+				// Itanium keeps declaration order (slot 0) - which is exactly
+				// the 2/0 the file carries, arrived at by the compiler rather
+				// than copied.
+				const auto single_arg =
+					static_cast<void (IEntityResourceManifest::*)(const char*)>(
+						&IEntityResourceManifest::AddResource);
+				sdk_index = KHook::GetVtableIndex(single_arg);
+				sdk_declared = true;
+			}
+
+			if (sdk_declared)
+			{
+				context.Detail("gamedata %lld, GetVtableIndex %d", entry->number,
+					static_cast<int>(sdk_index));
+				if (sdk_index < 0)
+				{
+					context.Fail("the SDK member pointer did not decode to a slot");
+				}
+				else if (static_cast<long long>(sdk_index) != entry->number)
+				{
+					context.Fail("the SDK declaration and the gamedata disagree about this slot");
+				}
+			}
+			else if (name == "GameEventManager")
+			{
+				VerifyGameEventManagerSlot(context, *entry);
+			}
+			else if (name == "CServerSideClient")
 			{
 				context.Detail("%lld (RTTI offset-to-top discriminator, not a slot)",
 					entry->number);
 			}
 			else if (name == "SetStateChanged")
 			{
-				context.Detail("slot %lld (cross-checked by the NetworkStateChanged decode)",
+				context.Detail("slot %lld (cross-checked in the NetworkStateChanged row)",
 					entry->number);
 			}
 			else
 			{
+				// Reported, not proven: proving a slot moved needs the class
+				// declaration, which the SDK does not have.
 				context.Detail("slot %lld (reported; the SDK does not declare the class)",
 					entry->number);
 			}
 		});
 	}
+}
 
+void GamedataSuite::VerifyGameEventManagerSlot(TestContext& context, const TomlData::Entry& entry)
+{
 	// The ecosystem calls this slot on ISource2Server and subtracts 8 from what
 	// comes back to reach IGameEventManager2. GameEventSuite records why this
 	// project will not blind-call server vtable slots, so the slot is read, its
 	// code decoded, and only an accessor-shaped body is ever called.
-	CS2ST_CALL(context, "vtables.GameEventManager", {
-		const TomlData::Entry* entry = data_.FindPlatform("vtables.GameEventManager",
-			CS2ST_WINDOWS != 0);
-		if (entry == nullptr || !entry->is_number || entry->number < 0)
-		{
-			context.Fail("the key is missing from the file");
-			return;
-		}
-		if (server_ == nullptr)
-		{
-			context.Fail("server does not answer %s; there is no object to read the slot from",
-				INTERFACEVERSION_SERVERGAMEDLL);
-			return;
-		}
-		const Module& server = context.GetModule("server");
-		if (!server.IsValid())
-		{
-			context.Fail("the server module is not loaded");
-			return;
-		}
+	if (entry.number < 0)
+	{
+		context.Fail("the slot number is negative");
+		return;
+	}
+	if (server_ == nullptr)
+	{
+		context.Fail("server does not answer %s; there is no object to read the slot from",
+			INTERFACEVERSION_SERVERGAMEDLL);
+		return;
+	}
+	const Module& server = context.GetModule("server");
+	if (!server.IsValid())
+	{
+		context.Fail("the server module is not loaded");
+		return;
+	}
 
-		const auto* const* vtable = *static_cast<const unsigned char* const* const*>(server_);
-		const unsigned char* fn = vtable[entry->number];
-		context.Detail("slot %lld -> %p", entry->number, static_cast<const void*>(fn));
-		if (!InModule(server, fn))
-		{
-			context.Fail("the slot points outside %s; the slot index is past the table",
-				server.name().c_str());
-			return;
-		}
-		if (fn[0] == 0xC3)
-		{
-			// The finding this row exists for: calling an empty stub returns
-			// whatever rax happened to hold, and "minus 8" turns that into a
-			// manager pointer every listener registration then dereferences.
-			context.Fail("slot %lld is an empty 'ret' stub on this build; the ecosystem's "
-			             "call returns an undefined register, not the manager", entry->number);
-			return;
-		}
+	const auto* const* vtable = *static_cast<const unsigned char* const* const*>(server_);
+	const unsigned char* fn = vtable[entry.number];
+	context.Detail("slot %lld -> %p", entry.number, static_cast<const void*>(fn));
+	if (!InModule(server, fn))
+	{
+		context.Fail("the slot points outside %s; the slot index is past the table",
+			server.name().c_str());
+		return;
+	}
+	if (fn[0] == 0xC3)
+	{
+		// The finding this row exists for: calling an empty stub returns
+		// whatever rax happened to hold, and "minus 8" turns that into a
+		// manager pointer every listener registration then dereferences.
+		context.Fail("slot %lld is an empty 'ret' stub on this build; the ecosystem's "
+		             "call returns an undefined register, not the manager", entry.number);
+		return;
+	}
 
-		// The accessor shape: lea rax,[rip+d] / mov rax,[rip+d], then ret.
-		const bool is_lea = fn[0] == 0x48 && fn[1] == 0x8D && fn[2] == 0x05;
-		const bool is_mov = fn[0] == 0x48 && fn[1] == 0x8B && fn[2] == 0x05;
-		if ((!is_lea && !is_mov) || fn[7] != 0xC3)
-		{
-			context.Fail("slot %lld does not have an accessor's shape (starts %02x %02x %02x); "
-			             "not calling it", entry->number, fn[0], fn[1], fn[2]);
-			return;
-		}
-		std::int32_t disp = 0;
-		std::memcpy(&disp, fn + 3, sizeof(disp));
-		const unsigned char* global = fn + 7 + disp;
-		void* decoded = is_lea ? const_cast<unsigned char*>(global) : SlotAt(global, 0);
+	// The accessor shape: lea rax,[rip+d] / mov rax,[rip+d], then ret.
+	const bool is_lea = fn[0] == 0x48 && fn[1] == 0x8D && fn[2] == 0x05;
+	const bool is_mov = fn[0] == 0x48 && fn[1] == 0x8B && fn[2] == 0x05;
+	if ((!is_lea && !is_mov) || fn[7] != 0xC3)
+	{
+		context.Fail("slot %lld does not have an accessor's shape (starts %02x %02x %02x); "
+		             "not calling it", entry.number, fn[0], fn[1], fn[2]);
+		return;
+	}
+	std::int32_t disp = 0;
+	std::memcpy(&disp, fn + 3, sizeof(disp));
+	const unsigned char* global = fn + 7 + disp;
+	void* decoded = is_lea ? const_cast<unsigned char*>(global) : SlotAt(global, 0);
 
-		using Accessor_t = void* (*)(void*);
-		void* returned = reinterpret_cast<Accessor_t>(const_cast<unsigned char*>(fn))(server_);
-		context.Detail("-> returned %p, decoded %p", returned, decoded);
-		if (returned != decoded)
-		{
-			context.Fail("the slot's return value and its decoded global disagree");
-			return;
-		}
+	using Accessor_t = void* (*)(void*);
+	void* returned = reinterpret_cast<Accessor_t>(const_cast<unsigned char*>(fn))(server_);
+	context.Detail("slot %lld returned %p, decoded %p", entry.number, returned, decoded);
+	if (returned != decoded)
+	{
+		context.Fail("the slot's return value and its decoded global disagree");
+		return;
+	}
 
-		void* manager = static_cast<unsigned char*>(returned) - 8;
-		if (!LooksLikeObjectPointer(manager) || !InModule(server, SlotAt(manager, 0)))
-		{
-			context.Fail("result - 8 (%p) does not carry a vtable inside %s; it is not an "
-			             "IGameEventManager2", manager, server.name().c_str());
-			return;
-		}
-		context.Detail("-> manager %p, vtable %p", manager, SlotAt(manager, 0));
-	});
+	void* manager = static_cast<unsigned char*>(returned) - 8;
+	if (!LooksLikeObjectPointer(manager) || !InModule(server, SlotAt(manager, 0)))
+	{
+		context.Fail("result - 8 (%p) does not carry a vtable inside %s; it is not an "
+		             "IGameEventManager2", manager, server.name().c_str());
+		return;
+	}
+	context.Detail("slot %lld -> manager %p, vtable %p", entry.number, manager,
+		SlotAt(manager, 0));
 }
 
 // -----------------------------------------------------------------------------
@@ -1766,25 +1875,7 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 
 void GamedataSuite::ExerciseStructOffsets(TestContext& context)
 {
-	context.Note("[offsets] byte offsets (two compared against offsetof)");
-
-	const std::string player_slot = "offsets.CheckTransmitPlayerSlot";
-	CS2ST_CALL(context, player_slot, {
-		const TomlData::Entry* entry = data_.FindPlatform("offsets.CheckTransmitPlayerSlot",
-			CS2ST_WINDOWS != 0);
-		if (entry == nullptr || !entry->is_number)
-		{
-			context.Fail("the key is missing from the file");
-			return;
-		}
-		const std::size_t sdk_offset = offsetof(CCheckTransmitInfo, m_nPlayerSlot);
-		context.Detail("gamedata %lld, offsetof %zu", entry->number, sdk_offset);
-		if (static_cast<long long>(sdk_offset) != entry->number)
-		{
-			context.Fail("the SDK declaration and the gamedata disagree; every "
-			             "CheckTransmit hook reads the wrong field");
-		}
-	});
+	context.Note("[offsets] byte offsets, one row per key (two compared against offsetof)");
 
 	const std::string entity_system = "offsets.GameEntitySystem";
 	CS2ST_CALL(context, entity_system, {
@@ -1811,17 +1902,35 @@ void GamedataSuite::ExerciseStructOffsets(TestContext& context)
 
 		if (resource_service_ == nullptr)
 		{
-			context.Detail("no live service object to read the offset from");
+			context.Detail("gamedata %lld, offsetof %zu; no live service object to read",
+				entry->number, sdk_offset);
 			return;
 		}
 		void* at_offset = SlotAt(resource_service_, sdk_offset);
-		context.Detail("+%zu on the live object reads %p (%s)",
-			sdk_offset, at_offset,
-			LooksLikeObjectPointer(at_offset) ? "plausible" : "NOT a plausible pointer");
+		context.Detail("gamedata %lld, offsetof %zu; live object reads %p", entry->number,
+			sdk_offset, at_offset);
 		if (!LooksLikeObjectPointer(at_offset))
 		{
-			context.Fail("the SDK's own offset reads a non-pointer from the live object; "
-			             "the declaration has drifted from the binary");
+			context.Fail("the offset reads a non-pointer from the live service object; the "
+			             "declaration has drifted from the binary");
+		}
+	});
+
+	const std::string player_slot = "offsets.CheckTransmitPlayerSlot";
+	CS2ST_CALL(context, player_slot, {
+		const TomlData::Entry* entry = data_.FindPlatform("offsets.CheckTransmitPlayerSlot",
+			CS2ST_WINDOWS != 0);
+		if (entry == nullptr || !entry->is_number)
+		{
+			context.Fail("the key is missing from the file");
+			return;
+		}
+		const std::size_t sdk_offset = offsetof(CCheckTransmitInfo, m_nPlayerSlot);
+		context.Detail("gamedata %lld, offsetof %zu", entry->number, sdk_offset);
+		if (static_cast<long long>(sdk_offset) != entry->number)
+		{
+			context.Fail("the SDK declaration and the gamedata disagree; every "
+			             "CheckTransmit hook reads the wrong field");
 		}
 	});
 
@@ -1869,8 +1978,8 @@ int GamedataSuite::InstallHooks(TestContext& context)
 	hook_accept_input_.AddContext(this, &GamedataSuite::Pre_AcceptInput,
 		&GamedataSuite::Post_AcceptInput);
 
-	hook_host_say_.Configure(host_say_);
-	hook_accept_input_.Configure(accept_input_);
+	hook_host_say_.Configure(Address(kHostSay));
+	hook_accept_input_.Configure(Address(kAcceptInput));
 
 	hooks_installed_ = true;
 	CS2ST_LOG_INFO("%s: Host_Say and CEntityInstance_AcceptInput detoured (observation "
