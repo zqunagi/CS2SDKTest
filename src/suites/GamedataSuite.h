@@ -42,10 +42,31 @@
  *                must not.
  *   CCSNavArea_IsValidNavMesh
  *                a boolean fact with a knowable answer on a loaded map.
+ *   the scan-only signatures (ExerciseSignatureBehaviours)
+ *                the rest of the file's keys, called for real. The ones
+ *                that need no game state run directly: a zero-connection
+ *                CEntityIOOutput must fire nothing and come back
+ *                unchanged, the game-event listener table is a pure
+ *                function with a computable answer, the game-system list
+ *                walks its own links. The player-shaped ones run against
+ *                a bot this suite adds through ServerCommand("bot_add")
+ *                and kicks afterwards - one run ahead of the exercise,
+ *                because a queued command lands on the next frame and the
+ *                sweep is synchronous. Every raw offset those calls read
+ *                (the pawn's team byte, the controller's pawn handle, the
+ *                item-services pointer) is resolved through the schema
+ *                system first, so the binary and the schema must agree
+ *                before anything is called - two independent sources, one
+ *                number, the same discipline as the vtable rows.
  *
- * Everything else resolves-and-reports: finding the bytes is the part that
- * breaks on update day, and a row that says "pattern no longer matches
- * anything" is the headline that row exists for.
+ * What still only resolves-and-reports: CGameEventManager_Init and
+ * NetworkStateChanged (verified by decoding their bytes, in
+ * ExerciseCodeDecodes), ClientPrint on Windows (its Linux pattern anchors
+ * a lea the decode reads; the Windows pattern anchors the prologue), and
+ * CBaseTrigger_StartTouch, whose pattern matches nothing on the builds
+ * checked. Finding the bytes is the part that breaks on update day, and a
+ * row that says "pattern no longer matches anything" is the headline that
+ * row exists for.
  *
  * Hooks: Host_Say and CEntityInstance_AcceptInput, installed only after the
  * sweep has validated the addresses. They are the two functions a plugin most
@@ -72,6 +93,9 @@
 
 class CCommand;
 class CEntityInstance;
+class CSchemaSystemTypeScope;
+class ISchemaSystem;
+class IVEngineServer2;
 
 namespace cs2st
 {
@@ -108,6 +132,40 @@ private:
 	/** Signatures verified by decoding their bytes where calling is unsafe. */
 	void ExerciseCodeDecodes(TestContext& context);
 
+	/**
+	 * The scan-only signatures, called: standalone ones first (a local
+	 * object or a global is the whole setup), then the ones that need a
+	 * player, against a bot this suite adds and kicks.
+	 */
+	void ExerciseSignatureBehaviours(TestContext& context);
+	void ExerciseStandaloneBehaviours(TestContext& context);
+	void ExerciseBotBehaviours(TestContext& context);
+
+	/**
+	 * (class name, field name) -> byte offset, off the server module's
+	 * schema type scope. False when either name does not resolve; the
+	 * behavioural checks then skip rather than guess an offset.
+	 */
+	bool SchemaOffset(const char* class_name, const char* field_name,
+	                  std::size_t& offset);
+	/** SchemaOffset over a fallback list; the field's declaring class wins. */
+	bool SchemaOffsetAny(const char* const* class_names, const char* field_name,
+	                     std::size_t& offset);
+
+	/**
+	 * Finds the bot's controller/pawn pair by walking the entity list for
+	 * CCSPlayerController entities named cs_bot, then the pawn handle off
+	 * the controller. False when no bot is in the server.
+	 */
+	bool FindBotPair(CEntityInstance*& controller, CEntityInstance*& pawn);
+
+	/**
+	 * Walks the active entity list matching the C++ class name off each
+	 * identity's class (EntityInstanceByClassIter_t matches designer names,
+	 * which is a different axis). Null when nothing in the list is one.
+	 */
+	CEntityInstance* FindEntityByCppClassname(const char* cpp_class_name);
+
 	/** vtable slots cross-checked against SDK-computed indexes. */
 	void ExerciseVtableSlots(TestContext& context);
 
@@ -139,6 +197,13 @@ private:
 	/** ISource2Server, whose vtables.GameEventManager slot is decoded. */
 	void* server_ = nullptr;
 
+	/** ServerCommand - the bot_add / bot_kick route. Null is not fatal. */
+	IVEngineServer2* engine_ = nullptr;
+
+	/** The schema system and the server module's type scope, for offsets. */
+	ISchemaSystem* schema_ = nullptr;
+	CSchemaSystemTypeScope* server_scope_ = nullptr;
+
 	/**
 	 * Resolved addresses the hooks and behavioural calls need, filled by the
 	 * sweep. Null until a run has matched the corresponding pattern.
@@ -152,6 +217,26 @@ private:
 	void* navmesh_ = nullptr;
 	void* event_manager_init_ = nullptr;
 	void* network_state_changed_ = nullptr;
+
+	/** The scan-only signatures the behavioural layer calls. */
+	void* client_print_all_ = nullptr;
+	void* client_print_ = nullptr;
+	void* switch_team_ = nullptr;
+	void* set_pawn_ = nullptr;
+	void* post_think_ = nullptr;
+	void* give_named_item_ = nullptr;
+	void* set_model_ = nullptr;
+	void* can_use_ = nullptr;
+	void* can_acquire_ = nullptr;
+	void* terminate_round_ = nullptr;
+	void* emit_sound_filter_ = nullptr;
+	void* add_entity_io_event_ = nullptr;
+	void* legacy_listener_ = nullptr;
+	void* remove_player_item_ = nullptr;
+	void* take_damage_old_ = nullptr;
+	void* end_touch_ = nullptr;
+	void* fire_output_internal_ = nullptr;
+	void* gamesystem_pfirst_ = nullptr;
 
 	/** The navmesh global the IsValidNavMesh stub compares, decoded by the sweep. */
 	void* navmesh_slot_ = nullptr;
