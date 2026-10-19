@@ -120,11 +120,11 @@
  * often detours out of this file, and both observe only.
  *
  * GameEventManager (a slot on ISource2Server): the ecosystem's route to
- * IGameEventManager2 is to call that slot and subtract 8 from the result.
- * GameEventSuite documents why this project will not blind-call server vtable
- * slots, so the slot's code is decoded first and only an accessor-shaped body
- * (lea/mov rax,[rip+d]; ret) is called - an empty 'ret' stub, which is what
- * slot 93 is on Linux build 25815307, fails the row instead.
+ * IGameEventManager2 was to call that slot and subtract 8 from the result.
+ * Nothing consumes that route anymore, so the row skips - the key stays in
+ * the file so the slot number is still recorded, but the decode that used to
+ * run asserted a route nothing travels. GameEventSuite documents why this
+ * project never blind-called the slot in the first place.
  */
 
 #ifndef CS2SDKTEST_SUITES_GAMEDATASUITE_H_
@@ -299,7 +299,6 @@ private:
 
 	/** vtable slots, one row per key, in file order. */
 	void ExerciseVtableSlots(TestContext& context);
-	void VerifyGameEventManagerSlot(TestContext& context, const TomlData::Entry& entry);
 
 	/**
 	 * The function pointer at `slot` in `object`'s vtable, when that pointer
@@ -365,9 +364,6 @@ private:
 
 	/** The service object offsets.GameEntitySystem is read from, when present. */
 	void* resource_service_ = nullptr;
-
-	/** ISource2Server, whose vtables.GameEventManager slot is decoded. */
-	void* server_ = nullptr;
 
 	/** ServerCommand - the bot_add route. Null is not fatal. */
 	IVEngineServer2* engine_ = nullptr;

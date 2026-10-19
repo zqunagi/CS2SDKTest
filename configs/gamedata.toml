@@ -214,7 +214,8 @@ linux   = 164
 
 [vtables.GameEventManager]
 # vtable slot of ISource2Server whose return value, minus 8, is the
-# IGameEventManager2 - see GameEventSuite for why nothing calls it blindly
+# IGameEventManager2 - the ecosystem's route. Nothing consumes it anymore,
+# so the row skips: the number is recorded, the slot is not decoded.
 value = 93
 
 [vtables.CEntityResourceManifest_AddResource]

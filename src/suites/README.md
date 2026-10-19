@@ -140,10 +140,10 @@ longer resolves is the part that breaks on update day.
 
 Its hooks are the ecosystem's two most-detoured functions — Host_Say and
 CEntityInstance_AcceptInput — installed only after the sweep has matched
-their patterns, observation only. One key is deliberately never used:
+their patterns, observation only. One key is deliberately skipped:
 GameEventManager (slot 93 on ISource2Server), the ecosystem's route to
-IGameEventManager2; GameEventSuite records why this project will not
-blind-call server vtable slots, and this suite reports the number instead.
+IGameEventManager2; nothing consumes that route anymore, so the row
+records the number and skips the decode.
 
 Vocabulary: a *module* in this codebase is always a loaded shared library
 (engine2.so, server.so — see data/GameModules.h). A *suite* is one of these

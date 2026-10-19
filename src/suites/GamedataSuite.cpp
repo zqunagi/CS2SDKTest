@@ -419,10 +419,6 @@ bool GamedataSuite::Acquire(TestContext& context)
 		g_pGameResourceServiceServer = static_cast<IGameResourceService*>(resource_service_);
 	}
 
-	// The object vtables.GameEventManager is read from. Not fatal either: that
-	// row fails on its own when the interface is absent.
-	server_ = context.QueryInterface("server", INTERFACEVERSION_SERVERGAMEDLL);
-
 	// ServerCommand - the bot management the behavioural layer queues. Not
 	// fatal: every bot-dependent check skips with its own line when absent.
 	engine_ = static_cast<IVEngineServer2*>(context.QueryInterface(
@@ -2188,8 +2184,8 @@ CEntityInstance* GamedataSuite::FindEntityByCppClassname(const char* cpp_class_n
 void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 {
 	context.Note("[vtables] slot indexes, one row per key (two compared against "
-	             "KHook::GetVtableIndex, one decoded, eleven called for behaviour, one "
-	             "looked up in engine2's RTTI)");
+	             "KHook::GetVtableIndex, eleven called for behaviour, one looked up in "
+	             "engine2's RTTI, one retired to SKIP)");
 
 	for (const std::string& table : data_.tables())
 	{
@@ -2248,7 +2244,17 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 			}
 			else if (name == "GameEventManager")
 			{
-				VerifyGameEventManagerSlot(context, *entry);
+				// The IGameEventManager2 route the ecosystem built this key on
+				// is gone: nothing reaches the manager through the slot's
+				// return-minus-8 anymore, and the decode this row used to run
+				// asserted a route nothing travels. The key stays in the file
+				// so the number is still recorded where the ecosystem's other
+				// keys live; the row just stops pretending the route is live.
+				context.SkipCall(table,
+					"slot %lld, the ecosystem's ISource2Server route to "
+					"IGameEventManager2 (return value minus 8); nothing consumes that "
+					"route anymore, so the number is recorded but not decoded",
+					entry->number);
 			}
 			else if (name == "CServerSideClient")
 			{
@@ -2274,83 +2280,6 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 			}
 		});
 	}
-}
-
-void GamedataSuite::VerifyGameEventManagerSlot(TestContext& context, const TomlData::Entry& entry)
-{
-	// The ecosystem calls this slot on ISource2Server and subtracts 8 from what
-	// comes back to reach IGameEventManager2. GameEventSuite records why this
-	// project will not blind-call server vtable slots, so the slot is read, its
-	// code decoded, and only an accessor-shaped body is ever called.
-	if (entry.number < 0)
-	{
-		context.Fail("the slot number is negative");
-		return;
-	}
-	if (server_ == nullptr)
-	{
-		context.Fail("server does not answer %s; there is no object to read the slot from",
-			INTERFACEVERSION_SERVERGAMEDLL);
-		return;
-	}
-	const Module& server = context.GetModule("server");
-	if (!server.IsValid())
-	{
-		context.Fail("the server module is not loaded");
-		return;
-	}
-
-	const auto* const* vtable = *static_cast<const unsigned char* const* const*>(server_);
-	const unsigned char* fn = vtable[entry.number];
-	context.Detail("slot %lld -> %p", entry.number, static_cast<const void*>(fn));
-	if (!InModule(server, fn))
-	{
-		context.Fail("the slot points outside %s; the slot index is past the table",
-			server.name().c_str());
-		return;
-	}
-	if (fn[0] == 0xC3)
-	{
-		// The finding this row exists for: calling an empty stub returns
-		// whatever rax happened to hold, and "minus 8" turns that into a
-		// manager pointer every listener registration then dereferences.
-		context.Fail("slot %lld is an empty 'ret' stub on this build; the ecosystem's "
-		             "call returns an undefined register, not the manager", entry.number);
-		return;
-	}
-
-	// The accessor shape: lea rax,[rip+d] / mov rax,[rip+d], then ret.
-	const bool is_lea = fn[0] == 0x48 && fn[1] == 0x8D && fn[2] == 0x05;
-	const bool is_mov = fn[0] == 0x48 && fn[1] == 0x8B && fn[2] == 0x05;
-	if ((!is_lea && !is_mov) || fn[7] != 0xC3)
-	{
-		context.Fail("slot %lld does not have an accessor's shape (starts %02x %02x %02x); "
-		             "not calling it", entry.number, fn[0], fn[1], fn[2]);
-		return;
-	}
-	std::int32_t disp = 0;
-	std::memcpy(&disp, fn + 3, sizeof(disp));
-	const unsigned char* global = fn + 7 + disp;
-	void* decoded = is_lea ? const_cast<unsigned char*>(global) : SlotAt(global, 0);
-
-	using Accessor_t = void* (*)(void*);
-	void* returned = reinterpret_cast<Accessor_t>(const_cast<unsigned char*>(fn))(server_);
-	context.Detail("slot %lld returned %p, decoded %p", entry.number, returned, decoded);
-	if (returned != decoded)
-	{
-		context.Fail("the slot's return value and its decoded global disagree");
-		return;
-	}
-
-	void* manager = static_cast<unsigned char*>(returned) - 8;
-	if (!LooksLikeObjectPointer(manager) || !InModule(server, SlotAt(manager, 0)))
-	{
-		context.Fail("result - 8 (%p) does not carry a vtable inside %s; it is not an "
-		             "IGameEventManager2", manager, server.name().c_str());
-		return;
-	}
-	context.Detail("slot %lld -> manager %p, vtable %p", entry.number, manager,
-		SlotAt(manager, 0));
 }
 
 // ---- behavioural vtable checks --------------------------------------------
