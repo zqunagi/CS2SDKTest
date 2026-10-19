@@ -124,6 +124,16 @@ library = "server"
 windows = "40 55 53 56 57 41 54 48 8D 6C 24 ? 48 81 EC ? ? ? ? 4D 8B E0"
 linux   = "55 66 0F EF C0 48 89 E5 41 57 41 56 41 55 49 89 FD 31 FF"
 
+# CTakeDamageInfo's default constructor (the "no damage yet" template the
+# game's own TakeDamageOld callers build their info from). TakeDamageOld
+# must not be handed a zeroed block: the constructor writes the vtable at
+# +0, FLT_MAX pairs at +32/+40, 1.0f at +128 and -1 handles at +232..248,
+# and the body walks those. Linux-only for now: the row reports the scan
+# miss on Windows instead of guessing a pattern there.
+[signatures.CTakeDamageInfo_Constructor]
+library = "server"
+linux   = "48 8D 05 ? ? ? ? C6 47 54 FF 48 C7 87 88 00 00 00 00 00 00 00 48 C7 87 90 00 00 00 00 00 00 00"
+
 [signatures.CBaseTrigger_StartTouch]
 library = "server"
 windows = "40 57 41 56 48 83 EC ? 48 8B 01"

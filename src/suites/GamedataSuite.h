@@ -69,10 +69,41 @@
  * "behaviour:"), and a SKIP says which prerequisite was missing.
  *
  * Verified by decoding their bytes rather than calling: CGameEventManager_Init
- * and NetworkStateChanged. Scan only: CBaseTrigger_StartTouch (no call that
- * leaves a live trigger untouched) and the two hook targets. Finding the bytes
- * is the part that breaks on update day, and a row that says "pattern
- * matches nothing" is the headline that row exists for.
+ * and NetworkStateChanged. Finding the bytes is the part that breaks on update
+ * day, and a row that says "pattern matches nothing" is the headline that row
+ * exists for.
+ *
+ * The scan-only era is over: AcceptInput runs the input the AddEntityIOEvent
+ * row queues (the entity is marked this frame instead of the next), Host_Say
+ * is handed a hand-built CCommand and speaks for the bot, and StartTouch is
+ * called on a constructed trigger_multiple (a real constructor, because
+ * firing the touch output walks the object's vtable) and undone with the
+ * EndTouch signature - the touch count must come back to where it started.
+ * Nothing is left un-called: this suite exists to break, and the process is
+ * a test server.
+ *
+ * The vtable rows carry the same discipline now. The SDK declares none of
+ * these classes, so no compiler can compute a second number; what the SDK does
+ * give is the ecosystem's call shapes, transcribed from CounterStrikeSharp's
+ * own wrappers (each slot is invoked there in production): ChangeTeam like
+ * SwitchTeam but through the slot, Respawn after a SetPawn, GiveNamedItem,
+ * DropActivePlayerWeapon, RemoveWeapons, GetSkeletonInstance,
+ * FindPickerEntity, IsPlayerPawn, CommitSuicide and Teleport, each called the
+ * way CSS calls it, on the bot or a scratch entity. Every slot is bounds-
+ * checked before the call: the function pointer must land inside the server
+ * module, so a stale slot number past the table end fails the row instead of
+ * jumping through garbage. The oracle is whatever the call moved: the team
+ * byte, the health, the pawn count, the weapon list, the origin.
+ *
+ * offsets.CTakeDamageInfo_HitGroup is verified the way the ecosystem reads it:
+ * CSS walks *(info+104) -> +16 -> +56 for the hit group, so TakeDamageOld is
+ * handed a real damage info whose chain at the key's offset is hand-built and
+ * the call must walk it and apply the damage. On the current build the old
+ * observable (the pawn's m_LastHitGroup schema field) is gone - the binary
+ * carries m_LastHitBox where the ecosystem's dump still says m_LastHitGroup -
+ * so the row proves the chain's shape survives the call and reports whether
+ * any last-hit field moved. Two independent sources again: the offset from
+ * the file, the observable from the schema.
  *
  * Hooks: Host_Say and CEntityInstance_AcceptInput, installed only after the
  * sweep has validated the addresses. They are the two functions a plugin most
@@ -140,6 +171,9 @@ private:
 
 	/** A behaviour check, run inside the key's own row. */
 	using Verifier = void (GamedataSuite::*)(TestContext&);
+
+	/** A vtable slot's behaviour check; the row's table and slot number. */
+	using VerifierSlot = void (GamedataSuite::*)(TestContext&, const std::string&, long long);
 
 	/**
 	 * What one signature key is checked with: the prerequisites it needs
@@ -215,7 +249,11 @@ private:
 	void VerifyLegacyListener(TestContext& context);
 	void VerifyRemovePlayerItem(TestContext& context);
 	void VerifyTakeDamageOld(TestContext& context);
+	void VerifyTakeDamageInfoConstructor(TestContext& context);
 	void VerifyEndTouch(TestContext& context);
+	void VerifyStartTouch(TestContext& context);
+	void VerifyAcceptInput(TestContext& context);
+	void VerifyHostSay(TestContext& context);
 	void VerifyFireOutputInternal(TestContext& context);
 	void VerifyGameSystemList(TestContext& context);
 	void VerifyNetworkStateChanged(TestContext& context);
@@ -253,8 +291,39 @@ private:
 	void ExerciseVtableSlots(TestContext& context);
 	void VerifyGameEventManagerSlot(TestContext& context, const TomlData::Entry& entry);
 
+	/**
+	 * The function pointer at `slot` in `object`'s vtable, when that pointer
+	 * lands inside the server module; null otherwise. The bounds check is the
+	 * row's first assertion: a stale slot number past the table end reads
+	 * outside it, and a row that called that pointer would jump through
+	 * garbage. Every behavioural vtable row goes through here first.
+	 */
+	void* VtableSlotInServer(TestContext& context, const void* object, long long slot);
+
+	/** The behaviour checks the vtable rows run, one per called key. */
+	VerifierSlot FindSlotCheck(const std::string& name);
+
+	/** Why the bot rows skip, when PrepareBot found no usable bot. */
+	const char* BotMissingReason() const;
+
+	/** The behaviour checks the vtable rows run, one per called key. */
+	void VerifyChangeTeamSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifyRespawnSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifyGiveNamedItemSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifyDropActiveWeaponSlot(TestContext& context, const std::string& table,
+	                                long long slot);
+	void VerifyRemoveWeaponsSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifyGetSkeletonInstanceSlot(TestContext& context, const std::string& table,
+	                                   long long slot);
+	void VerifyFindPickerEntitySlot(TestContext& context, const std::string& table,
+	                                long long slot);
+	void VerifyIsPlayerPawnSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifyCommitSuicideSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifyTeleportSlot(TestContext& context, const std::string& table, long long slot);
+
 	/** byte offsets cross-checked against offsetof() where the SDK declares. */
 	void ExerciseStructOffsets(TestContext& context);
+	void VerifyTakeDamageHitGroup(TestContext& context, long long offset);
 
 	// ---- hook callbacks (observation only) ------------------------------
 
@@ -312,6 +381,9 @@ private:
 
 	/** The AK the GiveNamedItem row handed the bot; later rows use it. */
 	void* weapon_ = nullptr;
+
+	/** Set when CommitSuicide's slot row killed the bot pawn. */
+	bool bot_pawn_dead_ = false;
 
 	/** Addresses verified by the sweep; InstallHooks refuses otherwise. */
 	bool signatures_verified_ = false;

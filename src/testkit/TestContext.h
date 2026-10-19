@@ -139,6 +139,8 @@ private:
 
 	std::string section_;
 	std::string pending_detail_;
+	/** Last SkipCall reason set inside a RunCall body, or empty. */
+	std::string pending_skip_;
 	std::string pending_failure_;
 	std::string pending_suspect_;
 	bool in_call_ = false;

@@ -168,6 +168,7 @@ CallOutcome TestContext::RunCall(const std::string& target, const std::function<
 	pending_detail_.clear();
 	pending_failure_.clear();
 	pending_suspect_.clear();
+	pending_skip_.clear();
 	in_call_ = true;
 
 	// Without a guard the call can take the process down, so the target is
@@ -201,6 +202,14 @@ CallOutcome TestContext::RunCall(const std::string& target, const std::function<
 		outcome = CallOutcome::kSuspect;
 		detail = pending_suspect_ + (detail.empty() ? "" : " (" + detail + ")");
 	}
+	else if (outcome == CallOutcome::kOk && !pending_skip_.empty())
+	{
+		// A SkipCall from inside the body: recorded here rather than twice.
+		// GamedataSuite's slot checks discover their prerequisites inside the
+		// row (the bot, the item services), and the skip is the row's verdict.
+		outcome = CallOutcome::kSkipped;
+		detail = pending_skip_ + (detail.empty() ? "" : " (" + detail + ")");
+	}
 
 	Record(target, outcome, detail);
 	return outcome;
@@ -213,6 +222,13 @@ void TestContext::SkipCall(const std::string& target, const char* format, ...)
 	const std::string reason = FormatToString(format, args);
 	va_end(args);
 
+	// Inside a RunCall body this defers to the row's own Record (see
+	// RunCall), so the row is counted once.
+	if (in_call_)
+	{
+		pending_skip_ = reason;
+		return;
+	}
 	Record(target, CallOutcome::kSkipped, reason);
 }
 
