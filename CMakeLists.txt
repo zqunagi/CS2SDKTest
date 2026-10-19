@@ -297,6 +297,12 @@ endforeach()
 # Warnings for our own sources only - the SDK's are silenced in hl2sdk::headers.
 if(MSVC)
   target_compile_options(cs2sdktest PRIVATE /W4)
+  # C4355 fires on every suite constructor: the KHook::Virtual initializers
+  # take `this` as their context argument. The hook ctor only stores the
+  # pointer (it never dereferences it or calls back before construction
+  # finishes), so the "this used in member initializer list" warning is a
+  # false positive for this binding pattern.
+  target_compile_options(cs2sdktest PRIVATE /wd4355)
   if(CS2SDKTEST_WARNINGS_AS_ERRORS)
     target_compile_options(cs2sdktest PRIVATE /WX)
   endif()

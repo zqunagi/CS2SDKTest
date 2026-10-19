@@ -105,6 +105,7 @@ if(MSVC)
     /wd4005           # macro redefinition (SDK redefines several CRT names)
     /wd4996           # deprecated CRT calls inside the SDK
     /wd4267 /wd4244   # size_t/int narrowing, pervasive in the SDK
+    /wd4355           # 'this' used in base member initializer list
   )
   target_link_libraries(hl2sdk_headers INTERFACE legacy_stdio_definitions.lib)
   # Valve ships the .lib files without their .pdb; LNK4099 on every one of them
