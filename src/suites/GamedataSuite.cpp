@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 #include <engine2/igameresourceservice.h>
 #include <engine2/ivengineserver2.h>
@@ -25,6 +26,11 @@
 #include "core/SignatureScan.h"
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
+
+#if !CS2ST_WINDOWS
+#include <elf.h>
+#include <link.h>
+#endif
 
 /**
  * The one suite whose subject is not an SDK interface but a config file: the
@@ -228,6 +234,134 @@ constexpr unsigned kNeedsBot = 1u << 1;          // a bot is in the server
 constexpr unsigned kNeedsItemServices = 1u << 2; // the bot pawn's m_pItemServices
 constexpr unsigned kNeedsWeapon = 1u << 3;       // the GiveNamedItem row's AK
 constexpr unsigned kNeedsWeaponData = 1u << 4;   // GetCSWeaponDataFromKey resolved
+
+/**
+ * The skip reason of a live-pawn vtable row once bot_pawn_dead_ is set: an
+ * earlier row (Respawn failing to bring the bot back, or CommitSuicide)
+ * left the pawn dead, and a dead pawn's empty arsenal, zero health and set
+ * life state would pass these rows for any slot.
+ */
+constexpr const char* kBotPawnDeadReason =
+	"the bot pawn is dead (an earlier row killed it and it did not come back); "
+	"a dead pawn's state proves nothing about this slot";
+
+/**
+ * A trace filter for FindPickerEntity. The body (build 25947352,
+ * server+0x19a37e0) hands every candidate it is about to return - the eye
+ * trace's hit, and each entity of its fallback walk - to the filter's slot 0,
+ * `bool ShouldHitEntity(this, entity)`, and drops it when the answer is no.
+ * Slot 0 is the only one either path calls, so a one-slot vtable is the whole
+ * object. The probe records what it was offered and answers g_picker_answer.
+ */
+struct PickerProbe
+{
+	const void* const* vtable;
+};
+
+constexpr int kPickerSeenMax = 8192;
+bool g_picker_answer = false;
+int g_picker_calls = 0;
+int g_picker_seen_count = 0;
+void* g_picker_seen[kPickerSeenMax];
+
+bool PickerProbeShouldHit(void* self, void* entity)
+{
+	(void)self;
+	if (g_picker_seen_count < kPickerSeenMax)
+	{
+		g_picker_seen[g_picker_seen_count++] = entity;
+	}
+	++g_picker_calls;
+	return g_picker_answer;
+}
+
+const void* const kPickerProbeVtable[] = {reinterpret_cast<const void*>(&PickerProbeShouldHit)};
+
+/** One readable stretch of a module's image. */
+struct ByteRange
+{
+	const unsigned char* begin;
+	std::size_t size;
+};
+
+/**
+ * The readable parts of `module`. On Linux the module's span covers the gaps
+ * between PT_LOAD segments, which the loader may leave PROT_NONE, so a
+ * whole-image read is only safe segment by segment: the program headers are
+ * read off the ELF header at the load bias. A PE image is mapped whole.
+ */
+std::vector<ByteRange> ReadableRanges(const Module& module)
+{
+	std::vector<ByteRange> ranges;
+	const auto* base = static_cast<const unsigned char*>(module.base());
+	if (base == nullptr || module.size() == 0)
+	{
+		return ranges;
+	}
+#if !CS2ST_WINDOWS
+	ElfW(Ehdr) header;
+	std::memcpy(&header, base, sizeof(header));
+	if (std::memcmp(header.e_ident, ELFMAG, SELFMAG) == 0
+	    && header.e_phentsize == sizeof(ElfW(Phdr)))
+	{
+		for (int i = 0; i < header.e_phnum; ++i)
+		{
+			ElfW(Phdr) phdr;
+			std::memcpy(&phdr, base + header.e_phoff + i * sizeof(phdr), sizeof(phdr));
+			if (phdr.p_type == PT_LOAD && (phdr.p_flags & PF_R) != 0
+			    && phdr.p_vaddr + phdr.p_memsz <= module.size())
+			{
+				ranges.push_back({base + phdr.p_vaddr, static_cast<std::size_t>(phdr.p_memsz)});
+			}
+		}
+	}
+#endif
+	if (ranges.empty())
+	{
+		ranges.push_back({base, module.size()});
+	}
+	return ranges;
+}
+
+/** Every address in `ranges` where the NUL-terminated `text` starts. */
+std::vector<const unsigned char*> FindStrings(const std::vector<ByteRange>& ranges,
+                                              const char* text)
+{
+	std::vector<const unsigned char*> hits;
+	const std::size_t length = std::strlen(text) + 1; // the terminator is part of the match
+	for (const ByteRange& range : ranges)
+	{
+		for (std::size_t i = 0; i + length <= range.size; ++i)
+		{
+			if (range.begin[i] == static_cast<unsigned char>(text[0])
+			    && std::memcmp(range.begin + i, text, length) == 0)
+			{
+				hits.push_back(range.begin + i);
+			}
+		}
+	}
+	return hits;
+}
+
+/** Every 8-aligned address in `ranges` holding the pointer `value`. */
+std::vector<const unsigned char*> FindPointerRefs(const std::vector<ByteRange>& ranges,
+                                                  const void* value)
+{
+	std::vector<const unsigned char*> hits;
+	for (const ByteRange& range : ranges)
+	{
+		const std::uintptr_t start = reinterpret_cast<std::uintptr_t>(range.begin);
+		std::size_t i = static_cast<std::size_t>((8 - (start % 8)) % 8);
+		for (; i + sizeof(void*) <= range.size; i += sizeof(void*))
+		{
+			if (SlotAt(range.begin, i) == value)
+			{
+				hits.push_back(range.begin + i);
+			}
+		}
+	}
+	return hits;
+}
 
 } // namespace
 
@@ -2054,7 +2188,8 @@ CEntityInstance* GamedataSuite::FindEntityByCppClassname(const char* cpp_class_n
 void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 {
 	context.Note("[vtables] slot indexes, one row per key (two compared against "
-	             "KHook::GetVtableIndex, ten called for behaviour)");
+	             "KHook::GetVtableIndex, one decoded, eleven called for behaviour, one "
+	             "looked up in engine2's RTTI)");
 
 	for (const std::string& table : data_.tables())
 	{
@@ -2117,13 +2252,7 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 			}
 			else if (name == "CServerSideClient")
 			{
-				context.Detail("%lld (RTTI offset-to-top discriminator, not a slot)",
-					entry->number);
-			}
-			else if (name == "SetStateChanged")
-			{
-				context.Detail("slot %lld (cross-checked in the NetworkStateChanged row)",
-					entry->number);
+				VerifyServerSideClientRtti(context, *entry);
 			}
 			else
 			{
@@ -2252,6 +2381,7 @@ GamedataSuite::VerifierSlot GamedataSuite::FindSlotCheck(const std::string& name
 		{"CBaseEntity_IsPlayerPawn", &GamedataSuite::VerifyIsPlayerPawnSlot},
 		{"CBasePlayerPawn_CommitSuicide", &GamedataSuite::VerifyCommitSuicideSlot},
 		{"CBaseEntity_Teleport", &GamedataSuite::VerifyTeleportSlot},
+		{"SetStateChanged", &GamedataSuite::VerifySetStateChangedSlot},
 	};
 
 	for (const auto& check : kSlotChecks)
@@ -2354,19 +2484,66 @@ void GamedataSuite::VerifyRespawnSlot(TestContext& context, const std::string& t
 {
 	// CSS's Respawn: SetPawn first ("the Call To Arms update appears to have
 	// invalidated the need for CCSPlayerPawn_Respawn", its comment), then the
-	// slot. The oracle is the pawn handle and health: the respawn must leave
-	// the controller holding a pawn whose health reads positive.
+	// slot. On build 25947352 the slot is CCSPlayerController::Respawn
+	// (server+0x153d9c0), which resets the controller's death state and ends
+	// in the pawn's own Respawn (pawn vtable +3272).
+	//
+	// Calling it on a live bot proves nothing - a live pawn already has a
+	// handle and 100 health, so every pointer-shaped slot passes. The real
+	// question is the one the ecosystem asks: does a dead player come back?
+	// So the bot is killed first through vtables.CBasePlayerPawn_CommitSuicide
+	// (the same (true, true) call that row makes), its death is confirmed
+	// through m_lifeState, and only then is the slot called. The oracle is a
+	// dead pawn (m_lifeState != 0) reading alive (m_lifeState 0, health > 0)
+	// after the call - nothing but a respawn turns one into the other. The
+	// bot leaves the row alive, so the rows after it still have a pawn.
 	if (bot_controller_ == nullptr || bot_pawn_ == nullptr)
 	{
 		context.SkipCall(table, "slot %lld | %s", slot, BotMissingReason());
 		return;
 	}
 	std::size_t health_offset = 0;
+	std::size_t life_offset = 0;
 	std::size_t pawn_offset = 0;
 	if (!SchemaOffset("CBaseEntity", "m_iHealth", health_offset)
+	    || !SchemaOffset("CBaseEntity", "m_lifeState", life_offset)
 	    || !SchemaOffset("CBasePlayerController", "m_hPawn", pawn_offset))
 	{
-		context.Fail("setup: m_iHealth or m_hPawn did not resolve through the schema");
+		context.Fail("setup: m_iHealth, m_lifeState or m_hPawn did not resolve through the "
+		             "schema");
+		return;
+	}
+	const auto set_pawn = reinterpret_cast<SetPawn_t>(Address("CBasePlayerController_SetPawn"));
+	if (set_pawn == nullptr)
+	{
+		context.SkipCall(table, "slot %lld | needs CBasePlayerController_SetPawn, which did "
+		                        "not resolve", slot);
+		return;
+	}
+	// The kill goes through the CommitSuicide key. Its slot is bounds-checked
+	// here by hand rather than through VtableSlotInServer: a bad suicide slot
+	// is a missing prerequisite of this row, not a finding against it.
+	const TomlData::Entry* suicide_entry = data_.FindPlatform(
+		"vtables.CBasePlayerPawn_CommitSuicide", CS2ST_WINDOWS != 0);
+	const Module& server = context.GetModule("server");
+	void* suicide_fn = nullptr;
+	if (suicide_entry != nullptr && suicide_entry->is_number && suicide_entry->number >= 0)
+	{
+		const void* pawn_vtable = SlotAt(bot_pawn_, 0);
+		if (InModule(server, pawn_vtable))
+		{
+			suicide_fn = SlotAt(pawn_vtable,
+				static_cast<std::size_t>(suicide_entry->number) * sizeof(void*));
+			if (!InModule(server, suicide_fn))
+			{
+				suicide_fn = nullptr;
+			}
+		}
+	}
+	if (suicide_fn == nullptr)
+	{
+		context.SkipCall(table, "slot %lld | needs vtables.CBasePlayerPawn_CommitSuicide to "
+		                        "kill the bot first, and that slot is not usable", slot);
 		return;
 	}
 	void* fn = VtableSlotInServer(context, bot_controller_, slot);
@@ -2375,40 +2552,52 @@ void GamedataSuite::VerifyRespawnSlot(TestContext& context, const std::string& t
 		return;
 	}
 	const auto respawn = reinterpret_cast<void (*)(void*)>(fn);
-	const auto set_pawn = reinterpret_cast<SetPawn_t>(Address("CBasePlayerController_SetPawn"));
-	if (set_pawn == nullptr)
+
+	const auto* pawn_bytes = reinterpret_cast<const unsigned char*>(bot_pawn_);
+	const auto read_life = [&]() {
+		std::uint8_t life = 0;
+		std::memcpy(&life, pawn_bytes + life_offset, sizeof(life));
+		return life;
+	};
+	const auto read_health = [&]() {
+		std::int32_t health = 0;
+		std::memcpy(&health, pawn_bytes + health_offset, sizeof(health));
+		return health;
+	};
+
+	if (read_life() == 0)
 	{
-		context.SkipCall(table, "slot %lld | needs CBasePlayerController_SetPawn, which did "
-		                        "not resolve", slot);
+		reinterpret_cast<void (*)(void*, bool, bool)>(suicide_fn)(bot_pawn_, true, true);
+	}
+	const std::uint8_t dead_life = read_life();
+	const std::int32_t dead_health = read_health();
+	if (dead_life == 0)
+	{
+		context.SkipCall(table, "slot %lld | the bot did not die on CommitSuicide (health %d, "
+		                        "m_lifeState 0); there is nothing to respawn", slot, dead_health);
 		return;
 	}
 
 	// CSS's exact sequence: hand the controller its own pawn back through
-	// SetPawn (its Respawn wrapper's first line), then the slot. The oracle
-	// is the pawn handle and the pawn's health: a respawned bot holds a
-	// pawn whose health reads positive.
-	std::uint32_t original = 0;
-	std::memcpy(&original, reinterpret_cast<const unsigned char*>(bot_controller_)
-		+ pawn_offset, sizeof(original));
+	// SetPawn (its Respawn wrapper's first line), then the slot.
 	set_pawn(bot_controller_, bot_pawn_, false, false, false, false);
 	respawn(bot_controller_);
 
-	std::uint32_t after = 0;
-	std::memcpy(&after, reinterpret_cast<const unsigned char*>(bot_controller_)
-		+ pawn_offset, sizeof(after));
-	std::int32_t health = 0;
-	std::memcpy(&health, reinterpret_cast<const unsigned char*>(bot_pawn_) + health_offset,
-		sizeof(health));
-
-	RowDetail(context, "m_hPawn 0x%08x before, 0x%08x after, pawn health %d", original, after,
-		health);
-	if (after == 0xFFFFFFFFu)
+	const std::uint8_t life = read_life();
+	const std::int32_t health = read_health();
+	std::uint32_t hpawn = 0;
+	std::memcpy(&hpawn, reinterpret_cast<const unsigned char*>(bot_controller_) + pawn_offset,
+		sizeof(hpawn));
+	RowDetail(context, "killed first: health %d, m_lifeState %u -> after the slot: health %d, "
+	                   "m_lifeState %u, m_hPawn 0x%08x", dead_health, dead_life, health, life,
+		hpawn);
+	if (life != 0 || health <= 0)
 	{
-		context.Suspect("behaviour: the controller has no pawn after the respawn");
-	}
-	else if (health <= 0)
-	{
-		context.Suspect("behaviour: the pawn's health is not positive after the respawn");
+		// The bot stays dead: the rows after this one must not treat it as a
+		// live pawn.
+		bot_pawn_dead_ = true;
+		context.Fail("behaviour: the dead pawn did not come back alive; the slot is not "
+		             "Respawn");
 	}
 }
 
@@ -2420,6 +2609,11 @@ void GamedataSuite::VerifyGiveNamedItemSlot(TestContext& context, const std::str
 	// forwards to internally. The AK again: the entity that comes back must
 	// carry the weapon_ak47 identity, and the weapon stays in the bot's
 	// arsenal for the DropActivePlayerWeapon row.
+	if (bot_pawn_dead_)
+	{
+		context.SkipCall(table, "slot %lld | %s", slot, kBotPawnDeadReason);
+		return;
+	}
 	if (item_services_ == nullptr)
 	{
 		context.SkipCall(table, "slot %lld | the bot pawn's m_pItemServices did not resolve",
@@ -2465,6 +2659,11 @@ void GamedataSuite::VerifyDropActiveWeaponSlot(TestContext& context, const std::
 	if (bot_pawn_ == nullptr)
 	{
 		context.SkipCall(table, "slot %lld | %s", slot, BotMissingReason());
+		return;
+	}
+	if (bot_pawn_dead_)
+	{
+		context.SkipCall(table, "slot %lld | %s", slot, kBotPawnDeadReason);
 		return;
 	}
 	if (item_services_ == nullptr)
@@ -2542,10 +2741,17 @@ void GamedataSuite::VerifyRemoveWeaponsSlot(TestContext& context, const std::str
 	// is the active-weapon handle the DropActivePlayerWeapon row reads: a
 	// held weapon's handle is valid (not 0xFFFFFFFF), and after the strip it
 	// must not be. The bot enters the next round bare, which the next
-	// respawn refills.
+	// respawn refills. A bot that holds nothing cannot tell the slot apart -
+	// an invalid handle stays invalid whatever is called - so that state is a
+	// skip, never a pass.
 	if (bot_pawn_ == nullptr)
 	{
 		context.SkipCall(table, "slot %lld | %s", slot, BotMissingReason());
+		return;
+	}
+	if (bot_pawn_dead_)
+	{
+		context.SkipCall(table, "slot %lld | %s", slot, kBotPawnDeadReason);
 		return;
 	}
 	if (item_services_ == nullptr)
@@ -2582,18 +2788,21 @@ void GamedataSuite::VerifyRemoveWeaponsSlot(TestContext& context, const std::str
 	};
 
 	const std::uint32_t before = read_active();
+	if (before == 0xFFFFFFFFu)
+	{
+		context.SkipCall(table, "%s | slot %lld | the bot holds no active weapon; the strip "
+		                        "has nothing to remove, so it proves nothing",
+			row_location_.c_str(), slot);
+		return;
+	}
 	reinterpret_cast<void (*)(void*)>(fn)(item_services_);
 	const std::uint32_t after = read_active();
 
 	RowDetail(context, "m_hActiveWeapon 0x%08x -> 0x%08x", before, after);
-	if (before != 0xFFFFFFFFu && after != 0xFFFFFFFFu)
+	if (after != 0xFFFFFFFFu)
 	{
 		context.Fail("behaviour: a held weapon survived the strip; the slot is not "
 		             "RemoveWeapons");
-	}
-	else if (before == 0xFFFFFFFFu)
-	{
-		context.Detail("the bot held no active weapon to remove; handle still 0x%08x", after);
 	}
 }
 
@@ -2601,9 +2810,15 @@ void GamedataSuite::VerifyGetSkeletonInstanceSlot(TestContext& context, const st
                                                   long long slot)
 {
 	// CSS's CGameSceneNode.SkeletonInstance: (node) -> CSkeletonInstance.
-	// The pawn's node comes through the body component the schema declares
-	// (CBodyComponent.m_pSceneNode), and the skeleton that comes back must be
-	// a heap object: pointer-shaped, with a vtable inside the server module.
+	// It is a checked downcast, and the two answers are the oracle (build
+	// 25947352): CGameSceneNode's own slot returns null (server+0xa5c590,
+	// `xor eax,eax; ret`), CSkeletonInstance's override returns `this`
+	// (server+0xa5c5f0). So the slot is asked twice: on the bot pawn's node,
+	// which is a CSkeletonInstance (a model entity with bones), it must answer
+	// the node itself; on a spawned info_target's node, a plain
+	// CGameSceneNode (a point entity has no skeleton), it must answer null.
+	// Any other slot - an accessor returning `this` on every class, or some
+	// pointer-shaped getter - cannot give that pair.
 	if (bot_pawn_ == nullptr)
 	{
 		context.SkipCall(table, "slot %lld | %s", slot, BotMissingReason());
@@ -2618,43 +2833,69 @@ void GamedataSuite::VerifyGetSkeletonInstanceSlot(TestContext& context, const st
 		             "resolve through the schema");
 		return;
 	}
-	void* body = SlotAt(bot_pawn_, body_offset);
-	if (!LooksLikeObjectPointer(body))
+	const auto scene_node = [&](void* entity) -> void* {
+		void* body = SlotAt(entity, body_offset);
+		return LooksLikeObjectPointer(body) ? SlotAt(body, node_offset) : nullptr;
+	};
+	void* pawn_node = scene_node(bot_pawn_);
+	if (!LooksLikeObjectPointer(pawn_node))
 	{
-		context.Fail("setup: the pawn's m_CBodyComponent is not a pointer");
+		context.Fail("setup: the pawn has no scene node (m_CBodyComponent -> m_pSceneNode)");
 		return;
 	}
-	void* node = SlotAt(body, node_offset);
-	if (!LooksLikeObjectPointer(node))
+	void* scratch = CreateScratchEntity(true);
+	if (scratch == nullptr)
 	{
-		context.Fail("setup: the body component's m_pSceneNode is not a pointer");
+		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity");
 		return;
 	}
-	void* fn = VtableSlotInServer(context, node, slot);
-	if (fn == nullptr)
+	void* point_node = scene_node(scratch);
+	if (!LooksLikeObjectPointer(point_node))
 	{
+		RemoveScratchEntity(scratch);
+		context.Fail("setup: the info_target has no scene node (m_CBodyComponent -> "
+		             "m_pSceneNode)");
 		return;
 	}
-	void* skeleton = reinterpret_cast<void* (*)(void*)>(fn)(node);
-	const Module& server = context.GetModule("server");
-	const bool shaped = LooksLikeObjectPointer(skeleton) && InModule(server, SlotAt(skeleton, 0));
-	RowDetail(context, "node %p -> skeleton %p%s", node, skeleton,
-		shaped ? "" : " (not object-shaped)");
-	if (!shaped)
+	void* point_fn = VtableSlotInServer(context, point_node, slot);
+	void* pawn_fn = (point_fn != nullptr) ? VtableSlotInServer(context, pawn_node, slot) : nullptr;
+	if (pawn_fn == nullptr)
 	{
-		context.Fail("behaviour: the slot did not return a skeleton object; the slot is not "
-		             "GetSkeletonInstance");
+		RemoveScratchEntity(scratch);
+		return;
+	}
+	void* pawn_answer = reinterpret_cast<void* (*)(void*)>(pawn_fn)(pawn_node);
+	void* point_answer = reinterpret_cast<void* (*)(void*)>(point_fn)(point_node);
+	RemoveScratchEntity(scratch);
+
+	RowDetail(context, "pawn node %p -> %p (itself expected); info_target node %p -> %p "
+	                   "(nil expected)", pawn_node, pawn_answer, point_node, point_answer);
+	if (pawn_answer != pawn_node)
+	{
+		context.Fail("behaviour: the pawn's skeleton node did not answer itself; the slot is "
+		             "not GetSkeletonInstance");
+	}
+	else if (point_answer != nullptr)
+	{
+		context.Fail("behaviour: a point entity's plain scene node answered a skeleton; the "
+		             "slot is not GetSkeletonInstance");
 	}
 }
 
 void GamedataSuite::VerifyFindPickerEntitySlot(TestContext& context, const std::string& table,
                                                long long slot)
 {
-	// CSS's FindPickerEntity: (gamerules, controller, filter, x, y) -> the
-	// entity under the crosshair. On a dedicated server there is no view to
-	// pick through, so the honest oracle is the call's own shape: CSS calls
-	// it with a null filter and screen-centre coordinates, and the answer on
-	// a dedicated server is a null or worldspawn - never garbage. The
+	// CSS's FindPickerEntity: (gamerules, controller, filter, ...) -> the
+	// entity under the crosshair. The body (build 25947352, server+0x19a37e0)
+	// traces from the controller's pawn's eye along its view, and when the
+	// trace misses walks the entity list around the end point; on both paths
+	// every candidate goes through the filter's slot 0 before it is returned,
+	// and a rejected one is never returned. The filter is the oracle: the
+	// PickerProbe records what it is offered and answers yes on one call, no
+	// on the next. Accepting, the slot must return one of the entities it
+	// offered the probe; rejecting, it must return null - and in both it must
+	// have consulted the probe at all. A slot that is not FindPickerEntity
+	// does not call a filter it has never heard of, let alone obey it. The
 	// gamerules object is the TerminateRound row's, through the proxy.
 	if (bot_controller_ == nullptr)
 	{
@@ -2685,20 +2926,65 @@ void GamedataSuite::VerifyFindPickerEntitySlot(TestContext& context, const std::
 	{
 		return;
 	}
-	void* picked = reinterpret_cast<void* (*)(void*, void*, void*, double, double)>(fn)(
-		gamerules, bot_controller_, nullptr, 0.0, 0.0);
-	const char* designer = nullptr;
-	if (LooksLikeObjectPointer(picked))
+	const auto find_picker =
+		reinterpret_cast<void* (*)(void*, void*, void*, double, double)>(fn);
+	PickerProbe probe{kPickerProbeVtable};
+	const auto pick = [&](bool answer, int& calls, bool& overflowed) {
+		g_picker_answer = answer;
+		g_picker_calls = 0;
+		g_picker_seen_count = 0;
+		void* picked = find_picker(gamerules, bot_controller_, &probe, 0.0, 0.0);
+		calls = g_picker_calls;
+		overflowed = g_picker_calls > kPickerSeenMax;
+		return picked;
+	};
+
+	int accept_calls = 0;
+	bool accept_overflowed = false;
+	void* accepted = pick(true, accept_calls, accept_overflowed);
+	bool offered = false;
+	for (int i = 0; i < g_picker_seen_count; ++i)
 	{
-		CEntityIdentity* identity = static_cast<CEntityInstance*>(picked)->m_pEntity;
+		offered = offered || g_picker_seen[i] == accepted;
+	}
+	const char* designer = nullptr;
+	if (LooksLikeObjectPointer(accepted))
+	{
+		CEntityIdentity* identity = static_cast<CEntityInstance*>(accepted)->m_pEntity;
 		designer = LooksLikeObjectPointer(identity) ? identity->GetClassname() : nullptr;
 	}
-	RowDetail(context, "bot's crosshair -> %p (%s)", picked,
-		designer != nullptr ? designer : "nil");
-	if (picked != nullptr && !LooksLikeObjectPointer(picked))
+	int reject_calls = 0;
+	bool reject_overflowed = false;
+	void* rejected = pick(false, reject_calls, reject_overflowed);
+
+	RowDetail(context, "probe accepting: %d candidate(s), -> %p (%s, %s); probe rejecting: %d "
+	                   "candidate(s), -> %p (nil expected)", accept_calls, accepted,
+		designer != nullptr ? designer : "nil", offered ? "one it offered" : "NOT offered",
+		reject_calls, rejected);
+	if (accept_calls == 0 || reject_calls == 0)
 	{
-		context.Fail("behaviour: the slot returned something that is not a pointer; the slot "
-		             "is not FindPickerEntity");
+		context.Fail("behaviour: the slot never consulted the filter; the slot is not "
+		             "FindPickerEntity");
+	}
+	else if (accepted == nullptr)
+	{
+		context.Fail("behaviour: the filter accepted every candidate and nothing came back; "
+		             "the slot is not FindPickerEntity");
+	}
+	else if (!offered && !accept_overflowed)
+	{
+		context.Fail("behaviour: the slot returned %p, which it never offered the filter; the "
+		             "slot is not FindPickerEntity", accepted);
+	}
+	else if (rejected != nullptr)
+	{
+		context.Fail("behaviour: the filter rejected every candidate and %p came back anyway; "
+		             "the slot is not FindPickerEntity", rejected);
+	}
+	else if (!offered)
+	{
+		context.Suspect("behaviour: the returned entity was past the probe's %d-entry record; "
+		                "whether it was offered is unknown", kPickerSeenMax);
 	}
 }
 
@@ -2744,10 +3030,17 @@ void GamedataSuite::VerifyCommitSuicideSlot(TestContext& context, const std::str
 	// (true, true) shape is the one the ecosystem actually uses. The oracle
 	// is the pawn's health and life state: the call must leave the bot dead.
 	// The bot comes back on respawn or the next round, which is what the
-	// respawn path exists for.
+	// respawn path exists for. A pawn that is already dead reads health 0 and
+	// a non-zero m_lifeState before the call, so it would pass for any slot:
+	// that state is a skip.
 	if (bot_pawn_ == nullptr)
 	{
 		context.SkipCall(table, "slot %lld | %s", slot, BotMissingReason());
+		return;
+	}
+	if (bot_pawn_dead_)
+	{
+		context.SkipCall(table, "slot %lld | %s", slot, kBotPawnDeadReason);
 		return;
 	}
 	std::size_t health_offset = 0;
@@ -2766,6 +3059,17 @@ void GamedataSuite::VerifyCommitSuicideSlot(TestContext& context, const std::str
 	std::int32_t before = 0;
 	std::memcpy(&before, reinterpret_cast<const unsigned char*>(bot_pawn_) + health_offset,
 		sizeof(before));
+	std::uint8_t life_before = 0;
+	std::memcpy(&life_before, reinterpret_cast<const unsigned char*>(bot_pawn_) + life_offset,
+		sizeof(life_before));
+	if (before <= 0 || life_before != 0)
+	{
+		bot_pawn_dead_ = true;
+		context.SkipCall(table, "%s | slot %lld | the pawn is already dead (health %d, "
+		                        "m_lifeState %u); a death proves nothing", row_location_.c_str(),
+			slot, before, life_before);
+		return;
+	}
 	reinterpret_cast<void (*)(void*, bool, bool)>(fn)(bot_pawn_, true, true);
 	std::int32_t after = 0;
 	std::memcpy(&after, reinterpret_cast<const unsigned char*>(bot_pawn_) + health_offset,
@@ -2847,6 +3151,210 @@ void GamedataSuite::VerifyTeleportSlot(TestContext& context, const std::string& 
 	{
 		context.Fail("behaviour: the origin did not follow the teleport; the slot is not "
 		             "Teleport");
+	}
+}
+
+void GamedataSuite::VerifySetStateChangedSlot(TestContext& context, const std::string& table,
+                                              long long slot)
+{
+	// CBaseEntity's SetStateChanged(entity, NetworkStateChangedData*): the
+	// slot every NetworkStateChanged call ends in. On build 25947352 it is
+	// server+0xa3dcf0, and its whole-entity branch - the data's first dword 0,
+	// no offset list - is observable: it ORs 3 into the entity's transmit
+	// component state word (component +728), or, while the component is
+	// mid-serialisation, sets the component's deferred byte (+733) instead;
+	// a component whose disabled byte (+736) is set ignores the call. The
+	// component is CBaseEntity.m_NetworkTransmitComponent, read through the
+	// schema; the three member offsets inside it are the binary's.
+	//
+	// So: a spawned info_target, both observables cleared, the slot called
+	// with a zeroed change record, and one of them must have moved. The
+	// observables are put back afterwards. The NetworkStateChanged signature
+	// row decodes the same slot number out of the code that calls it - two
+	// readings, one number.
+	constexpr std::size_t kStateWord = 728;    // |= 3 on a whole-entity change
+	constexpr std::size_t kDeferredByte = 733; // = 1 while the component is busy
+	constexpr std::size_t kDisabledByte = 736; // set: the call is a no-op
+	std::size_t component_offset = 0;
+	if (!SchemaOffset("CBaseEntity", "m_NetworkTransmitComponent", component_offset))
+	{
+		context.Fail("setup: CBaseEntity.m_NetworkTransmitComponent did not resolve through "
+		             "the schema");
+		return;
+	}
+	void* entity = CreateScratchEntity(true);
+	if (entity == nullptr)
+	{
+		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity");
+		return;
+	}
+	auto* component = static_cast<unsigned char*>(entity) + component_offset;
+	if (component[kDisabledByte] != 0)
+	{
+		RemoveScratchEntity(entity);
+		context.SkipCall(table, "slot %lld | the scratch entity's transmit component is "
+		                        "disabled; the call would be a no-op", slot);
+		return;
+	}
+	void* fn = VtableSlotInServer(context, entity, slot);
+	if (fn == nullptr)
+	{
+		RemoveScratchEntity(entity);
+		return;
+	}
+
+	std::uint32_t saved_word = 0;
+	std::memcpy(&saved_word, component + kStateWord, sizeof(saved_word));
+	const unsigned char saved_deferred = component[kDeferredByte];
+	const std::uint32_t cleared_word = saved_word & ~3u;
+	std::memcpy(component + kStateWord, &cleared_word, sizeof(cleared_word));
+	component[kDeferredByte] = 0;
+
+	// NetworkStateChangedData as the game's own callers build it on the stack
+	// (0x40 bytes); all zero is the whole-entity change with no name, file or
+	// line for the debug record the body formats.
+	unsigned char change[0x40] = {0};
+	reinterpret_cast<void (*)(void*, void*)>(fn)(entity, change);
+
+	std::uint32_t word = 0;
+	std::memcpy(&word, component + kStateWord, sizeof(word));
+	const unsigned char deferred = component[kDeferredByte];
+	std::memcpy(component + kStateWord, &saved_word, sizeof(saved_word));
+	component[kDeferredByte] = saved_deferred;
+	RemoveScratchEntity(entity);
+
+	RowDetail(context, "info_target transmit component (+%zu): state 0x%08x -> 0x%08x after the "
+	                   "call (bits 0x3 expected), deferred byte %u", component_offset,
+		cleared_word, word, deferred);
+	if ((word & 3u) != 3u && deferred != 1)
+	{
+		context.Fail("behaviour: neither the state word nor the deferred byte moved on a "
+		             "whole-entity change; the slot is not SetStateChanged");
+	}
+}
+
+void GamedataSuite::VerifyServerSideClientRtti(TestContext& context, const TomlData::Entry& entry)
+{
+	// Not a slot: CSS hands this number to its RTTI FindVirtualTable(engine2,
+	// "CServerSideClient", offset) to pick one of the class's vtables - the
+	// one whose offset-to-top (Itanium) / complete-object-locator offset
+	// (MSVC) it names. The real verification is to run that lookup against
+	// engine2's own RTTI: the class's typeinfo must be there, the vtable
+	// group hanging off it must contain exactly one vtable with this offset,
+	// and that vtable's first slot must be engine2 code. A stale number finds
+	// nothing (or an ambiguous pair), which is exactly how the consumer would
+	// break.
+	const Module& engine = context.GetModule("engine2");
+	if (!engine.IsValid())
+	{
+		context.Fail("setup: engine2 is not loaded");
+		return;
+	}
+	const std::vector<ByteRange> ranges = ReadableRanges(engine);
+
+	struct Vtable
+	{
+		long long offset;
+		const void* address_point;
+	};
+	std::vector<Vtable> vtables;
+
+#if CS2ST_WINDOWS
+	// MSVC: the TypeDescriptor carries the decorated name at +16; each vtable
+	// is preceded by a pointer to its complete object locator, whose x64
+	// layout is {signature 1, offset, cdOffset, TypeDescriptor rva,
+	// ClassHierarchy rva, self rva}.
+	static const char kTypeName[] = ".?AVCServerSideClient@@";
+	const auto* base = static_cast<const unsigned char*>(engine.base());
+	const std::vector<const unsigned char*> names = FindStrings(ranges, kTypeName);
+	for (const unsigned char* name : names)
+	{
+		const std::uint32_t descriptor_rva = static_cast<std::uint32_t>(name - 16 - base);
+		for (const ByteRange& range : ranges)
+		{
+			for (std::size_t i = 0; i + 24 <= range.size; i += 4)
+			{
+				std::uint32_t col[6];
+				std::memcpy(col, range.begin + i, sizeof(col));
+				const std::uint32_t self_rva = static_cast<std::uint32_t>(range.begin + i - base);
+				if (col[0] != 1 || col[3] != descriptor_rva || col[5] != self_rva)
+				{
+					continue;
+				}
+				for (const unsigned char* ref : FindPointerRefs(ranges, range.begin + i))
+				{
+					if (InModule(engine, SlotAt(ref, 8)))
+					{
+						vtables.push_back({static_cast<long long>(col[1]), ref + 8});
+					}
+				}
+			}
+		}
+	}
+#else
+	// Itanium: the typeinfo object's +8 points at the mangled name, and each
+	// vtable is laid out {offset-to-top, typeinfo*, slot 0, ...}. A pointer to
+	// the typeinfo is also how a derived class's typeinfo names its bases, so
+	// a reference only counts as a vtable when the word before it is an
+	// offset-to-top (zero or a small negative) and the word after it is code.
+	// The name is matched with its terminator; a pointer type's name
+	// ("P16CServerSideClient") may share the bytes, but its typeinfo points
+	// at its own first byte, never into the tail. The length prefix is the
+	// identifier's own length: "CServerSideClient" is 17 characters. On
+	// build 25947352 engine2 carries two vtables for it, offset-to-top 0
+	// (the primary) and -48 (the base subobject at +48).
+	static const char kTypeName[] = "17CServerSideClient";
+	const std::vector<const unsigned char*> names = FindStrings(ranges, kTypeName);
+	for (const unsigned char* name : names)
+	{
+		for (const unsigned char* name_ref : FindPointerRefs(ranges, name))
+		{
+			const unsigned char* typeinfo = name_ref - 8;
+			for (const unsigned char* ref : FindPointerRefs(ranges, typeinfo))
+			{
+				std::intptr_t ott = 0;
+				std::memcpy(&ott, ref - 8, sizeof(ott));
+				if (ott > 0 || ott < -0x100000 || !InModule(engine, SlotAt(ref, 8)))
+				{
+					continue;
+				}
+				vtables.push_back({static_cast<long long>(ott), ref + 8});
+			}
+		}
+	}
+#endif
+
+	std::string found;
+	int matches = 0;
+	const void* matched = nullptr;
+	for (const Vtable& vtable : vtables)
+	{
+		found += (found.empty() ? "" : ", ") + std::to_string(vtable.offset);
+		if (vtable.offset == entry.number)
+		{
+			++matches;
+			matched = vtable.address_point;
+		}
+	}
+	if (names.empty() || vtables.empty())
+	{
+		context.Detail("engine2 RTTI: %zu name string(s), %zu vtable(s) for %s",
+			names.size(), vtables.size(), kTypeName);
+		context.Fail("decode: engine2 carries no vtable for CServerSideClient; the lookup "
+		             "this number feeds finds nothing");
+		return;
+	}
+	context.Detail("engine2 RTTI %s: vtable offsets {%s}; gamedata %lld -> %s%p", kTypeName,
+		found.c_str(), entry.number, matches == 1 ? "vtable " : "", matched);
+	if (matches == 0)
+	{
+		context.Fail("decode: no CServerSideClient vtable has offset %lld; the lookup this "
+		             "number feeds finds nothing", entry.number);
+	}
+	else if (matches > 1)
+	{
+		context.Fail("decode: %d CServerSideClient vtables have offset %lld; the lookup is "
+		             "ambiguous", matches, entry.number);
 	}
 }
 

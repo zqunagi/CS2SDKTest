@@ -95,6 +95,16 @@
  * jumping through garbage. The oracle is whatever the call moved: the team
  * byte, the health, the pawn count, the weapon list, the origin.
  *
+ * Where a call on a live object would pass for any pointer-shaped slot, the
+ * row builds the state that tells the slot apart: Respawn kills the bot
+ * first (through the CommitSuicide slot) and must bring the dead pawn back;
+ * GetSkeletonInstance must answer itself on the pawn's skeleton node and null
+ * on a point entity's plain scene node; FindPickerEntity is handed a probe
+ * filter and must offer it candidates, return one it accepted and return
+ * null when it rejects them all; SetStateChanged must set the transmit
+ * component's change bits on a scratch entity. vtables.CServerSideClient is
+ * looked up in engine2's RTTI the way CSS's FindVirtualTable does.
+ *
  * offsets.CTakeDamageInfo_HitGroup is verified the way the ecosystem reads it:
  * CSS walks *(info+104) -> +16 -> +56 for the hit group, so TakeDamageOld is
  * handed a real damage info whose chain at the key's offset is hand-built and
@@ -320,6 +330,15 @@ private:
 	void VerifyIsPlayerPawnSlot(TestContext& context, const std::string& table, long long slot);
 	void VerifyCommitSuicideSlot(TestContext& context, const std::string& table, long long slot);
 	void VerifyTeleportSlot(TestContext& context, const std::string& table, long long slot);
+	void VerifySetStateChangedSlot(TestContext& context, const std::string& table,
+	                               long long slot);
+
+	/**
+	 * vtables.CServerSideClient is not a slot but the vtable discriminator
+	 * CSS's RTTI lookup takes; the row runs that lookup against engine2's own
+	 * RTTI and requires exactly one CServerSideClient vtable with the offset.
+	 */
+	void VerifyServerSideClientRtti(TestContext& context, const TomlData::Entry& entry);
 
 	/** byte offsets cross-checked against offsetof() where the SDK declares. */
 	void ExerciseStructOffsets(TestContext& context);
