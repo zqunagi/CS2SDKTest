@@ -7,10 +7,10 @@ Test suites live here — one per SDK interface being exercised.
   SchemaSystemSuite        ISchemaSystem / CSchemaSystemTypeScope        (93 calls + 9 struct layouts)
   GameEntitySystemSuite    CGameEntitySystem / CEntitySystem             (calls + 8 struct layouts + 4 listener callbacks)
   GameEventSuite           IGameEventSystem / IGameEventManager2         (calls + 1 struct layout + 9 hooks)
-  NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t layout + 15 cross-checks + 6 hooks)
-  NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout + protobuf round trip)
+  NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t & GameSessionConfiguration_t layouts + 15 cross-checks + 5 hooks)
+  NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout (incl. m_bLastLineComplete vs tier0) + protobuf round trip)
   ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
-  GamedataSuite            configs/gamedata.toml                         (46 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
+  GamedataSuite            configs/gamedata.toml                         (47 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not s2sdk, and it

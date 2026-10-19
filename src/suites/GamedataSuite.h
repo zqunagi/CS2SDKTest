@@ -9,7 +9,7 @@
  * pattern and the plugin fails to load, or worse, a slot shifts and the
  * plugin calls the wrong function with the right-looking arguments.
  *
- * This suite loads configs/gamedata.toml (the 46 keys the ecosystem's
+ * This suite loads configs/gamedata.toml (the 47 keys the ecosystem's
  * gamedata carries, in a format a human can read and edit), resolves every
  * entry against the live server, and then does the part no gamedata loader
  * does: checks that what a key resolved to behaves like the thing it names.

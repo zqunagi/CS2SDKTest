@@ -1188,7 +1188,12 @@ void NetworkMessagesSuite::InspectLoggingChannel(TestContext& context)
 	// apply. Raw bytes; the hex dump shows the name directly.
 	inspect.Raw    ("m_Name",             offsetof(CLoggingSystem::LoggingChannel_t, m_Name), MAX_LOGGING_IDENTIFIER_LENGTH);
 	inspect.Pointer("m_pFirstTag",        offsetof(CLoggingSystem::LoggingChannel_t, m_pFirstTag));
-	inspect.UInt32 ("m_nModifiedFields",  offsetof(CLoggingSystem::LoggingChannel_t, m_nModifiedFields));
+	// ModificationFlags_t narrowed from int to uint8 in the Oct 2026 SDK update,
+	// and m_bLastLineComplete was appended after it - a field the SDK grew, so
+	// the bool probe (0 or 1 only) is exactly the check for it.
+	inspect.UInt8  ("m_nModifiedFields",  offsetof(CLoggingSystem::LoggingChannel_t, m_nModifiedFields));
+	inspect.Bool   ("m_bLastLineComplete",
+		offsetof(CLoggingSystem::LoggingChannel_t, m_bLastLineComplete));
 
 	inspect.Summarize();
 	inspect.HexDump();
@@ -1201,6 +1206,22 @@ void NetworkMessagesSuite::InspectLoggingChannel(TestContext& context)
 			reinterpret_cast<const unsigned char*>(channel) +
 			offsetof(CLoggingSystem::LoggingChannel_t, m_Name));
 		context.Detail("-> \"%.32s\"", name);
+	});
+
+	CS2ST_CALL(context, "LoggingChannel_t::m_bLastLineComplete vs LoggingSystem_GetLastChannelLineComplete", {
+		// The Oct 2026 SDK grew this field and exported its official reader in
+		// the same update, so the two are an oracle pair: tier0 reads the byte
+		// through its own code, the row above reads it through the SDK's
+		// declared offset, and disagreement indicts the offset.
+		const bool from_tier0 = LoggingSystem_GetLastChannelLineComplete(channel_id);
+		context.Detail("-> struct says %s, tier0 says %s",
+			channel->m_bLastLineComplete ? "true" : "false",
+			from_tier0 ? "true" : "false");
+		if (channel->m_bLastLineComplete != from_tier0)
+		{
+			context.Fail("the offset the SDK declares does not carry the byte "
+			             "tier0's own reader returns");
+		}
 	});
 }
 

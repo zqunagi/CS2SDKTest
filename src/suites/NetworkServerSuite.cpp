@@ -8,6 +8,7 @@
 
 #include <appframework/iappsystem.h>
 #include <engine2/gameshareddefs.h>
+#include <engine2/gamesessionconfiguration.h>
 #include <engine2/iengineservicemgr.h>
 #include <engine2/inetworkgameserver.h>
 #include <engine2/ivengineserver2.h>
@@ -22,6 +23,7 @@
 #include "core/Log.h"
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
+#include "testkit/PrivateField.h"
 #include "testkit/StructInspector.h"
 
 // The SH_DECL_HOOK block used to live here; under KHook the hook templates are
@@ -38,6 +40,21 @@
 
 namespace cs2st
 {
+
+// The one member GameSessionConfiguration_t adds over its protobuf base is
+// protected in the SDK's CBaseCmdKeyValues template, so offsetof cannot name
+// it - captured through the explicit-instantiation access hole instead. The
+// member belongs to the template base, so the capture names that (a pointer
+// to member of a base cannot name a derived class), which also puts a comma
+// in the type - the typedef exists to keep it out of the macro argument.
+// The derived class adds nothing, so the offset within the base is the offset
+// within GameSessionConfiguration_t. At cs2st scope on purpose: the anonymous
+// namespace below is not an enclosing namespace of the template. See
+// testkit/PrivateField.h.
+using GameSessionConfigOwner = CBaseCmdKeyValues<CSVCMsg_GameSessionConfiguration>;
+CS2ST_PRIVATE_FIELD(GameSessionConfigKeyValues, GameSessionConfigOwner,
+	KeyValues*, m_pKeyValues);
+
 namespace
 {
 
@@ -477,12 +494,14 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 	context.SkipCall("INetworkServerService::~INetworkServerService",
 		"would destroy an engine service the manager still holds");
 	context.SkipCall("INetworkServerService::StartupServer",
-		"starts a server session; also needs a GameSessionConfiguration_t, which "
-		"the SDK only forward-declares");
+		"starts a server session; the GameSessionConfiguration_t it takes is "
+		"now fully defined in the SDK, but a second startup against the live "
+		"engine is still not this suite's to attempt");
 	context.SkipCall("INetworkServerService::SetGameSpawnGroupMgr",
 		"replaces the spawn group manager the engine is using");
 	context.SkipCall("INetworkServerService::AddServerPrerequisites",
-		"registers load prerequisites; same undeclared configuration type");
+		"registers load prerequisites; the configuration type is now defined, "
+		"but registering prerequisites into a live load is not this suite's to attempt");
 	context.SkipCall("INetworkServerService::DisconnectGameNow",
 		"disconnects the running game; hooked instead");
 	context.SkipCall("INetworkServerService::PrintSpawnGroupStatus",
@@ -752,9 +771,28 @@ void NetworkServerSuite::ExerciseGameServer(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "INetworkGameServer::GetGameSessionConfig", {
-		// GameSessionConfiguration_t is forward-declared and nothing more, so
-		// the pointer is all there is to report.
-		context.Detail("-> %p", static_cast<void*>(game_server_->GetGameSessionConfig()));
+		// The SDK used to forward-declare GameSessionConfiguration_t and
+		// nothing more, so the pointer was all this row could report. The Oct
+		// 2026 update ships the definition (public/engine2/
+		// gamesessionconfiguration.h: CBaseCmdKeyValues<CSVCMsg_...>), so the
+		// struct can now be walked as one - the same layout-vs-bytes check
+		// netadr_t gets below. It is a protobuf message under an engine
+		// header, so only the read-only probes apply.
+		const GameSessionConfiguration_t* config = game_server_->GetGameSessionConfig();
+		context.Detail("-> %p", static_cast<const void*>(config));
+		if (config != nullptr && LooksLikeObjectPointer(config))
+		{
+			StructInspector inspect(context, "GameSessionConfiguration_t",
+				config, sizeof(GameSessionConfiguration_t));
+			// CBaseCmdKeyValues<T> adds m_pKeyValues after T's own fields; the
+			// protobuf's vtable pointer sits at the front. Pointer probe only:
+			// null is legal (the engine may never have parsed one), which is
+			// also why the member is protected and reached through the capture.
+			inspect.Pointer("m_pKeyValues",
+				PrivateFieldOffset<GameSessionConfigKeyValues>(
+					static_cast<const GameSessionConfigOwner*>(config)));
+			inspect.Summarize();
+		}
 	});
 
 	CS2ST_CALL(context, "INetworkGameServer::GetClientConnectionType", {
