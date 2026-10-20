@@ -1,5 +1,5 @@
 /**
- * The `meta_test` console command.
+ * The `cst` console command.
  *
  * Registered without FCVAR_CLIENT_CAN_EXECUTE on purpose: these subcommands
  * call into engine interfaces, install hooks, and write files. That is
@@ -46,18 +46,18 @@ bool IsEqual(const std::string& lhs, const char* rhs)
 void PrintUsage()
 {
 	LogRaw("\n%s %s - %s\n\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION, PLUGIN_DESCRIPTION);
-	LogRaw("  meta_test help                    this text\n");
-	LogRaw("  meta_test suites                  test suites this build ships\n");
-	LogRaw("  meta_test targets                 game modules (shared libraries) and their state\n");
-	LogRaw("  meta_test run [suite]             call sweep; writes a log\n");
-	LogRaw("  meta_test hooks install [suite]   install hooks and leave them running\n");
-	LogRaw("  meta_test hooks remove [suite]    take them back out\n");
-	LogRaw("  meta_test hooks dump              what has fired so far\n");
-	LogRaw("  meta_test hooks reset             zero the counters, keep the hooks\n");
-	LogRaw("  meta_test log open [name]         start writing everything to a file\n");
-	LogRaw("  meta_test log close               stop\n");
-	LogRaw("  meta_test log status              where the log is going\n");
-	LogRaw("  meta_test log color <on|off|console>\n");
+	LogRaw("  cst help                    this text\n");
+	LogRaw("  cst suites                  test suites this build ships\n");
+	LogRaw("  cst targets                 game modules (shared libraries) and their state\n");
+	LogRaw("  cst run [suite]             call sweep; writes a log\n");
+	LogRaw("  cst hooks install [suite]   install hooks and leave them running\n");
+	LogRaw("  cst hooks remove [suite]    take them back out\n");
+	LogRaw("  cst hooks dump              what has fired so far\n");
+	LogRaw("  cst hooks reset             zero the counters, keep the hooks\n");
+	LogRaw("  cst log open [name]         start writing everything to a file\n");
+	LogRaw("  cst log close               stop\n");
+	LogRaw("  cst log status              where the log is going\n");
+	LogRaw("  cst log color <on|off|console>\n");
 	LogRaw("                                    ANSI colour; 'console' keeps it out of files\n");
 	LogRaw("\n  logs are written to %s\n\n", fs::LogDirectory().c_str());
 }
@@ -180,7 +180,7 @@ void CommandRun(const CCommand& args)
 	const std::string only = ArgAt(args, 2);
 	if (!only.empty() && runner.Find(only) == nullptr)
 	{
-		CS2ST_LOG_ERROR("no test suite named '%s'; try 'meta_test suites'\n", only.c_str());
+		CS2ST_LOG_ERROR("no test suite named '%s'; try 'cst suites'\n", only.c_str());
 		return;
 	}
 
@@ -243,7 +243,7 @@ void CommandHooks(const CCommand& args)
 		}
 
 		const int installed = runner.InstallHooks(context, only);
-		CS2ST_LOG_INFO("%d hook(s) installed; play a round, then 'meta_test hooks dump'\n",
+		CS2ST_LOG_INFO("%d hook(s) installed; play a round, then 'cst hooks dump'\n",
 			installed);
 	}
 	else if (IsEqual(action, "remove"))
@@ -281,7 +281,7 @@ void CommandHooks(const CCommand& args)
 	}
 	else
 	{
-		CS2ST_LOG_ERROR("unknown hooks action '%s'; try 'meta_test help'\n", action.c_str());
+		CS2ST_LOG_ERROR("unknown hooks action '%s'; try 'cst help'\n", action.c_str());
 	}
 }
 
@@ -347,7 +347,7 @@ void CommandLog(const CCommand& args)
 		}
 		else
 		{
-			CS2ST_LOG_ERROR("usage: meta_test log color <on|off|console>\n");
+			CS2ST_LOG_ERROR("usage: cst log color <on|off|console>\n");
 			return;
 		}
 		CS2ST_LOG_INFO("colour: console %s, file %s\n",
@@ -371,7 +371,7 @@ void CommandLog(const CCommand& args)
 	}
 	else
 	{
-		CS2ST_LOG_ERROR("unknown log action '%s'; try 'meta_test help'\n", action.c_str());
+		CS2ST_LOG_ERROR("unknown log action '%s'; try 'cst help'\n", action.c_str());
 	}
 }
 
@@ -411,14 +411,14 @@ void Dispatch(const CCommand& args)
 	}
 	else
 	{
-		CS2ST_LOG_ERROR("unknown command '%s'; try 'meta_test help'\n", command.c_str());
+		CS2ST_LOG_ERROR("unknown command '%s'; try 'cst help'\n", command.c_str());
 	}
 }
 
 } // namespace
 } // namespace cs2st
 
-CON_COMMAND_F(meta_test,
+CON_COMMAND_F(cst,
 	"CS2 SDK exercise harness: call and hook engine interfaces, log what happens.",
 	FCVAR_RELEASE | FCVAR_GAMEDLL)
 {
@@ -441,9 +441,9 @@ void UnregisterCommands()
 	// from ConCommandRef, so taking the address here is the registration the
 	// macro was written for, minus the stale signature.
 	//
-	// meta_test_command is the static object CON_COMMAND_F declared above,
+	// cst_command is the static object CON_COMMAND_F declared above,
 	// which is why this has to live in this file.
-	g_SMAPI->UnregisterConCommand(g_PLAPI, &meta_test_command);
+	g_SMAPI->UnregisterConCommand(g_PLAPI, &cst_command);
 }
 
 } // namespace cs2st

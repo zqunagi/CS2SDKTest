@@ -2715,9 +2715,9 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 
 	CS2ST_CALL(context, "ICvar::FindConCommand (this plugin's own commands)", {
 		const ConCommandRef probe = cvar_->FindConCommand("cs2sdktest_cmd", false);
-		const ConCommandRef meta = cvar_->FindConCommand("meta_test", false);
+		const ConCommandRef meta = cvar_->FindConCommand("cst", false);
 
-		context.Detail("cs2sdktest_cmd: access=%u valid=%s | meta_test: valid=%s",
+		context.Detail("cs2sdktest_cmd: access=%u valid=%s | cst: valid=%s",
 			static_cast<unsigned>(probe.GetAccessIndex()),
 			probe.IsValidRef() ? "yes" : "no",
 			meta.IsValidRef() ? "yes" : "no");
@@ -2735,7 +2735,7 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 		}
 		if (!meta.IsValidRef())
 		{
-			context.Fail("meta_test is the command this plugin is driven by, so "
+			context.Fail("cst is the command this plugin is driven by, so "
 			             "it is registered by definition");
 		}
 	});
@@ -2819,14 +2819,14 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 			{
 				saw_probe = true;
 			}
-			else if (std::strcmp(name, "meta_test") == 0)
+			else if (std::strcmp(name, "cst") == 0)
 			{
 				saw_meta = true;
 			}
 		}
 
 		context.Detail("-> %d commands (%d with a callback, %d with completion), "
-		               "cs2sdktest_cmd=%s meta_test=%s%s",
+		               "cs2sdktest_cmd=%s cst=%s%s",
 			walked, with_callback, with_completion,
 			saw_probe ? "seen" : "missing", saw_meta ? "seen" : "missing",
 			walked >= kListWalkCap ? " (capped)" : "");

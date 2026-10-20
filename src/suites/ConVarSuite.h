@@ -192,7 +192,7 @@ private:
 	 * CCvar allocates names and value storage out of buffers it never frees,
 	 * and the SDK says an unregistered cvar stays in the lists so old refs keep
 	 * working - so a direct registration is permanent. Once per plugin load is
-	 * what any plugin costs; once per `meta_test run` would be a slow leak.
+	 * what any plugin costs; once per `cst run` would be a slow leak.
 	 */
 	bool dynamic_registered_ = false;
 

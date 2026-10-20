@@ -82,7 +82,7 @@
  *   - The entity system is recreated when the level changes, and a listener
  *     registered on the old one goes with it. After a map change the hooks go
  *     quiet, which looks exactly like "the engine stopped calling". Re-run
- *     `meta_test hooks install entity` after changing maps.
+ *     `cst hooks install entity` after changing maps.
  */
 
 #ifndef CS2SDKTEST_SUITES_GAMEENTITYSYSTEMSUITE_H_

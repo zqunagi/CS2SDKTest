@@ -2298,7 +2298,7 @@ int GameEntitySystemSuite::InstallHooks(TestContext& context)
 	// it only runs once a call sweep has said that layout holds.
 	if (entity_system_ == nullptr || !identity_layout_verified_)
 	{
-		CS2ST_LOG_WARN("%s: refusing to install - run 'meta_test run %s' first so the "
+		CS2ST_LOG_WARN("%s: refusing to install - run 'cst run %s' first so the "
 		               "entity system is located and its layout checked; "
 		               "AddListenerEntity writes into the game's own memory\n",
 			Id(), Id());

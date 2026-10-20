@@ -815,7 +815,7 @@ void GameEventSuite::ReportObservedMessages(TestContext& context)
 
 	if (observed_message_count_ == 0)
 	{
-		context.Note("nothing yet - 'meta_test hooks install event', let a round play, "
+		context.Note("nothing yet - 'cst hooks install event', let a round play, "
 		             "then sweep again; that is what turns hook counts into event names");
 		return;
 	}

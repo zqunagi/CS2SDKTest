@@ -440,7 +440,7 @@ void MetamodListenerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.Note("[ISmmAPI] not called - side effects");
 
 	context.SkipCall("ISmmAPI::AddListener",
-		"installed by 'meta_test hooks install metamod', not by a call sweep");
+		"installed by 'cst hooks install metamod', not by a call sweep");
 	context.SkipCall("ISmmAPI::EnableVSPListener",
 		"would bring up the VSP bridge for every plugin on the server");
 	context.SkipCall("ISmmAPI::RegisterConCommandBase", "would register a command");

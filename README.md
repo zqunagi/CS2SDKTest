@@ -6,24 +6,24 @@
 ## 命令
 
 ```
-meta_test help                    用法
-meta_test suites                  本次构建带的测试套件
-meta_test targets                 游戏动态库清单及加载状态
-meta_test run [suite]             跑一遍调用，写日志
-meta_test hooks install [suite]   装 hook 并保持运行
-meta_test hooks remove [suite]    卸掉
-meta_test hooks dump              到目前为止触发了什么
-meta_test hooks reset             计数清零，hook 留着
-meta_test log open [name]         把之后所有输出也写进这个文件
-meta_test log close
-meta_test log status
-meta_test log color <on|off|console>
+cst help                    用法
+cst suites                  本次构建带的测试套件
+cst targets                 游戏动态库清单及加载状态
+cst run [suite]             跑一遍调用，写日志
+cst hooks install [suite]   装 hook 并保持运行
+cst hooks remove [suite]    卸掉
+cst hooks dump              到目前为止触发了什么
+cst hooks reset             计数清零，hook 留着
+cst log open [name]         把之后所有输出也写进这个文件
+cst log close
+cst log status
+cst log color <on|off|console>
 ```
 
 ```
-] meta_test run                # 调用扫描
-] meta_test hooks install      # 安装 hook
-] meta_test hooks dump         # 查看触发计数与参数样本
+] cst run                # 调用扫描
+] cst hooks install      # 安装 hook
+] cst hooks dump         # 查看触发计数与参数样本
 ```
 
 日志写在 `<csgo>/addons/cs2sdktest/logs/`。

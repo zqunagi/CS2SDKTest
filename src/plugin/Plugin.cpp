@@ -60,7 +60,7 @@ bool CS2SDKTestPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxl
 		tests_.size(), fs::LogDirectory().c_str());
 
 	CS2ST_LOG_INFO("fault guard: %s\n", GuardDescription());
-	CS2ST_LOG_INFO("type 'meta_test help' in the console to get started\n");
+	CS2ST_LOG_INFO("type 'cst help' in the console to get started\n");
 	return true;
 }
 

@@ -431,7 +431,7 @@ bool GamedataSuite::Acquire(TestContext& context)
 	else
 	{
 		// The SDK's GameEntitySystem() reads this global, and nothing but
-		// GameEntitySystemSuite's Acquire fills it - so `meta_test run
+		// GameEntitySystemSuite's Acquire fills it - so `cst run
 		// gamedata` on its own saw a null entity system in every row that
 		// walks the entity list or queues through it.
 		g_pGameResourceServiceServer = static_cast<IGameResourceService*>(resource_service_);
@@ -3502,7 +3502,7 @@ int GamedataSuite::InstallHooks(TestContext& context)
 	// said the address under it is the function the file names.
 	if (!signatures_verified_)
 	{
-		CS2ST_LOG_WARN("%s: refusing to install - run 'meta_test run %s' first so the "
+		CS2ST_LOG_WARN("%s: refusing to install - run 'cst run %s' first so the "
 		               "signatures are resolved and verified\n",
 			Id(), Id());
 		return 0;
