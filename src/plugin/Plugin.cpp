@@ -1,10 +1,13 @@
 #include "plugin/Plugin.h"
 
+#include <memory>
+
 #include <tier0/convar.h>
 
 #include "core/FileSystemUtil.h"
 #include "core/Log.h"
 #include "hook/HookRecorder.h"
+#include "plugin/Autorun.h"
 #include "testkit/CallGuard.h"
 
 namespace cs2st
@@ -26,6 +29,10 @@ namespace
 {
 
 ICvar* g_icvar = nullptr;
+
+// Only exists when CST_AUTORUN=1; kept here rather than in the class so the
+// header does not drag KHook into every file that includes Plugin.h.
+std::unique_ptr<Autorun> g_autorun;
 
 } // namespace
 
@@ -74,6 +81,12 @@ bool CS2SDKTestPlugin::Unload(char* error, size_t maxlen)
 	tests_.RemoveHooks(context);
 	HookRecorder::Get().Clear();
 
+	if (g_autorun != nullptr)
+	{
+		g_autorun->Stop();
+		g_autorun.reset();
+	}
+
 	UnregisterCommands();
 	CloseSessionLog();
 
@@ -84,9 +97,18 @@ bool CS2SDKTestPlugin::Unload(char* error, size_t maxlen)
 
 void CS2SDKTestPlugin::AllPluginsLoaded()
 {
-	// Nothing runs automatically. Sweeping interfaces means calling into the
-	// engine at a moment nobody chose, and installing hooks changes the
-	// server's behaviour - both are on-demand only.
+	// Nothing runs automatically unless the operator asked for it by setting
+	// CST_AUTORUN=1: sweeping interfaces means calling into the engine at a
+	// moment nobody chose, and installing hooks changes the server's behaviour,
+	// so both are on-demand otherwise.
+	if (Autorun::RequestedByEnvironment())
+	{
+		g_autorun.reset(new Autorun());
+		if (!g_autorun->Start())
+		{
+			g_autorun.reset();
+		}
+	}
 }
 
 } // namespace cs2st

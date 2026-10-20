@@ -16,6 +16,7 @@
 #include "suites/Source2GameClientsSuite.h"
 #include "suites/Source2ServerSuite.h"
 #include "testkit/CallGuard.h"
+#include "testkit/ResultSink.h"
 
 namespace cs2st
 {
@@ -79,6 +80,13 @@ RunTally TestRunner::RunCalls(TestContext& context, const std::string& only)
 		CS2ST_LOG_WARN("fault guard could not be armed; a bad call will crash the server\n");
 	}
 
+	// Opened after the guard so a failure to open is logged like any other
+	// warning, and before the first suite so the start line is on disk before
+	// anything can go wrong. A sink that cannot open just means no JSON.
+	ResultSink& sink = ResultSink::Get();
+	sink.SetScope(only.empty() ? std::string("all") : only);
+	sink.Open();
+
 	for (const auto& suite : suites_)
 	{
 		if (!only.empty() && only != suite->Id())
@@ -102,6 +110,7 @@ RunTally TestRunner::RunCalls(TestContext& context, const std::string& only)
 		context.EndSection();
 	}
 
+	sink.Finish(context.tally());
 	return context.tally();
 }
 

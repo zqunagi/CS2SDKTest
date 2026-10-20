@@ -135,6 +135,7 @@ configure_file(
 set(CS2SDKTEST_SOURCES
   src/plugin/Plugin.cpp
   src/plugin/Commands.cpp
+  src/plugin/Autorun.cpp
 
   src/core/Log.cpp
   src/core/Module.cpp
@@ -148,6 +149,7 @@ set(CS2SDKTEST_SOURCES
   src/testkit/StructInspector.cpp
   src/testkit/TestContext.cpp
   src/testkit/TestRunner.cpp
+  src/testkit/ResultSink.cpp
 
   src/hook/HookRecorder.cpp
 
@@ -168,6 +170,8 @@ set(CS2SDKTEST_SOURCES
 
 set(CS2SDKTEST_HEADERS
   src/plugin/Plugin.h
+  src/plugin/Commands.h
+  src/plugin/Autorun.h
 
   src/core/Platform.h
   src/core/Log.h
@@ -184,6 +188,7 @@ set(CS2SDKTEST_HEADERS
   src/testkit/StructInspector.h
   src/testkit/TestContext.h
   src/testkit/TestRunner.h
+  src/testkit/ResultSink.h
 
   src/hook/HookArg.h
   src/hook/HookRecorder.h

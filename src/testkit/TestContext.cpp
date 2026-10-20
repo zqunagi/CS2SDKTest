@@ -5,6 +5,7 @@
 
 #include "core/Log.h"
 #include "data/GameModules.h"
+#include "testkit/ResultSink.h"
 
 namespace cs2st
 {
@@ -179,6 +180,11 @@ CallOutcome TestContext::RunCall(const std::string& target, const std::function<
 		LogToFile("  %-*s ... \n", kTargetColumn, target.c_str());
 	}
 
+	// Same reasoning as the line above, for the machine-readable stream: the
+	// begin record is on disk before the call runs, so a crash that no guard
+	// catches still leaves the culprit as the last line of results.jsonl.
+	ResultSink::Get().Begin(section_, target);
+
 	FaultInfo fault;
 	const CallOutcome guard_result = InvokeGuarded(body, &fault);
 	in_call_ = false;
@@ -245,6 +251,7 @@ void TestContext::UnavailableCall(const std::string& target, const char* format,
 void TestContext::Record(const std::string& target, CallOutcome outcome, const std::string& detail)
 {
 	tally_.Count(outcome);
+	ResultSink::Get().Result(section_, target, outcome, detail);
 
 	// Only the two failure outcomes are coloured. Colouring every row would
 	// make none of them stand out, and the job here is spotting the three bad

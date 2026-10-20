@@ -17,6 +17,7 @@
 #include "core/Module.h"
 #include "data/GameModules.h"
 #include "hook/HookRecorder.h"
+#include "plugin/Commands.h"
 #include "plugin/Plugin.h"
 #include "testkit/CallGuard.h"
 #include "testkit/TestContext.h"
@@ -190,19 +191,7 @@ void CommandRun(const CCommand& args)
 		return;
 	}
 
-	const std::string what =
-		only.empty() ? std::string("call sweep (all suites)") : "call sweep: " + only;
-
-	ScopedRunLog log("run");
-	WriteLogHeader(what.c_str());
-
-	TestContext context;
-	const RunTally tally = runner.RunCalls(context, only);
-
-	LogRaw("\n  %zu call(s): %zu ok, %zu crashed, %zu failed, %zu suspect, "
-	       "%zu unavailable, %zu skipped\n\n",
-		tally.Total(), tally.ok, tally.crashed, tally.failed, tally.suspect,
-		tally.unavailable, tally.skipped);
+	RunCallSweep(only, "run");
 }
 
 void CommandHooks(const CCommand& args)
@@ -428,6 +417,26 @@ CON_COMMAND_F(cst,
 
 namespace cs2st
 {
+
+RunTally RunCallSweep(const std::string& only, const char* log_prefix)
+{
+	TestRunner& runner = g_Plugin.tests();
+
+	const std::string what =
+		only.empty() ? std::string("call sweep (all suites)") : "call sweep: " + only;
+
+	ScopedRunLog log(log_prefix);
+	WriteLogHeader(what.c_str());
+
+	TestContext context;
+	const RunTally tally = runner.RunCalls(context, only);
+
+	LogRaw("\n  %zu call(s): %zu ok, %zu crashed, %zu failed, %zu suspect, "
+	       "%zu unavailable, %zu skipped\n\n",
+		tally.Total(), tally.ok, tally.crashed, tally.failed, tally.suspect,
+		tally.unavailable, tally.skipped);
+	return tally;
+}
 
 void UnregisterCommands()
 {
