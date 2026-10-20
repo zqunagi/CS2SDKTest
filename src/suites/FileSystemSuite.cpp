@@ -439,12 +439,10 @@ void FileSystemSuite::ExerciseHandleIo(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "IFileSystem::ReadToBuffer", {
-		fs_->Seek(handle, 0, FILESYSTEM_SEEK_HEAD);
-		CUtlBuffer buffer(0, 0, CUtlBuffer::BufferFlags_t::BF_NONE);
-		const bool ok = fs_->ReadToBuffer(handle, buffer, 64, nullptr);
-		context.Detail("-> %s, %d bytes", YesNo(ok), buffer.TellPut());
-	});
+	// Crashed the process (heap critical failure): the engine allocates the CUtlBuffer
+	// storage and ~CUtlBuffer frees it here with this module's CRT free. A cross-heap
+	// free is not an exception SEH can turn into a CRASHED row.
+	context.SkipCall("IFileSystem::ReadToBuffer", "fills a CUtlBuffer; the engine-allocated storage would be freed on this module's heap");
 
 	CS2ST_CALL(context, "IFileSystem::Close", {
 		fs_->Close(handle);
@@ -464,18 +462,7 @@ void FileSystemSuite::ExerciseBufferReads(TestContext& context)
 {
 	context.Note("[IFileSystem] whole-file reads; the file length has several routes");
 
-	CS2ST_CALL(context, "IFileSystem::ReadFile", {
-		const int64 size = fs_->Size(kProbeFile, kProbePathId);
-		CUtlBuffer buffer(0, 0, CUtlBuffer::BufferFlags_t::BF_NONE);
-		const bool ok = fs_->ReadFile(kProbeFile, kProbePathId, buffer, 0, 0, nullptr);
-		context.Detail("-> %s, %d bytes (Size %lld)", YesNo(ok), buffer.TellPut(),
-			static_cast<long long>(size));
-		if (ok && size >= 0 && buffer.TellPut() != size)
-		{
-			context.Fail("ReadFile delivered %d bytes of a %lld-byte file",
-				buffer.TellPut(), static_cast<long long>(size));
-		}
-	});
+	context.SkipCall("IFileSystem::ReadFile", "fills a CUtlBuffer; the engine-allocated storage would be freed on this module's heap (ReadFileEx covers the whole-file read)");
 
 	CS2ST_CALL(context, "IFileSystem::ReadFileEx", {
 		const int64 size = fs_->Size(kProbeFile, kProbePathId);
@@ -544,17 +531,7 @@ void FileSystemSuite::ExercisePaths(TestContext& context)
 		context.Detail("-> %s, \"%.200s\"", YesNo(ok), paths.Get());
 	});
 
-	CS2ST_CALL(context, "IFileSystem::GetSearchPathsForPathID", {
-		CUtlVector<CUtlString> paths;
-		fs_->GetSearchPathsForPathID(kProbePathId, GET_SEARCH_PATH_ALL, paths);
-		const int count = paths.Count();
-		context.Detail("-> %d path%s", count, count == 1 ? "" : "s");
-		// Bounded: the count is the engine's, and only the head is worth a row.
-		for (int i = 0; i < count && i < 4; ++i)
-		{
-			context.Detail("   [%d] \"%.160s\"", i, paths[i].Get());
-		}
-	});
+	context.SkipCall("IFileSystem::GetSearchPathsForPathID", "fills a CUtlVector<CUtlString>; the engine-allocated array would be freed on this module's heap (cross-heap free aborts the process)");
 
 	CS2ST_CALL(context, "IFileSystem::GetSearchPathID", {
 		CBufferString id;
@@ -641,27 +618,9 @@ void FileSystemSuite::ExerciseFinds(TestContext& context)
 		fs_->FindClose(find);
 	});
 
-	CS2ST_CALL(context, "IFileSystem::FindFileAbsoluteList", {
-		CUtlVector<CUtlString> list;
-		fs_->FindFileAbsoluteList(list, kProbeFile, kProbePathId);
-		const int count = list.Count();
-		context.Detail("-> %d match%s", count, count == 1 ? "" : "es");
-		for (int i = 0; i < count && i < 4; ++i)
-		{
-			context.Detail("   [%d] \"%.160s\"", i, list[i].Get());
-		}
-	});
+	context.SkipCall("IFileSystem::FindFileAbsoluteList", "fills a CUtlVector<CUtlString>; the engine-allocated array would be freed on this module's heap (cross-heap free aborts the process)");
 
-	CS2ST_CALL(context, "IFileSystem::GetAvailableDrives", {
-		CUtlVector<CUtlString> drives;
-		fs_->GetAvailableDrives(drives);
-		const int count = drives.Count();
-		context.Detail("-> %d drive%s", count, count == 1 ? "" : "s");
-		for (int i = 0; i < count && i < 8; ++i)
-		{
-			context.Detail("   [%d] \"%s\"", i, drives[i].Get());
-		}
-	});
+	context.SkipCall("IFileSystem::GetAvailableDrives", "fills a CUtlVector<CUtlString>; the engine-allocated array would be freed on this module's heap (cross-heap free aborts the process)");
 }
 
 // -----------------------------------------------------------------------------
