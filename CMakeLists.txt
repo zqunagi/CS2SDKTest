@@ -162,6 +162,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/NetworkMessagesSuite.cpp
   src/suites/MetamodListenerSuite.cpp
   src/suites/ServerConfigSuite.cpp
+  src/suites/FileSystemSuite.cpp
   src/suites/GamedataSuite.cpp
 )
 
@@ -198,6 +199,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/NetworkMessagesSuite.h
   src/suites/MetamodListenerSuite.h
   src/suites/ServerConfigSuite.h
+  src/suites/FileSystemSuite.h
   src/suites/GamedataSuite.h
 )
 

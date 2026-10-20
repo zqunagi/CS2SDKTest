@@ -10,6 +10,7 @@ Test suites live here — one per SDK interface being exercised.
   NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t & GameSessionConfiguration_t layouts + 15 cross-checks + 5 hooks)
   NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout (incl. m_bLastLineComplete vs tier0) + protobuf round trip)
   ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
+  FileSystemSuite          IFileSystem                                   (calls: read-only handle I/O + path/find/name-dictionary oracles; mutating slots SkipCall)
   GamedataSuite            configs/gamedata.toml                         (47 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
 
