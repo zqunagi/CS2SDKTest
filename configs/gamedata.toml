@@ -128,11 +128,13 @@ linux   = "55 66 0F EF C0 48 89 E5 41 57 41 56 41 55 49 89 FD 31 FF"
 # game's own TakeDamageOld callers build their info from). TakeDamageOld
 # must not be handed a zeroed block: the constructor writes the vtable at
 # +0, FLT_MAX pairs at +32/+40, 1.0f at +128 and -1 handles at +232..248,
-# and the body walks those. Linux-only for now: the row reports the scan
-# miss on Windows instead of guessing a pattern there.
+# and the body walks those. The Windows pattern is the no-argument
+# constructor (server+0xfb2800, build 25947352); the other CTakeDamageInfo
+# constructors there take a source object or the full argument list.
 [signatures.CTakeDamageInfo_Constructor]
 library = "server"
-linux   = "48 8D 05 ? ? ? ? C6 47 54 FF 48 C7 87 88 00 00 00 00 00 00 00 48 C7 87 90 00 00 00 00 00 00 00"
+windows = "48 89 5C 24 ? 57 48 83 EC ? 33 FF C6 41 54 FF 48 89 79 70 48 8D 05 ? ? ? ? 48 89 B9 88 00 00 00"
+linux   ="48 8D 05 ? ? ? ? C6 47 54 FF 48 C7 87 88 00 00 00 00 00 00 00 48 C7 87 90 00 00 00 00 00 00 00"
 
 [signatures.CBaseTrigger_StartTouch]
 library = "server"
@@ -141,7 +143,7 @@ linux   = "55 48 89 E5 41 56 41 55 49 89 FD 41 54 49 89 F4 53 BB"
 
 [signatures.CBaseTrigger_EndTouch]
 library = "server"
-windows = "40 53 41 55 48 83 EC ? 83 BA"
+windows = "48 85 D2 0F 84 ? ? ? ? 53 55 48 83 EC ? 4C 8B 42 10 48 8B EA 48 8B D9 4D 85 C0 74 ?"
 linux   = "55 BA ? ? ? ? 48 89 E5 41 57 41 56 41 55 49 89 F5 41 54 49 89 FC"
 
 [signatures.CEntityIOOutput_FireOutputInternal]

@@ -104,7 +104,17 @@ using GiveNamedItem_t = void* (*)(void*, const char*, int, void*, bool, void*,
 using SetModel_t = void (*)(void*);
 using CanUse_t = int (*)(void*, void*);
 using CanAcquire_t = int (*)(void*, void*, int, int*);
-using TerminateRound_t = void (*)(void*, int, long long, float);
+// TerminateRound(gamerules, delay, reason, unk1, unk2): the ecosystem's order.
+// Under SysV the float rides xmm0 whatever its position, so this assigns the
+// same registers the Linux prologue was read from; Win64 hands out registers
+// by position, and there the delay must sit second (xmm1) with the reason in
+// r8d - an (int, long long, float) order lands them in the wrong registers.
+using TerminateRound_t = void (*)(void*, float, int, long long, unsigned);
+// The Windows build's ClientPrint is the player-addressed one (CSS's own
+// declaration): its pattern opens with `test rcx,rcx; jz`, a null player is a
+// no-op, and a non-null one is walked as a controller.
+using ClientPrintPlayer_t = void (*)(void*, int, const char*, const char*, const char*,
+                                     const char*, const char*);
 // EmitSoundFilter(out, filter, entindex, params): returns its sound-event guid
 // through the hidden first argument (32 bytes at the callers, seeded with
 // 0xFFFFFFFF00000000) and hands that pointer back. The filter is a
@@ -224,6 +234,14 @@ constexpr const char* kAk47Key = "7";
 
 /** The category filter that disables the check in GetCSWeaponDataFromKey. */
 constexpr int kAnyWeaponCategory = -1;
+
+/**
+ * Byte offset of CBaseTrigger's touch list (a CUtlVector: count at +0, element
+ * pointer at +8), read off build 25947352's Linux binary. It is the schema's
+ * m_hTouchingEntities, which the rows resolve first; this is only the fallback
+ * for a build whose field table does not carry it.
+ */
+constexpr std::size_t kTouchListOffset = 3176;
 
 // Prerequisite bits for SignatureCheck::needs. Each names something a row
 // borrows from elsewhere in the run; MissingPrerequisite turns the first one
@@ -875,6 +893,26 @@ void GamedataSuite::VerifyClientPrintAll(TestContext& context)
 
 void GamedataSuite::VerifyClientPrint(TestContext& context)
 {
+	if (CS2ST_WINDOWS != 0)
+	{
+		// Not the Linux message builder below: this pattern is the function
+		// that takes the player. A buffer passed as the player is walked as a
+		// controller, and its null fields fault - so the call needs a real
+		// controller, and the observable is the call surviving.
+		if (bot_controller_ == nullptr)
+		{
+			context.SkipCall("signatures.ClientPrint", "%s | scan ok, behaviour not run: %s",
+				row_location_.c_str(), BotMissingReason());
+			return;
+		}
+		reinterpret_cast<ClientPrintPlayer_t>(Address("ClientPrint"))(
+			bot_controller_, 4, "cs2sdktest gamedata behaviour sweep", nullptr, nullptr,
+			nullptr, nullptr);
+		RowDetail(context, "HUD_PRINTTALK line sent to bot '%s' (controller %p), call returned",
+			bot_name_.c_str(), static_cast<void*>(bot_controller_));
+		return;
+	}
+
 	// ClientPrint(out, ...) fills a message-builder object. Every pointer
 	// argument but the last is dereferenced before the builder is touched
 	// (build 25947352: the filter's callback at +8, two vectors out of a3,
@@ -1274,7 +1312,7 @@ void GamedataSuite::VerifyTerminateRound(TestContext& context)
 	// Reason 10 is RoundDraw: no team is credited, so no scoreboard state a
 	// later suite might read is disturbed. Delay 0: the state lands this frame.
 	reinterpret_cast<TerminateRound_t>(Address("CCSGameRules_TerminateRound"))(
-		gamerules, 10, 0, 0.0f);
+		gamerules, 0.0f, 10, 0, 0);
 	RowDetail(context, "gamerules %p (via proxy %p), round terminated as a draw, returned",
 		gamerules, static_cast<void*>(proxy));
 }
@@ -1622,11 +1660,13 @@ void GamedataSuite::VerifyEndTouch(TestContext& context)
 	// outright when the count is zero: zeroed buffers take the no-op path end
 	// to end. CEntityInstance is abstract in the SDK, so `other` is a raw
 	// buffer rather than an instance.
-	unsigned char trigger[0xC80] = {0};
+	std::size_t touch_offset = kTouchListOffset;
+	SchemaOffset("CBaseTrigger", "m_hTouchingEntities", touch_offset);
+	std::vector<unsigned char> trigger(touch_offset + 0x100, 0);
 	unsigned char other_bytes[0x100] = {0};
-	reinterpret_cast<EndTouch_t>(Address("CBaseTrigger_EndTouch"))(trigger, other_bytes);
+	reinterpret_cast<EndTouch_t>(Address("CBaseTrigger_EndTouch"))(trigger.data(), other_bytes);
 	std::int32_t count = 0;
-	std::memcpy(&count, trigger + 3176, sizeof(count));
+	std::memcpy(&count, trigger.data() + touch_offset, sizeof(count));
 	RowDetail(context, "empty touch list, count after the call %d (expected 0)", count);
 	if (count != 0)
 	{
@@ -1666,16 +1706,61 @@ void GamedataSuite::VerifyStartTouch(TestContext& context)
 		context.Fail("setup: UTIL_CreateEntityByName(info_target) returned no entity to touch");
 		return;
 	}
+	// The touch list is CBaseTrigger::m_hTouchingEntities; the schema gives its
+	// offset on whichever platform this runs on, and 3176 (the Linux binary's
+	// value) is only the fallback.
+	std::size_t touch_offset = kTouchListOffset;
+	const bool from_schema = SchemaOffset("CBaseTrigger", "m_hTouchingEntities", touch_offset);
 	const auto read_count = [&]() {
 		std::int32_t count = 0;
-		std::memcpy(&count, reinterpret_cast<const unsigned char*>(trigger) + 3176,
+		std::memcpy(&count, reinterpret_cast<const unsigned char*>(trigger) + touch_offset,
 			sizeof(count));
 		return count;
 	};
+	// StartTouch's first act is the trigger's PassesTriggerFilters (vtable slot
+	// 271 on the Windows build): it tests the spawnflags against what the
+	// touching entity is, and a zero flag word passes nothing, so the body
+	// returns before the list is touched. SF_TRIGGER_ALLOW_ALL (0x40) accepts
+	// any entity, which is what an info_target needs to count as touching.
+	constexpr std::uint32_t kTriggerAllowAll = 0x40;
+	std::size_t spawnflags_offset = 0;
+	if (SchemaOffset("CBaseEntity", "m_spawnflags", spawnflags_offset))
+	{
+		std::uint32_t flags = 0;
+		auto* flag_bytes = reinterpret_cast<unsigned char*>(trigger) + spawnflags_offset;
+		std::memcpy(&flags, flag_bytes, sizeof(flags));
+		flags |= kTriggerAllowAll;
+		std::memcpy(flag_bytes, &flags, sizeof(flags));
+	}
 	const std::int32_t before = read_count();
+
+	// A window of the object around the list, kept to say where the count
+	// really is when it does not move at the offset above.
+	constexpr std::size_t kWindow = 0x200;
+	const std::size_t window_start = touch_offset > kWindow / 2 ? touch_offset - kWindow / 2 : 0;
+	unsigned char snapshot[kWindow];
+	std::memcpy(snapshot, reinterpret_cast<const unsigned char*>(trigger) + window_start,
+		kWindow);
 
 	reinterpret_cast<StartTouch_t>(Address("CBaseTrigger_StartTouch"))(trigger, other);
 	const std::int32_t touched = read_count();
+	std::string moved;
+	if (touched != before + 1)
+	{
+		const auto* now = reinterpret_cast<const unsigned char*>(trigger) + window_start;
+		int listed = 0;
+		for (std::size_t i = 0; i + 4 <= kWindow && listed < 6; i += 4)
+		{
+			if (std::memcmp(snapshot + i, now + i, 4) != 0)
+			{
+				char entry[24];
+				std::snprintf(entry, sizeof(entry), "%s+%zu", listed == 0 ? "" : " ",
+					window_start + i);
+				moved += entry;
+				++listed;
+			}
+		}
+	}
 	void* end_touch = Address("CBaseTrigger_EndTouch");
 	if (end_touch != nullptr)
 	{
@@ -1685,9 +1770,11 @@ void GamedataSuite::VerifyStartTouch(TestContext& context)
 	RemoveScratchEntity(trigger);
 	RemoveScratchEntity(other);
 
-	RowDetail(context, "constructed trigger %p, scratch entity %p: count %d -> %d after "
-	                   "StartTouch -> %d after EndTouch (expected +1 then back)", trigger, other,
-		before, touched, restored);
+	RowDetail(context, "constructed trigger %p, scratch entity %p: count at +%zu (%s) %d -> %d "
+	                   "after StartTouch -> %d after EndTouch (expected +1 then back)%s%s",
+		trigger, other, touch_offset, from_schema ? "schema" : "fallback", before, touched,
+		restored, moved.empty() ? "" : "; dwords that changed in the object: ",
+		moved.c_str());
 	if (touched != before + 1)
 	{
 		context.Fail("behaviour: the touch count did not move by 1; the address is not "
@@ -1778,10 +1865,19 @@ void GamedataSuite::VerifyFireOutputInternal(TestContext& context)
 		&output, nullptr, nullptr, nullptr, 0.0f, nullptr, nullptr);
 	RowDetail(context, "no connections: returned %p, passed %p", returned,
 		static_cast<void*>(&output));
-	if (returned != &output)
+	// Handing the first argument back is what the Itanium build's codegen does
+	// (rdi is still in rax at the early exit); an MSVC build of the same
+	// source makes no such promise, so on Windows only the object itself is
+	// the evidence: nothing may be written into an output with no connections.
+	if (CS2ST_WINDOWS == 0 && returned != &output)
 	{
 		context.Fail("behaviour: a zeroed CEntityIOOutput did not come back unchanged; the "
 		             "address is not FireOutputInternal");
+	}
+	else if (output.vtable != nullptr || output.connections != nullptr || output.desc != nullptr)
+	{
+		context.Fail("behaviour: the call wrote into a zeroed CEntityIOOutput that has no "
+		             "connections; the address is not FireOutputInternal");
 	}
 }
 
@@ -1827,16 +1923,35 @@ void GamedataSuite::VerifyNetworkStateChanged(TestContext& context)
 	const auto* fn = static_cast<const unsigned char*>(Address("NetworkStateChanged"));
 
 	// The first mov r64, [r64+disp32] (REX.W 8B, ModRM mod=10): every field
-	// read before it fits a disp8, a vtable slot past 15 does not.
-	for (std::size_t i = 0; i + 7 <= kDecodeWindow; ++i)
+	// read before it fits a disp8, a vtable slot past 15 does not. MSVC reaches
+	// the slot without loading it into a register - `jmp/call [r64+disp32]`
+	// (optional REX, FF /2 or /4, ModRM mod=10) - so on Windows that form
+	// counts too.
+	for (std::size_t i = 0; i + 8 <= kDecodeWindow; ++i)
 	{
-		if ((fn[i] & 0xF8) != 0x48 || fn[i + 1] != 0x8B || (fn[i + 2] & 0xC0) != 0x80
-			|| (fn[i + 2] & 0x07) == 0x04)
+		std::size_t disp_at = 0;
+		if ((fn[i] & 0xF8) == 0x48 && fn[i + 1] == 0x8B && (fn[i + 2] & 0xC0) == 0x80
+			&& (fn[i + 2] & 0x07) != 0x04)
+		{
+			disp_at = i + 3;
+		}
+		else if (CS2ST_WINDOWS != 0)
+		{
+			const std::size_t op = ((fn[i] & 0xF0) == 0x40) ? i + 1 : i;
+			const unsigned modrm = fn[op + 1];
+			const unsigned reg = (modrm >> 3) & 0x07;
+			if (fn[op] == 0xFF && (modrm & 0xC0) == 0x80 && (modrm & 0x07) != 0x04
+				&& (reg == 2 || reg == 4))
+			{
+				disp_at = op + 2;
+			}
+		}
+		if (disp_at == 0)
 		{
 			continue;
 		}
 		std::int32_t disp = 0;
-		std::memcpy(&disp, fn + i + 3, sizeof(disp));
+		std::memcpy(&disp, fn + disp_at, sizeof(disp));
 		RowDetail(context, "decode: +0x%zx loads vtable +0x%x = slot %d; "
 		                   "vtables.SetStateChanged %lld",
 			i, static_cast<unsigned>(disp), disp / 8, entry->number);
@@ -3101,9 +3216,13 @@ void GamedataSuite::VerifySetStateChangedSlot(TestContext& context, const std::s
 	// observables are put back afterwards. The NetworkStateChanged signature
 	// row decodes the same slot number out of the code that calls it - two
 	// readings, one number.
-	constexpr std::size_t kStateWord = 728;    // |= 3 on a whole-entity change
-	constexpr std::size_t kDeferredByte = 733; // = 1 while the component is busy
-	constexpr std::size_t kDisabledByte = 736; // set: the call is a no-op
+	// Offsets inside the component, per platform: the Windows build's body
+	// (server+0x1553c0) ORs into entity+440, sets entity+445 and reads
+	// entity+448 with the component at entity+56, i.e. 384/389/392; the Linux
+	// build's are 728/733/736. The three keep the same 5/3 spacing.
+	constexpr std::size_t kStateWord = CS2ST_WINDOWS ? 384 : 728;    // |= 3 on a whole-entity change
+	constexpr std::size_t kDeferredByte = CS2ST_WINDOWS ? 389 : 733; // = 1 while the component is busy
+	constexpr std::size_t kDisabledByte = CS2ST_WINDOWS ? 392 : 736; // set: the call is a no-op
 	std::size_t component_offset = 0;
 	if (!SchemaOffset("CBaseEntity", "m_NetworkTransmitComponent", component_offset))
 	{
