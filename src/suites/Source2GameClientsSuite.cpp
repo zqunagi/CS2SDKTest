@@ -762,6 +762,13 @@ KHook::Return<void> Source2GameClientsSuite::Post_ClientSvcUserMessage(ISource2G
 //  it, argument drift moved from a runtime garbage read to a compile error.
 // -----------------------------------------------------------------------------
 
+// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
+// for the rest of the translation unit and overrides the /wd4355 on the command
+// line. Passing `this` as the hook context is intentional (stored, not used).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4355)
+#endif
 Source2GameClientsSuite::Source2GameClientsSuite() :
 	hook_OnClientConnected_(&ISource2GameClients::OnClientConnected, this,
 		&Source2GameClientsSuite::Pre_OnClientConnected,
@@ -798,5 +805,8 @@ Source2GameClientsSuite::Source2GameClientsSuite() :
 		&Source2GameClientsSuite::Post_ClientSvcUserMessage)
 {
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace cs2st

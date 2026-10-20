@@ -13,6 +13,7 @@
 #include "core/Log.h"
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
+#include "testkit/UtlVectorGuard.h"
 
 // The SH_DECL_HOOK block used to live here; under KHook the hook templates are
 // declared as members in the header instead, bound to the SDK member pointers
@@ -321,7 +322,9 @@ void Source2ServerSuite::ExerciseEnumerations(TestContext& context)
 		// GetHitGroupEnumInfo until the 2026-10 SDK renamed it; parameters and
 		// vtable slot are unchanged, so the row keeps comparing against old logs.
 		CUtlVector<int> values;
+		UtlVectorGuard<decltype(values)> values_guard(values);
 		CUtlVector<CUtlString> names;
+		UtlVectorGuard<decltype(names)> names_guard(names);
 		server_->GetHitGroupInfo(values, names);
 
 		context.Detail("-> %d value(s), %d name(s)", values.Count(), names.Count());
@@ -338,6 +341,7 @@ void Source2ServerSuite::ExerciseEnumerations(TestContext& context)
 
 	CS2ST_CALL(context, "ISource2Server::GetAnimationActivityList", {
 		CUtlVector<CUtlString> activities;
+		UtlVectorGuard<decltype(activities)> activities_guard(activities);
 		server_->GetAnimationActivityList(activities);
 		context.Detail("-> %d activit%s", activities.Count(),
 			activities.Count() == 1 ? "y" : "ies");
@@ -346,6 +350,7 @@ void Source2ServerSuite::ExerciseEnumerations(TestContext& context)
 
 	CS2ST_CALL(context, "ISource2Server::GetAnimationEventList", {
 		CUtlVector<CUtlString> events;
+		UtlVectorGuard<decltype(events)> events_guard(events);
 		server_->GetAnimationEventList(events);
 		context.Detail("-> %d event(s)", events.Count());
 		NoteListPreview(context, events);
@@ -736,6 +741,13 @@ KHook::Return<bool> Source2ServerSuite::Post_ShouldHideFromMasterServer(ISource2
 //  hook stops firing after an update, these lines are what to re-check first.
 // -----------------------------------------------------------------------------
 
+// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
+// for the rest of the translation unit and overrides the /wd4355 on the command
+// line. Passing `this` as the hook context is intentional (stored, not used).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4355)
+#endif
 Source2ServerSuite::Source2ServerSuite() :
 	hook_GameFrame_(&ISource2Server::GameFrame, this,
 		&Source2ServerSuite::Pre_GameFrame,
@@ -772,5 +784,8 @@ Source2ServerSuite::Source2ServerSuite() :
 		&Source2ServerSuite::Post_ShouldHideFromMasterServer)
 {
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace cs2st

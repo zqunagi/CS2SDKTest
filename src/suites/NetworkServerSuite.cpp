@@ -25,6 +25,7 @@
 #include "hook/HookRecorder.h"
 #include "testkit/PrivateField.h"
 #include "testkit/StructInspector.h"
+#include "testkit/UtlVectorGuard.h"
 
 // The SH_DECL_HOOK block used to live here; under KHook the hook templates are
 // declared as members in the header instead, bound to the SDK member pointers
@@ -761,6 +762,7 @@ void NetworkServerSuite::ExerciseGameServer(TestContext& context)
 		// the schema suite; unrelated to memoverride.cpp, which only covers
 		// global new/delete.)
 		CUtlVector<SpawnGroupHandle_t> loading;
+		UtlVectorGuard<decltype(loading)> loading_guard(loading);
 		game_server_->GetAllLoadingSpawnGroups(&loading);
 		const int count = loading.Count();
 		context.Detail("-> %d group(s) loading", count);
@@ -1595,6 +1597,13 @@ KHook::Return<void> NetworkServerSuite::Post_PreserveSteamID(INetworkServerServi
 //  firing after an update, these lines are what to re-check first.
 // -----------------------------------------------------------------------------
 
+// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
+// for the rest of the translation unit and overrides the /wd4355 on the command
+// line. Passing `this` as the hook context is intentional (stored, not used).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4355)
+#endif
 NetworkServerSuite::NetworkServerSuite() :
 	hook_StartChangeLevel_(&INetworkServerService::StartChangeLevel, this,
 		&NetworkServerSuite::Pre_StartChangeLevel,
@@ -1613,5 +1622,8 @@ NetworkServerSuite::NetworkServerSuite() :
 		&NetworkServerSuite::Post_PreserveSteamID)
 {
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace cs2st

@@ -12,6 +12,7 @@
 #include <tier0/utlvector.h>
 
 #include "testkit/StructInspector.h"
+#include "testkit/UtlVectorGuard.h"
 
 namespace cs2st
 {
@@ -1540,6 +1541,7 @@ void SchemaSystemSuite::ExerciseClassGraph(TestContext& context)
 		// position, so SCHEMA_ITER_NONE (0) is the conservative reading; the
 		// trailing bool is likewise unnamed and passed false.
 		CUtlVector<const CSchemaClassInfo*> descendents;
+		UtlVectorGuard<decltype(descendents)> descendents_guard(descendents);
 		schema_->FindDescendentsOfClass(probe_class_,
 			static_cast<int>(SCHEMA_ITER_NONE), &descendents, false);
 
@@ -1571,6 +1573,7 @@ void SchemaSystemSuite::ExerciseClassGraph(TestContext& context)
 			std::string("ISchemaSystem::FindClassesByMeta(\"") + tag + "\")";
 		CS2ST_CALL(context, target, {
 			CUtlVector<const CSchemaClassInfo*> classes;
+			UtlVectorGuard<decltype(classes)> classes_guard(classes);
 			schema_->FindClassesByMeta(tag, SCHEMA_ITER_SINGLE_PARENT, &classes);
 
 			const int count = classes.Count();

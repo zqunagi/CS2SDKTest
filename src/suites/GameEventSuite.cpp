@@ -1283,6 +1283,13 @@ KHook::Return<void> GameEventSuite::Post_PurgeQueuedEvents(IGameEventSystem*)
 //  replacement for the overload index SH_DECL_HOOK used to carry.
 // -----------------------------------------------------------------------------
 
+// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
+// for the rest of the translation unit and overrides the /wd4355 on the command
+// line. Passing `this` as the hook context is intentional (stored, not used).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4355)
+#endif
 GameEventSuite::GameEventSuite() :
 	hook_RegisterGameEvent_(&IGameEventSystem::RegisterGameEvent, this,
 		&GameEventSuite::Pre_RegisterGameEvent,
@@ -1319,5 +1326,8 @@ GameEventSuite::GameEventSuite() :
 		&GameEventSuite::Post_PurgeQueuedEvents)
 {
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace cs2st

@@ -13,6 +13,7 @@
 #include "hook/HookRecorder.h"
 #include "testkit/PrivateField.h"
 #include "testkit/StructInspector.h"
+#include "testkit/UtlVectorGuard.h"
 
 // The SH_DECL_HOOK block used to live here; under KHook the hook templates are
 // declared as members in the header instead, bound to the SDK member pointers
@@ -3196,6 +3197,7 @@ void ConVarSuite::ExerciseCallbackInfoShapes(TestContext& context)
 		CCommand args;
 		args.Tokenize("cs2sdktest_cmd ");
 		CUtlVector<CUtlString> completions;
+		UtlVectorGuard<decltype(completions)> completions_guard(completions);
 
 		const int before = g_completion_fn_calls;
 		const int returned = info.Dispatch(args, completions);
@@ -3223,6 +3225,7 @@ void ConVarSuite::ExerciseCallbackInfoShapes(TestContext& context)
 		CCommand args;
 		args.Tokenize("cs2sdktest_cmd ");
 		CUtlVector<CUtlString> completions;
+		UtlVectorGuard<decltype(completions)> completions_guard(completions);
 
 		const int before = g_completion_interface_calls;
 		const int returned = info.Dispatch(args, completions);
@@ -3248,6 +3251,7 @@ void ConVarSuite::ExerciseCallbackInfoShapes(TestContext& context)
 		CCommand args;
 		args.Tokenize("cs2sdktest_cmd ");
 		CUtlVector<CUtlString> completions;
+		UtlVectorGuard<decltype(completions)> completions_guard(completions);
 
 		const int returned = info.Dispatch(args, completions);
 		context.Detail("valid=%s, returned %d, vector holds %d",
@@ -3582,6 +3586,7 @@ void ConVarSuite::ExerciseCompletion(TestContext& context)
 		}
 
 		CUtlVector<CUtlString> completions;
+		UtlVectorGuard<decltype(completions)> completions_guard(completions);
 		bool successful = false;
 		cvar_->GetCompletionResults(command, completions, &successful);
 
@@ -3607,6 +3612,7 @@ void ConVarSuite::ExerciseCompletion(TestContext& context)
 		command.Tokenize("cs2sdktest_");
 
 		CUtlVector<CUtlString> completions;
+		UtlVectorGuard<decltype(completions)> completions_guard(completions);
 		cvar_->GetCompletionResults(command, completions, nullptr);
 		context.Detail("-> %d completion(s), null out-param accepted",
 			completions.Count());
@@ -3626,7 +3632,9 @@ void ConVarSuite::ExerciseCompletion(TestContext& context)
 		command.Tokenize("cs2sdktest_cmd ");
 
 		CUtlVector<CUtlString> from_ref;
+		UtlVectorGuard<decltype(from_ref)> from_ref_guard(from_ref);
 		CUtlVector<CUtlString> from_data;
+		UtlVectorGuard<decltype(from_data)> from_data_guard(from_data);
 		const int ref_count = probe.GetAutoCompleteSuggestions(command, from_ref);
 		const int data_count = data->GetAutoCompleteSuggestions(command, from_data);
 
@@ -5032,6 +5040,13 @@ KHook::Return<void> ConVarSuite::Post_UnregisterConCommandCallbacks(ICvar*, ConC
 //  pointer, so this list is the plugin's ABI contract with the SDK.
 // -----------------------------------------------------------------------------
 
+// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
+// for the rest of the translation unit and overrides the /wd4355 on the command
+// line. Passing `this` as the hook context is intentional (stored, not used).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4355)
+#endif
 ConVarSuite::ConVarSuite() :
 	hook_DispatchConCommand_(&ICvar::DispatchConCommand, this,
 		&ConVarSuite::Pre_DispatchConCommand,
@@ -5053,5 +5068,8 @@ ConVarSuite::ConVarSuite() :
 		&ConVarSuite::Post_UnregisterConCommandCallbacks)
 {
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace cs2st
