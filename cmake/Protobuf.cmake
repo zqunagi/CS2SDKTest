@@ -113,9 +113,40 @@ function(cs2sdktest_generate_protobuf out_sources_var)
     endforeach()
   endforeach()
 
+  # The SDK's .proto files declare no `syntax`, and protoc warns about that on
+  # every run. The submodule must stay untouched, so protoc reads copies with
+  # an explicit `syntax = "proto2";` (the implicit default, so the generated
+  # code is unchanged) staged in the build tree instead.
+  set(_stage_dir "${CMAKE_BINARY_DIR}/generated/proto_stage")
+  file(MAKE_DIRECTORY "${_stage_dir}")
+  foreach(_name IN LISTS _names)
+    set(_original "${CS2SDKTEST_PROTO_DIR}/${_name}.proto")
+    file(READ "${_original}" _proto_text)
+    if(NOT _proto_text MATCHES "(^|\n)[ \t]*syntax[ \t]*=")
+      set(_proto_text "syntax = \"proto2\";\n${_proto_text}")
+    endif()
+    # protoc warns about imports nothing uses; drop the ones known to be dead
+    # (listed as "<file>:<import>", both without extension). The import is
+    # removed in place so line numbers in later diagnostics stay the same.
+    foreach(_pair IN ITEMS "networkbasetypes:network_connection")
+      string(REPLACE ":" ";" _pair_parts "${_pair}")
+      list(GET _pair_parts 0 _pair_file)
+      list(GET _pair_parts 1 _pair_import)
+      if(_name STREQUAL _pair_file)
+        string(REGEX REPLACE
+          "(^|\n)[ \t]*import[ \t]+\"${_pair_import}\\.proto\"[ \t]*;"
+          "\\1" _proto_text "${_proto_text}")
+      endif()
+    endforeach()
+    # Writes only on change, so an unchanged stage does not retrigger protoc.
+    file(GENERATE OUTPUT "${_stage_dir}/${_name}.proto" CONTENT "${_proto_text}")
+    # Reconfigure when the original changes, so the stage never goes stale.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_original}")
+  endforeach()
+
   set(_generated "")
   foreach(_name IN LISTS _names)
-    set(_input "${CS2SDKTEST_PROTO_DIR}/${_name}.proto")
+    set(_input "${_stage_dir}/${_name}.proto")
 
     set(_header "${CS2SDKTEST_PROTO_OUT_DIR}/${_name}.pb.h")
     set(_source "${CS2SDKTEST_PROTO_OUT_DIR}/${_name}.pb.cc")
@@ -123,7 +154,7 @@ function(cs2sdktest_generate_protobuf out_sources_var)
     add_custom_command(
       OUTPUT "${_header}" "${_source}"
       COMMAND "${CS2SDKTEST_PROTOC}"
-              "--proto_path=${CS2SDKTEST_PROTO_DIR}"
+              "--proto_path=${_stage_dir}"
               # descriptor.proto and the other well-known types are imported by
               # the SDK's protos and live in the bundled protobuf tree.
               "--proto_path=${HL2SDK_ROOT}/thirdparty/protobuf-3.21.8/src"

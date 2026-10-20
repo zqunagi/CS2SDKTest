@@ -3621,10 +3621,19 @@ KHook::Return<void> GamedataSuite::Post_AcceptInput(CEntityInstance*, const char
 //  they detour arrive later, from the sweep
 // -----------------------------------------------------------------------------
 
+// convar.h ends with `#pragma warning(default : 4355)`, which overrides the
+// /wd4355 on the command line. Passing `this` as the hook context is intentional.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4355)
+#endif
 GamedataSuite::GamedataSuite()
 	: hook_host_say_(this, &GamedataSuite::Pre_HostSay, &GamedataSuite::Post_HostSay),
 	  hook_accept_input_(this, &GamedataSuite::Pre_AcceptInput, &GamedataSuite::Post_AcceptInput)
 {
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace cs2st
