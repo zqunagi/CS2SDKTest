@@ -444,6 +444,27 @@ void FileSystemSuite::ExerciseHandleIo(TestContext& context)
 	// free is not an exception SEH can turn into a CRASHED row.
 	context.SkipCall("IFileSystem::ReadToBuffer", "fills a CUtlBuffer; the engine-allocated storage would be freed on this module's heap");
 
+	// Read-only mapping through the open handle; the name overload is exercised
+	// in ExercisePaths. Both should describe the same file.
+	CS2ST_CALL(context, "IFileSystem::CreateMemoryMap(FileHandle_t,flags)", {
+		IMemoryMappedFile* map = fs_->CreateMemoryMap(handle, MMF_READ);
+		if (map == nullptr)
+		{
+			context.Detail("-> null (SDK allows NULL on failure)");
+			return;
+		}
+		const size_t mapped = map->GetMappedSize();
+		context.Detail("-> %p, memory %p, %llu bytes, flags %d", static_cast<void*>(map),
+			map->GetMappedMemory(), static_cast<unsigned long long>(mapped),
+			static_cast<int>(map->GetFlags()));
+		if (name_size > 0 && mapped != static_cast<size_t>(name_size))
+		{
+			context.Suspect("mapping is %llu bytes, Size says %lld",
+				static_cast<unsigned long long>(mapped), static_cast<long long>(name_size));
+		}
+		map->Release();
+	});
+
 	CS2ST_CALL(context, "IFileSystem::Close", {
 		fs_->Close(handle);
 		context.Detail("-> closed %p", handle);
@@ -451,7 +472,6 @@ void FileSystemSuite::ExerciseHandleIo(TestContext& context)
 
 	context.SkipCall("IFileSystem::Write", "the probe handle is read-only; writing would touch game files");
 	context.SkipCall("IFileSystem::FPrintf", "the probe handle is read-only; writing would touch game files");
-	context.SkipCall("IFileSystem::unk001(FileHandle_t,bool)", "unknown semantics; may flush or discard");
 }
 
 // -----------------------------------------------------------------------------
@@ -578,8 +598,42 @@ void FileSystemSuite::ExercisePaths(TestContext& context)
 	context.SkipCall("IFileSystem::RemoveSearchPaths", "unmounts every path with a path ID");
 	context.SkipCall("IFileSystem::MarkPathIDByRequestOnly", "changes how a path ID is searched");
 	context.SkipCall("IFileSystem::SetSearchPathReadOnly", "changes search path attributes");
-	context.SkipCall("IFileSystem::unk003", "unknown semantics; returns an object by value");
-	context.SkipCall("IFileSystem::unk004", "unknown semantics");
+
+	CS2ST_CALL(context, "IFileSystem::CreateMemoryMap(name,pathID,flags)", {
+		IMemoryMappedFile* map = fs_->CreateMemoryMap(kProbeFile, kProbePathId, MMF_READ);
+		if (map == nullptr)
+		{
+			context.Detail("-> null (SDK allows NULL on failure)");
+			return;
+		}
+		const size_t mapped = map->GetMappedSize();
+		const int64 size = fs_->Size(kProbeFile, kProbePathId);
+		context.Detail("-> %p, memory %p, %llu bytes (Size %lld)", static_cast<void*>(map),
+			map->GetMappedMemory(), static_cast<unsigned long long>(mapped),
+			static_cast<long long>(size));
+		if (size > 0 && mapped != static_cast<size_t>(size))
+		{
+			context.Suspect("mapping is %llu bytes, Size says %lld",
+				static_cast<unsigned long long>(mapped), static_cast<long long>(size));
+		}
+		map->Release();
+	});
+
+	// GetMergeTokenForPath feeds GetMergedPaths; the second only means something
+	// when the first found a merge group, so they share one row.
+	CS2ST_CALL(context, "IFileSystem::GetMergeTokenForPath + GetMergedPaths", {
+		const CUtlStringToken token = fs_->GetMergeTokenForPath(kProbeFile, kProbePathId);
+		context.Detail("-> token 0x%08x (%s)", static_cast<unsigned>(token.GetHashCode()),
+			token.IsValid() ? "valid" : "empty");
+		CBufferString merged;
+		const int length = fs_->GetMergedPaths(token, &merged);
+		context.Detail("-> %d, \"%.200s\"", length, merged.Get());
+	});
+
+	CS2ST_CALL(context, "IFileSystem::IsFileInUntrustedAddon", {
+		context.Detail("-> %s (for \"%s\")", YesNo(fs_->IsFileInUntrustedAddon(kProbeFile)),
+			kProbeFile);
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -735,7 +789,6 @@ void FileSystemSuite::NoteSideEffectingCalls(TestContext& context)
 {
 	context.Note("[IFileSystem] state-changing slots: not called");
 
-	context.SkipCall("IFileSystem::unk001(const char*,void*,bool)", "unknown semantics; takes a path");
 	context.SkipCall("IFileSystem::RemoveFile", "deletes a file");
 	context.SkipCall("IFileSystem::RenameFile", "renames a file");
 	context.SkipCall("IFileSystem::CreateDirHierarchy", "creates directories on disk");
@@ -757,6 +810,11 @@ void FileSystemSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("IFileSystem::UnloadUGC", "unloads UGC content");
 	context.SkipCall("IFileSystem::SetIODelayAlarm", "arms a process-wide breakpoint alarm");
 	context.SkipCall("IFileSystem::MarkContentCorrupt", "flags content as corrupt for the whole session");
+	context.SkipCall("IFileSystem::SetContentCorruptionReportingEnabled", "changes global corruption reporting and there is no getter to restore it");
+	context.SkipCall("IFileSystem::SuppressAsyncFileRequestFlushOnPathChange", "nesting counter with no getter; an unbalanced call would change async flush behaviour");
+	context.SkipCall("IFileSystem::WriteFileAccessLog", "writes a file to disk and may clear the access log");
+	context.SkipCall("IFileSystem::SetVPKSignatureVerification", "changes the key and callbacks used to verify VPKs mounted afterwards");
+	context.SkipCall("IFileSystem::MarkVPKAsUntrustedAddon", "marks a mounted VPK untrusted for the whole session");
 
 	// EnableBlockingFileAccessTracking, IsBlockingFileAccessEnabled and
 	// RetrieveBlockingFileAccessInfo sit behind #if defined(TRACK_BLOCKING_IO)
