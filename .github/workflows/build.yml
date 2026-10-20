@@ -1,0 +1,67 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    # 22.04 keeps the glibc requirement low enough for the CS2 server runtime.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0   # git describe is baked into the plugin version
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang ninja-build
+      - name: Configure
+        run: cmake --preset linux-x64-release
+      - name: Build
+        run: cmake --build --preset linux-x64-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cs2sdktest-linux-x64
+          path: build/linux-x64-release/package
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Configure
+        run: cmake --preset windows-x64
+      - name: Build
+        run: cmake --build --preset windows-x64-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cs2sdktest-windows-x64
+          path: build/windows-x64/package
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Pack
+        run: |
+          for d in artifacts/*; do
+            (cd "$d" && zip -qr "../$(basename "$d")-${GITHUB_REF_NAME}.zip" .)
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
