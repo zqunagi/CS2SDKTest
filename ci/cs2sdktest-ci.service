@@ -1,0 +1,9 @@
+[Unit]
+Description=CS2SDKTest CI poll
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=cs2
+ExecStart=/opt/cs2sdktest-ci/ci-poll.sh
+TimeoutStartSec=3h

@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll for new CS2SDKTest release or CS2 update
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
