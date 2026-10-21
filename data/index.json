@@ -9,7 +9,8 @@
    "game_version": "1.41.9.1",
    "finished": "2026-10-21T05:37:43Z",
    "failed": 0,
-   "crashed": 0
+   "crashed": 0,
+   "s2sdk": "89096c5d (2026-10-19)"
   },
   {
    "id": "20261021-05_v0.1.1_b25944058-3",
@@ -20,7 +21,8 @@
    "finished": "2026-10-21T05:23:14Z",
    "failed": 0,
    "crashed": 0,
-   "game_version": "1.41.9.1"
+   "game_version": "1.41.9.1",
+   "s2sdk": "89096c5d (2026-10-19)"
   }
  ]
 }

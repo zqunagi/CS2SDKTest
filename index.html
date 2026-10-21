@@ -123,6 +123,19 @@ function bar(s){
   <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
 }
 
+async function gamedata(id){
+  const k='gd:'+id;
+  if(!(k in cache)) cache[k]=get('data/runs/'+encodeURIComponent(id)+'/gamedata.json').catch(()=>null);
+  return cache[k];
+}
+// gamedata 行的第三列：不显示测试结果，显示这次测试所用平台（Linux）的 gamedata 内容
+function gdCell(x,gd){
+  if(x.suite!=='gamedata'||!gd||!(x.call in gd))return esc(x.detail);
+  const v=gd[x.call], kind=x.call.split('.')[0];
+  const lab=kind==='vtables'?'虚表槽位 ':kind==='offsets'?'偏移 ':'';
+  return `${lab}<code>${esc(v)}</code>`;
+}
+
 async function result(id){
   if(!(id in cache)) cache[id]=get('data/runs/'+encodeURIComponent(id)+'/results.json').catch(()=>null);
   return cache[id];
@@ -137,6 +150,7 @@ function hero(r,res){
       <div class="meta" style="margin-top:12px">
         <span>插件 <b>${esc(r.release)}</b></span>
         <span>CS2 版本 <b>${esc(ver(r))}</b></span>
+        ${r.s2sdk?`<span>s2sdk <b>${esc(r.s2sdk)}</b></span>`:''}
         <span>${esc(REASON[r.reason]||r.reason)}</span>
         <span>${esc(when(r.finished))}</span>
       </div>
@@ -157,10 +171,10 @@ async function init(){
     $('#history').innerHTML='';return;
   }
   $('#latest').innerHTML=hero(runs[0],await result(runs[0].id));
-  $('#history').innerHTML=`<table><thead><tr><th>时间</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 版本</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
+  $('#history').innerHTML=`<table><thead><tr><th>时间</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 版本</th><th>s2sdk</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
     runs.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(when(r.finished))}</td>
     <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
-    <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td>
+    <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td><td class="mono">${esc(r.s2sdk||'-')}</td>
     <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table>';
   document.querySelectorAll('tr.run').forEach(tr=>tr.onclick=()=>show(tr.dataset.id));
   show(location.hash.length>1?decodeURIComponent(location.hash.slice(1)):runs[0].id,true);
@@ -172,6 +186,7 @@ async function show(id,quiet){
   document.querySelectorAll('tr.run').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===id));
   if(!quiet)history.replaceState(null,'','#'+encodeURIComponent(id));
   const run=runs[idx], res=await result(id), d=$('#detail');
+  const gd=await gamedata(id);
   if(!res){d.innerHTML='<h2>详情</h2><div class="card note">这次没有完整的 results.json，运行未完成。</div>';return}
 
   const prevRun=runs.slice(idx+1).find(r=>r.status==='completed');
@@ -190,7 +205,7 @@ async function show(id,quiet){
     list.forEach(x=>{if(!bySuite.has(x.suite))bySuite.set(x.suite,[]);bySuite.get(x.suite).push(x)});
     const tabs=[['problems','需关注',problems],['ALL','全部',res.results.length],...OUT.filter(o=>counts[o[0]]).map(o=>[o[0],o[1],counts[o[0]]])];
     const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
-    d.innerHTML=`<h2>详情 · ${esc(run.release)} · CS2 ${esc(ver(run))}</h2>
+    d.innerHTML=`<h2>详情 · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
       ${prev?`<div class="card" style="margin-bottom:14px">${changed.length
         ?`<div class="note" style="padding-bottom:6px">相比 ${esc(prevRun.release)} / ${esc(ver(prevRun))}，<b style="color:var(--fg)">${changed.length}</b> 项结果有变化</div><div class="diff">${changed.slice(0,60).map(x=>{const b=before.get(x.suite+'|'+x.call);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">… 另有 ${changed.length-60} 项</div>`:''}</div>`
         :`<div class="note">相比 ${esc(prevRun.release)} / ${esc(ver(prevRun))}，没有变化</div>`}</div>`:''}
@@ -199,7 +214,7 @@ async function show(id,quiet){
         const c={};items.forEach(x=>c[x.outcome]=(c[x.outcome]||0)+1);
         return `<details${open?' open':''}><summary><span class="name">${esc(name)}</span>
           <span class="cnt">${OUT.filter(o=>c[o[0]]).map(o=>`<span class="${key(o[0])}"><b>${c[o[0]]}</b> ${esc(o[1])}</span>`).join('')}</span></summary>
-          <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(x.call)}</code><span class="d">${esc(x.detail)}</span></div>`).join('')}</div></details>`}).join('')
+          <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(x.call)}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
         :'<div class="empty">没有符合条件的项目</div>'}</div>`;
     d.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   };
