@@ -1,25 +1,26 @@
 {
-    "runs":  [
-                 {
-                     "id":  "20261021-053743_v0.1.1_b25944058",
-                     "status":  "completed",
-                     "reason":  "manual",
-                     "release":  "v0.1.1",
-                     "game_buildid":  "25944058",
-                     "game_version":  "\u003cip\u003e",
-                     "finished":  "2026-10-21T05:37:43Z",
-                     "failed":  0,
-                     "crashed":  0
-                 },
-                 {
-                     "id":  "20261021-05_v0.1.1_b25944058-3",
-                     "status":  "completed",
-                     "reason":  "manual",
-                     "release":  "v0.1.1",
-                     "game_buildid":  "25944058",
-                     "finished":  "2026-10-21T05:23:14Z",
-                     "failed":  0,
-                     "crashed":  0
-                 }
-             ]
+ "runs": [
+  {
+   "id": "20261021-053743_v0.1.1_b25944058",
+   "status": "completed",
+   "reason": "manual",
+   "release": "v0.1.1",
+   "game_buildid": "25944058",
+   "game_version": "1.41.9.1",
+   "finished": "2026-10-21T05:37:43Z",
+   "failed": 0,
+   "crashed": 0
+  },
+  {
+   "id": "20261021-05_v0.1.1_b25944058-3",
+   "status": "completed",
+   "reason": "manual",
+   "release": "v0.1.1",
+   "game_buildid": "25944058",
+   "finished": "2026-10-21T05:23:14Z",
+   "failed": 0,
+   "crashed": 0,
+   "game_version": "1.41.9.1"
+  }
+ ]
 }
