@@ -97,6 +97,16 @@ constexpr const char* kPartialPrefix = "CNETMsg_Ti";
 /** The value planted in CNETMsg_Tick::tick before serialising. */
 constexpr std::uint32_t kRoundTripTickValue = 0x12345678u;
 
+/** kRoundTripTickValue as protobuf text format renders it: decimal. */
+constexpr const char* kRoundTripTickDecimal = "305419896";
+
+/**
+ * Bytes the engine's CNetMessage header takes before the protobuf object.
+ * IProtobufBinding::GetSize reports header + protobuf (120 for CNETMsg_Tick,
+ * whose protobuf is 72), and ToString reads the protobuf at pData + this.
+ */
+constexpr std::size_t kNetMessageHeaderSize = 0x30;
+
 // ---- bitbuf availability -----------------------------------------------------
 //
 // The round trip needs bf_write/bf_read. Their constructors live in
@@ -449,14 +459,19 @@ void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 
 	CS2ST_CALL(context, "IProtobufBinding::GetSize", {
 		const int size = binding->GetSize();
-		context.Detail("-> %d (sizeof(CNETMsg_Tick) as compiled here = %zu)",
-			size, sizeof(CNETMsg_Tick));
+		context.Detail("-> %d (sizeof(CNETMsg_Tick) as compiled here = %zu, plus the %zu-byte "
+		               "CNetMessage header = %zu)",
+			size, sizeof(CNETMsg_Tick), kNetMessageHeaderSize,
+			sizeof(CNETMsg_Tick) + kNetMessageHeaderSize);
 		if (size <= 0)
 		{
 			context.Fail("a protobuf C++ object cannot have size %d", size);
 		}
-		else if (static_cast<std::size_t>(size) != sizeof(CNETMsg_Tick))
+		else if (static_cast<std::size_t>(size) != sizeof(CNETMsg_Tick) &&
+		         static_cast<std::size_t>(size) != sizeof(CNETMsg_Tick) + kNetMessageHeaderSize)
 		{
+			// The engine reports the whole CNetMessagePB (header + protobuf);
+			// either that or the bare protobuf size is the expected answer.
 			// The engine's protobuf runtime laid this object out; this build
 			// compiles the same .proto with the SDK's own protoc. A mismatch
 			// means the descriptor or the runtime moved - the thing target #8
@@ -1028,14 +1043,33 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 		});
 	}
 
-	// IProtobufBinding::ToString is not called: on the current build it takes a
-	// SIGSEGV at 0x80 inside the engine (a null object dereferenced at member
-	// offset 0x80) even with the protobuf address AsProto reported, so the
-	// slot's signature or what it expects as `this` has moved. The guard
-	// catches the signal, but a call that cannot succeed teaches nothing.
-	context.SkipCall("IProtobufBinding::ToString",
-		"faults inside the engine (SIGSEGV at 0x80) on the current build; the "
-		"vtable slot's signature has drifted");
+	{
+		CUtlString rendered;
+		CS2ST_CALL(context, "IProtobufBinding::ToString", {
+			// The fourth reading of the payload: the engine's own renderer.
+			// Its pData is the CNetMessage itself, not the protobuf inside it:
+			// the engine reads the protobuf at pData + 0x30 (the stub header's
+			// size, the same 0x30 AsProto sits at). Handing it AsProto()'s
+			// address, as the first version did, adds 0x30 twice and faults
+			// at a small offset off a wild pointer.
+			// CUtlString's heap lives in tier0 on both platforms, so the
+			// engine writing into a stack CUtlString of ours frees through
+			// the same allocator it allocated with.
+			NetMessageInfo_t* info = tick_message_->GetNetMessageInfo();
+			const char* text = info->m_pBinding->ToString(message, rendered);
+			const char* shown = text != nullptr ? text : rendered.Get();
+			context.Detail("-> %.96s", shown != nullptr ? shown : "(null)");
+			if (shown != nullptr && std::strstr(shown, kRoundTripTickDecimal) == nullptr)
+			{
+				// Suspect: the engine may render protobuf text format with
+				// hex or field-number prefixes, so absence of the decimal is
+				// not proof - but presence is the oracle, and its absence
+				// after three successful readers above is worth a row.
+				context.Suspect("the engine's rendering does not contain the "
+				                "planted tick value");
+			}
+		});
+	}
 
 	message_free_section(context, message, typed_target, from_stream,
 		forwarded_target);
