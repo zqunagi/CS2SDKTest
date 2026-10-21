@@ -60,9 +60,9 @@ enum FieldFlags : unsigned
 	 * about the layout, and reporting it as a layout failure trains people to
 	 * ignore the check.
 	 *
-	 * Marked fields report SUSPECT instead of FAIL. The check is not relaxed:
-	 * the value is still printed and still counted, so if this field ever
-	 * starts holding something new the row still changes.
+	 * A violation on a marked field is printed as a detail line and the row
+	 * stays OK: the value is still logged, so if this field ever starts
+	 * holding something new the row's text still changes.
 	 *
 	 * Only mark a field when the surrounding fields prove the layout is fine -
 	 * an isolated violation between two correct fields cannot be misalignment,

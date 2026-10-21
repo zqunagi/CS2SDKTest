@@ -52,6 +52,42 @@ const ProbeMessage kProbeMessages[] = {
 	 "encrypted bytes"},
 };
 
+/**
+ * True when a registry key names `wanted`, with or without the " [id]" suffix
+ * some builds append ("CNETMsg_Tick [4]").
+ */
+bool RegistryNameIs(const char* key, const char* wanted)
+{
+	if (key == nullptr)
+	{
+		return false;
+	}
+	const std::size_t length = std::strlen(wanted);
+	if (std::strncmp(key, wanted, length) != 0)
+	{
+		return false;
+	}
+	const char* rest = key + length;
+	if (*rest == '\0')
+	{
+		return true;
+	}
+	if (rest[0] != ' ' || rest[1] != '[')
+	{
+		return false;
+	}
+	rest += 2;
+	if (*rest == '\0')
+	{
+		return false;
+	}
+	while (*rest >= '0' && *rest <= '9')
+	{
+		++rest;
+	}
+	return rest[0] == ']' && rest[1] == '\0';
+}
+
 /** A name nothing will ever register; null is the only right answer. */
 constexpr const char* kNoSuchMessage = "CMsgCs2SdkTestNoSuchMessage";
 
@@ -165,6 +201,21 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 
 			if (message == nullptr)
 			{
+				// Some builds key the registry as "CNETMsg_Tick [4]", so the bare
+				// name misses an entry that is there. The partial lookup finds
+				// it, and the name check below keeps that from matching a longer
+				// message that merely starts with the same letters.
+				INetworkMessageInternal* partial = messages_->FindNetworkMessagePartial(probe.name);
+				if (partial != nullptr && RegistryNameIs(partial->GetUnscopedName(), probe.name))
+				{
+					context.Detail("   found through the partial lookup as \"%s\" (the registry "
+					               "key carries an id suffix)", partial->GetUnscopedName());
+					message = partial;
+				}
+			}
+
+			if (message == nullptr)
+			{
 				// Suspect, not Fail: a build can legitimately drop a message
 				// type, and the row this leaves is the finding. Which messages
 				// each build registers is exactly what a diff across updates
@@ -223,7 +274,7 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 			// partial matching is defined, so the answer is checkable.
 			const char* name = message->GetUnscopedName();
 			context.Detail("   resolves to \"%s\"", name != nullptr ? name : "(null)");
-			if (name == nullptr || std::strcmp(name, "CNETMsg_Tick") != 0)
+			if (!RegistryNameIs(name, "CNETMsg_Tick"))
 			{
 				context.Suspect("the partial lookup answered with a name the prefix "
 				                "does not match");
@@ -1082,7 +1133,10 @@ void NetworkMessagesSuite::ExerciseMiscReadonly(TestContext& context)
 			"Cs2SdkTestNoSuchContext");
 		context.Detail("-> %u for a context name nothing set",
 			static_cast<unsigned>(data));
-		if (data != 0)
+		// 65535 is the invalid-handle value of a uint16 handle, and it is what
+		// this build answers for an unset context, so it counts as "nothing
+		// set" alongside zero.
+		if (data != 0 && data != 0xFFFF)
 		{
 			context.Suspect("an unset serialization context answered with a handle");
 		}

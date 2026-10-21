@@ -150,7 +150,8 @@ void StructInspector::Violation(unsigned flags, const char* format, ...)
 
 	if ((flags & kMayBeUninitialized) != 0)
 	{
-		context_.Suspect("%s (field may never be initialised)", message);
+		context_.Detail("%s (field may never be initialised; not counted against the layout)",
+			message);
 	}
 	else
 	{

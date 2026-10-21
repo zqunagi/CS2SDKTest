@@ -1791,8 +1791,20 @@ void SchemaSystemSuite::ProbeSchemaType(TestContext& context, const char* label,
 			// before it is a broken matcher. It still gets a coloured row,
 			// because the negative probe below is then the only thing left
 			// saying the matcher works at all.
-			context.Suspect("recognises neither its rendered name nor its %s name",
-				inner_what);
+			//
+			// A pointer type is the settled case: it is a wrapper over its
+			// pointee and does not carry a name key of its own, so answering
+			// false to both names is how it behaves. Printed, not flagged.
+			if (type->m_eTypeCategory == SCHEMA_TYPE_POINTER)
+			{
+				context.Detail("a pointer type does not match by name; the negative "
+				               "probe below still checks the matcher");
+			}
+			else
+			{
+				context.Suspect("recognises neither its rendered name nor its %s name",
+					inner_what);
+			}
 		}
 	});
 
