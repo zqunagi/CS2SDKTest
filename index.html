@@ -5,69 +5,199 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CS2SDKTest 测试结果</title>
 <style>
-:root{--bg:#fff;--fg:#1c2128;--mut:#6b7280;--line:#e5e7eb;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;--card:#f6f8fa}
-@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--mut:#8b949e;--line:#30363d;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--card:#161b22}}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
-main{max-width:1000px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
+:root{
+  --bg:#f7f8fa;--surface:#fff;--fg:#14181f;--mut:#667085;--line:#e4e7ec;--soft:#f2f4f7;
+  --ok:#16a34a;--fail:#dc2626;--crash:#7f1d1d;--sus:#d97706;--skip:#98a2b3;--na:#cbd5e1;--acc:#2563eb;
+  --shadow:0 1px 2px rgba(16,24,40,.06);
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#0c0f14;--surface:#141922;--fg:#e6eaf0;--mut:#8b95a5;--line:#252c38;--soft:#1b212c;
+  --ok:#34d399;--fail:#f87171;--crash:#fb7185;--sus:#fbbf24;--skip:#64748b;--na:#475569;--acc:#60a5fa;
+  --shadow:none;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:28px 16px 64px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
+.sub{color:var(--mut);margin-top:2px}
+h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:28px 0 10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.pad{padding:18px 20px}
+.mono,code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--soft);color:var(--mut)}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.completed{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.chip.crashed,.chip.timeout{color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent)}
+.hero{display:grid;grid-template-columns:1.2fr 1fr;gap:20px;align-items:center}
+@media(max-width:720px){.hero{grid-template-columns:1fr}}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--mut);margin-top:10px}
+.meta b{color:var(--fg);font-weight:600}
+.big{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.big small{font-size:14px;color:var(--mut);font-weight:500;margin-left:6px}
+.bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--soft);margin:14px 0 10px}
+.bar i{display:block;min-width:2px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mut)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend em{font-style:normal;color:var(--fg);font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.OK{--c:var(--ok)}.FAIL{--c:var(--fail)}.CRASHED{--c:var(--crash)}.SUSPECT{--c:var(--sus)}.SKIP{--c:var(--skip)}.NA{--c:var(--na)}
+.bar i,.dot{background:var(--c)}
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--mut);font-weight:500}
-tr.run{cursor:pointer}tr.run:hover{background:var(--card)}
-.completed{color:var(--ok)}.crashed,.timeout{color:var(--bad)}.failed,.crashed-o{color:var(--bad)}.suspect{color:var(--warn)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px;margin:12px 0}
-code{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
-.tbl{overflow-x:auto}button{background:none;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:2px 8px;cursor:pointer}
+th{font-weight:500;color:var(--mut);text-align:left;font-size:12.5px;padding:10px 16px;border-bottom:1px solid var(--line)}
+td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr.run{cursor:pointer}
+tbody tr.run:hover td{background:var(--soft)}
+tbody tr.sel td{background:color-mix(in srgb,var(--acc) 8%,transparent)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.bad{color:var(--fail);font-weight:600}
+.empty{padding:36px;text-align:center;color:var(--mut)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer}
+.tab[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tab span{color:var(--mut);margin-left:4px}.tab[aria-pressed=true] span{color:inherit;opacity:.7}
+details{border-top:1px solid var(--line)}
+details:first-of-type{border-top:0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 20px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"›";color:var(--mut);transition:transform .12s;display:inline-block;width:10px}
+details[open]>summary::before{transform:rotate(90deg)}
+summary .name{font-weight:600}
+summary .cnt{margin-left:auto;display:flex;gap:10px;color:var(--mut);font-size:12.5px}
+summary .cnt b{color:var(--c);font-weight:600}
+.rows{padding:0 20px 12px 40px}
+.row{display:grid;grid-template-columns:78px minmax(0,1.3fr) minmax(0,1.7fr);gap:12px;padding:6px 0;border-top:1px dashed var(--line)}
+.row:first-child{border-top:0}
+.tag{font-size:11px;font-weight:700;color:var(--c);letter-spacing:.03em}
+.row .d{color:var(--mut);word-break:break-word}
+@media(max-width:720px){.row{grid-template-columns:70px 1fr}.row .d{grid-column:1/-1}}
+.note{padding:14px 20px;color:var(--mut)}
+.diff{padding:4px 20px 12px}
+.diff .row{grid-template-columns:minmax(0,1.6fr) 150px}
+.arrow{color:var(--mut)}
+footer{margin-top:36px;color:var(--mut);font-size:12px;text-align:center}
 </style>
 </head>
 <body>
 <main>
-<h1>CS2SDKTest 测试结果</h1>
-<div class="sub">按 CS2 构建号与插件版本记录每次运行</div>
-<div id="list" class="tbl"></div>
+<header>
+  <div><h1>CS2SDKTest</h1><div class="sub">CS2 更新后，s2sdk 接口还能不能用</div></div>
+  <div class="sub" id="count"></div>
+</header>
+
+<div id="latest"></div>
+
+<h2>历史</h2>
+<div class="card" id="history"></div>
+
 <div id="detail"></div>
+<footer>结果已脱敏，时间取整到小时</footer>
 </main>
+
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const get=u=>fetch(u,{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error(u+' '+r.status);return r.json()});
 const REASON={release:'新版本',gameupdate:'游戏更新',manual:'手动'};
+const STATUS={completed:'已完成',crashed:'崩溃',timeout:'超时'};
+const OUT=[['FAIL','失败'],['CRASHED','崩溃'],['SUSPECT','可疑'],['OK','通过'],['SKIP','跳过'],['N/A','不可用']];
+const key=o=>o==='N/A'?'NA':o;
+const label=Object.fromEntries(OUT);
+const cache={};
+let runs=[];
+
+const when=t=>t?t.replace('T',' ').replace(':00:00Z',':00'):'-';
+const num=n=>n==null?'-':n.toLocaleString();
+
+function bar(s){
+  const t=s.total||1;
+  const seg=[['OK',s.ok,'通过'],['SUSPECT',s.suspect,'可疑'],['FAIL',s.failed,'失败'],['CRASHED',s.crashed,'崩溃'],['SKIP',s.skipped,'跳过'],['NA',s.unavailable,'不可用']];
+  return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n])=>`<i class="${k}" style="width:${v/t*100}%" title="${n} ${v}"></i>`).join('')}</div>
+  <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
+}
+
+async function result(id){
+  if(!(id in cache)) cache[id]=get('data/runs/'+encodeURIComponent(id)+'/results.json').catch(()=>null);
+  return cache[id];
+}
+
+function hero(r,res){
+  const s=res&&res.summary;
+  const bad=s?s.failed+s.crashed:0;
+  return `<div class="card pad"><div class="hero">
+    <div>
+      <span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span>
+      <div class="meta" style="margin-top:12px">
+        <span>插件 <b>${esc(r.release)}</b></span>
+        <span>CS2 构建 <b>${esc(r.game_buildid)}</b></span>
+        <span>${esc(REASON[r.reason]||r.reason)}</span>
+        <span>${esc(when(r.finished))}</span>
+      </div>
+      ${r.suspect?`<div class="meta">最后一个未返回的调用：<code>${esc(r.suspect)}</code></div>`:''}
+    </div>
+    <div>${s?`<div class="big">${num(s.ok)}<small>/ ${num(s.total)} 通过${bad?` · <span class="bad">${bad} 项失败</span>`:''}</small></div>${bar(s)}`
+            :`<div class="sub">这次没有生成完整结果。</div>`}</div>
+  </div></div>`;
+}
 
 async function init(){
   try{
-    const {runs}=await get('data/index.json');
-    if(!runs.length){$('#list').innerHTML='<p class="sub">还没有运行记录。</p>';return}
-    $('#list').innerHTML='<table><tr><th>时间</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 构建号</th><th>失败/崩溃</th></tr>'+
-      runs.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(r.finished)}</td>
-      <td class="${esc(r.status)}">${esc(r.status)}</td><td>${esc(REASON[r.reason]||r.reason)}</td>
-      <td>${esc(r.release)}</td><td>${esc(r.game_buildid)}</td>
-      <td>${esc(r.failed??'-')} / ${esc(r.crashed??'-')}</td></tr>`).join('')+'</table>';
-    document.querySelectorAll('tr.run').forEach(tr=>tr.onclick=()=>show(tr.dataset.id));
-    if(location.hash.length>1)show(decodeURIComponent(location.hash.slice(1)));
-  }catch(e){$('#list').textContent='加载失败: '+e.message}
+    ({runs}=await get('data/index.json'));
+  }catch(e){$('#latest').innerHTML=`<div class="card empty">加载失败：${esc(e.message)}</div>`;return}
+  $('#count').textContent=runs.length?`共 ${runs.length} 次运行`:'';
+  if(!runs.length){
+    $('#latest').innerHTML='<div class="card empty">还没有运行记录</div>';
+    $('#history').innerHTML='';return;
+  }
+  $('#latest').innerHTML=hero(runs[0],await result(runs[0].id));
+  $('#history').innerHTML=`<table><thead><tr><th>时间</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 构建</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
+    runs.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(when(r.finished))}</td>
+    <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
+    <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(r.game_buildid)}</td>
+    <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table>';
+  document.querySelectorAll('tr.run').forEach(tr=>tr.onclick=()=>show(tr.dataset.id));
+  show(location.hash.length>1?decodeURIComponent(location.hash.slice(1)):runs[0].id,true);
 }
 
-async function show(id){
-  location.hash=encodeURIComponent(id);
-  const d=$('#detail');d.innerHTML='加载中…';
-  try{
-    const base='data/runs/'+encodeURIComponent(id)+'/';
-    const run=await get(base+'run.json');
-    let html=`<div class="card"><b>${esc(id)}</b><br>状态 <span class="${esc(run.status)}">${esc(run.status)}</span>，
-      耗时 ${esc(run.duration_s)}s`;
-    if(run.suspect)html+=`<br>最后一个未返回的调用：<code>${esc(run.suspect)}</code>`;
-    html+='</div>';
-    try{
-      const res=await get(base+'results.json');
-      const bad=res.results.filter(x=>x.outcome!=='ok');
-      html+=`<div class="card">共 ${res.summary.total} 项：ok ${res.summary.ok}，failed ${res.summary.failed}，
-        crashed ${res.summary.crashed}，suspect ${res.summary.suspect}，unavailable ${res.summary.unavailable}，skipped ${res.summary.skipped}</div>`;
-      html+='<div class="tbl"><table><tr><th>Suite</th><th>调用</th><th>结果</th><th>详情</th></tr>'+
-        bad.map(x=>`<tr><td>${esc(x.suite)}</td><td><code>${esc(x.call)}</code></td>
-        <td class="${esc(x.outcome)}">${esc(x.outcome)}</td><td>${esc(x.detail)}</td></tr>`).join('')+'</table></div>';
-    }catch{html+='<div class="card">没有完整的 results.json（运行未完成）。</div>'}
-    d.innerHTML=html;d.scrollIntoView();
-  }catch(e){d.textContent='加载失败: '+e.message}
+async function show(id,quiet){
+  const idx=runs.findIndex(r=>r.id===id);
+  if(idx<0)return;
+  document.querySelectorAll('tr.run').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===id));
+  if(!quiet)history.replaceState(null,'','#'+encodeURIComponent(id));
+  const run=runs[idx], res=await result(id), d=$('#detail');
+  if(!res){d.innerHTML='<h2>详情</h2><div class="card note">这次没有完整的 results.json，运行未完成。</div>';return}
+
+  const prevRun=runs.slice(idx+1).find(r=>r.status==='completed');
+  const prev=prevRun?await result(prevRun.id):null;
+  const before=new Map((prev?prev.results:[]).map(x=>[x.suite+'|'+x.call,x.outcome]));
+  const changed=prev?res.results.filter(x=>before.has(x.suite+'|'+x.call)&&before.get(x.suite+'|'+x.call)!==x.outcome):[];
+
+  const counts={};
+  res.results.forEach(x=>counts[x.outcome]=(counts[x.outcome]||0)+1);
+  const problems=(counts.FAIL||0)+(counts.CRASHED||0)+(counts.SUSPECT||0);
+  let filter=problems?'problems':'ALL';
+
+  const render=()=>{
+    const list=res.results.filter(x=>filter==='ALL'||(filter==='problems'?['FAIL','CRASHED','SUSPECT'].includes(x.outcome):x.outcome===filter));
+    const bySuite=new Map();
+    list.forEach(x=>{if(!bySuite.has(x.suite))bySuite.set(x.suite,[]);bySuite.get(x.suite).push(x)});
+    const tabs=[['problems','需关注',problems],['ALL','全部',res.results.length],...OUT.filter(o=>counts[o[0]]).map(o=>[o[0],o[1],counts[o[0]]])];
+    const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
+    d.innerHTML=`<h2>详情 · ${esc(run.release)} · 构建 ${esc(run.game_buildid)}</h2>
+      ${prev?`<div class="card" style="margin-bottom:14px">${changed.length
+        ?`<div class="note" style="padding-bottom:6px">相比 ${esc(prevRun.release)} / ${esc(prevRun.game_buildid)}，<b style="color:var(--fg)">${changed.length}</b> 项结果有变化</div><div class="diff">${changed.slice(0,60).map(x=>{const b=before.get(x.suite+'|'+x.call);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">… 另有 ${changed.length-60} 项</div>`:''}</div>`
+        :`<div class="note">相比 ${esc(prevRun.release)} / ${esc(prevRun.game_buildid)}，没有变化</div>`}</div>`:''}
+      <div class="tabs">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
+      <div class="card">${bySuite.size?[...bySuite].map(([name,items])=>{
+        const c={};items.forEach(x=>c[x.outcome]=(c[x.outcome]||0)+1);
+        return `<details${open?' open':''}><summary><span class="name">${esc(name)}</span>
+          <span class="cnt">${OUT.filter(o=>c[o[0]]).map(o=>`<span class="${key(o[0])}"><b>${c[o[0]]}</b> ${esc(o[1])}</span>`).join('')}</span></summary>
+          <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(x.call)}</code><span class="d">${esc(x.detail)}</span></div>`).join('')}</div></details>`}).join('')
+        :'<div class="empty">没有符合条件的项目</div>'}</div>`;
+    d.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
+  };
+  render();
 }
 init();
 </script>
