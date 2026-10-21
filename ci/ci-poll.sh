@@ -20,20 +20,17 @@ log() { echo "[$(date -u +%FT%TZ)] $*"; }
 read_state() { cat "$STATE_DIR/$1" 2>/dev/null || true; }
 
 # ---- signal A: latest release ------------------------------------------------
-# No api.github.com: GH_PROXY (e.g. https://ghproxy.net/) only fronts github.com
-# and raw content. The tag comes from where /releases/latest redirects to, and
-# the asset name is fixed by build.yml: cs2sdktest-linux-x64-<tag>.zip
-GH_PROXY="${GH_PROXY:-}"
+# No api.github.com (no rate limit, no token): the tag comes from where
+# /releases/latest redirects to, and the asset name is fixed by build.yml:
+# cs2sdktest-linux-x64-<tag>.zip
 latest_tag() {
-  local base="https://github.com/$GH_REPO/releases/latest" final
-  for prefix in "$GH_PROXY" ""; do
-    final="$(curl -fsSL -o /dev/null -w '%{url_effective}' --max-time 30 "${prefix}${base}")" || continue
-    case "$final" in */releases/tag/*) printf '%s' "${final##*/releases/tag/}"; return 0;; esac
-  done
-  return 1
+  local final
+  final="$(curl -fsSL -o /dev/null -w '%{url_effective}' --max-time 30 \
+    "https://github.com/$GH_REPO/releases/latest")" || return 1
+  case "$final" in */releases/tag/*) printf '%s' "${final##*/releases/tag/}";; *) return 1;; esac
 }
 rel_tag="$(latest_tag)" || { log "github unreachable or no release yet"; exit 0; }
-asset_url="${GH_PROXY}https://github.com/$GH_REPO/releases/download/$rel_tag/cs2sdktest-linux-x64-$rel_tag.zip"
+asset_url="https://github.com/$GH_REPO/releases/download/$rel_tag/cs2sdktest-linux-x64-$rel_tag.zip"
 
 # ---- signal B: installed game build id --------------------------------------
 # Another service keeps CS2 up to date; we only read what is installed.
