@@ -8,7 +8,7 @@ set -u
 CONFIG="${CST_CI_CONFIG:-/etc/cs2sdktest-ci.env}"
 # shellcheck disable=SC1090
 source "$CONFIG" || { echo "cannot read $CONFIG" >&2; exit 2; }
-: "${GH_REPO:?}" "${CS2_DIR:?}" "${STEAMCMD:?}" "${STATE_DIR:?}"
+: "${GH_REPO:?}" "${CS2_DIR:?}" "${STATE_DIR:?}"
 APP_ID="${APP_ID:-730}"; RUN_TIMEOUT="${RUN_TIMEOUT:-600}"
 FORCE=0; [ "${1:-}" = "--force" ] && FORCE=1
 
@@ -29,27 +29,22 @@ rel_tag="$(printf '%s' "$rel_json" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p
 asset_url="$(printf '%s' "$rel_json" | sed -n 's/.*"browser_download_url": *"\([^"]*linux-x64[^"]*\.zip\)".*/\1/p' | head -1)"
 [ -n "$rel_tag" ] && [ -n "$asset_url" ] || { log "no usable release yet"; exit 0; }
 
-# ---- signal B: game build id -------------------------------------------------
-local_build() { sed -n 's/.*"buildid"[^"]*"\([0-9]*\)".*/\1/p' "$CS2_DIR/steamapps/appmanifest_$APP_ID.acf" 2>/dev/null | head -1; }
-remote_build() {
-  "$STEAMCMD" +login anonymous +app_info_update 1 +app_info_print "$APP_ID" +quit 2>/dev/null |
-  awk '/"branches"/{b=1} b&&/"public"/{p=1} p&&/"buildid"/{gsub(/[^0-9]/,"",$2); print $2; exit}'
-}
-remote="$(remote_build)"; before="$(local_build)"
+# ---- signal B: installed game build id --------------------------------------
+# Another service keeps CS2 up to date; we only read what is installed.
+local_build() { sed -n 's/.*"buildid"[^"]*"\([0-9]*\)".*//p' "$CS2_DIR/steamapps/appmanifest_$APP_ID.acf" 2>/dev/null | head -1; }
+build="$(local_build)"
+[ -n "$build" ] || { log "cannot read installed build id"; exit 1; }
 
 reason=""
 [ "$rel_tag" != "$(read_state last_tag)" ] && reason="release"
-if [ -n "$remote" ] && [ "$remote" != "$before" ]; then reason="gameupdate"; fi
+[ "$build" != "$(read_state last_build)" ] && reason="gameupdate"
 [ "$FORCE" = 1 ] && reason="manual"
 [ -z "$reason" ] && exit 0
-log "triggered by: $reason (release $rel_tag, build ${before:-?} -> ${remote:-?})"
+log "triggered by: $reason (release $rel_tag, build $build)"
 
-# ---- update game (only if the build moved) ----------------------------------
-if [ "$reason" = "gameupdate" ] || [ -z "$before" ]; then
-  "$STEAMCMD" +force_install_dir "$CS2_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
-    || { log "steamcmd update failed"; exit 1; }
-fi
-build="$(local_build)"                    # what is actually installed
+# The updater may still be writing files; wait until the manifest is stable.
+sleep 30
+[ "$(local_build)" = "$build" ] || { log "build id changed during wait; retry next poll"; exit 0; }
 
 # ---- deploy the plugin -------------------------------------------------------
 run_id="$(date -u +%Y%m%d-%H%M%S)_${rel_tag}_b${build}"
@@ -58,7 +53,6 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 curl -fsSL ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} "$asset_url" -o "$tmp/pkg.zip" \
   || { log "download failed"; exit 1; }
 unzip -qo "$tmp/pkg.zip" -d "$CS2_DIR/game/csgo" || { log "unzip failed"; exit 1; }
-[ -n "${POST_UPDATE_HOOK:-}" ] && "$POST_UPDATE_HOOK"
 
 # ---- run the server ----------------------------------------------------------
 pkill -f "$LAUNCH_CMD" 2>/dev/null && sleep 3     # stale instance holds the port
