@@ -106,6 +106,11 @@ def main():
     token = cfg.get("PAGES_TOKEN")
     if not repo or not token:
         sys.exit("PAGES_REPO/GH_REPO and PAGES_TOKEN must be set")
+    # Commits on gh-pages are made as the repository owner, not a made-up bot.
+    author_name = cfg.get("GIT_AUTHOR_NAME")
+    author_email = cfg.get("GIT_AUTHOR_EMAIL")
+    if not author_name or not author_email:
+        sys.exit("GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL must be set")
     sanitize = make_sanitizer(cfg)
 
     run = read_json(os.path.join(run_dir, "run.json"))
@@ -146,8 +151,8 @@ def main():
         for _ in range(3):
             shutil.rmtree(work, ignore_errors=True)
             git(["clone", "-q", "--depth", "1", "--branch", "gh-pages", url, work], None, env)
-            git(["config", "user.name", "cs2sdktest-ci"], work, env)
-            git(["config", "user.email", "ci@users.noreply.github.com"], work, env)
+            git(["config", "user.name", author_name], work, env)
+            git(["config", "user.email", author_email], work, env)
 
             index_path = os.path.join(work, "data", "index.json")
             index = read_json(index_path)
