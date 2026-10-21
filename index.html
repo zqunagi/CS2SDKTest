@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS2SDKTest 测试结果</title>
+<style>
+:root{--bg:#fff;--fg:#1c2128;--mut:#6b7280;--line:#e5e7eb;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;--card:#f6f8fa}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--mut:#8b949e;--line:#30363d;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--card:#161b22}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500}
+tr.run{cursor:pointer}tr.run:hover{background:var(--card)}
+.completed{color:var(--ok)}.crashed,.timeout{color:var(--bad)}.failed,.crashed-o{color:var(--bad)}.suspect{color:var(--warn)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px;margin:12px 0}
+code{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
+.tbl{overflow-x:auto}button{background:none;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:2px 8px;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<h1>CS2SDKTest 测试结果</h1>
+<div class="sub">按 CS2 构建号与插件版本记录每次运行</div>
+<div id="list" class="tbl"></div>
+<div id="detail"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const get=u=>fetch(u,{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error(u+' '+r.status);return r.json()});
+const REASON={release:'新版本',gameupdate:'游戏更新',manual:'手动'};
+
+async function init(){
+  try{
+    const {runs}=await get('data/index.json');
+    if(!runs.length){$('#list').innerHTML='<p class="sub">还没有运行记录。</p>';return}
+    $('#list').innerHTML='<table><tr><th>时间</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 构建号</th><th>失败/崩溃</th></tr>'+
+      runs.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(r.finished)}</td>
+      <td class="${esc(r.status)}">${esc(r.status)}</td><td>${esc(REASON[r.reason]||r.reason)}</td>
+      <td>${esc(r.release)}</td><td>${esc(r.game_buildid)}</td>
+      <td>${esc(r.failed??'-')} / ${esc(r.crashed??'-')}</td></tr>`).join('')+'</table>';
+    document.querySelectorAll('tr.run').forEach(tr=>tr.onclick=()=>show(tr.dataset.id));
+    if(location.hash.length>1)show(decodeURIComponent(location.hash.slice(1)));
+  }catch(e){$('#list').textContent='加载失败: '+e.message}
+}
+
+async function show(id){
+  location.hash=encodeURIComponent(id);
+  const d=$('#detail');d.innerHTML='加载中…';
+  try{
+    const base='data/runs/'+encodeURIComponent(id)+'/';
+    const run=await get(base+'run.json');
+    let html=`<div class="card"><b>${esc(id)}</b><br>状态 <span class="${esc(run.status)}">${esc(run.status)}</span>，
+      耗时 ${esc(run.duration_s)}s`;
+    if(run.suspect)html+=`<br>最后一个未返回的调用：<code>${esc(run.suspect)}</code>`;
+    html+='</div>';
+    try{
+      const res=await get(base+'results.json');
+      const bad=res.results.filter(x=>x.outcome!=='ok');
+      html+=`<div class="card">共 ${res.summary.total} 项：ok ${res.summary.ok}，failed ${res.summary.failed}，
+        crashed ${res.summary.crashed}，suspect ${res.summary.suspect}，unavailable ${res.summary.unavailable}，skipped ${res.summary.skipped}</div>`;
+      html+='<div class="tbl"><table><tr><th>Suite</th><th>调用</th><th>结果</th><th>详情</th></tr>'+
+        bad.map(x=>`<tr><td>${esc(x.suite)}</td><td><code>${esc(x.call)}</code></td>
+        <td class="${esc(x.outcome)}">${esc(x.outcome)}</td><td>${esc(x.detail)}</td></tr>`).join('')+'</table></div>';
+    }catch{html+='<div class="card">没有完整的 results.json（运行未完成）。</div>'}
+    d.innerHTML=html;d.scrollIntoView();
+  }catch(e){d.textContent='加载失败: '+e.message}
+}
+init();
+</script>
+</body>
+</html>
