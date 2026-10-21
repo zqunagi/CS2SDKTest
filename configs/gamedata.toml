@@ -228,7 +228,7 @@ linux   = 0
 windows = 28
 linux   = 29
 
-[vtables."ISource2GameEntities::CheckTransmit"]
+[vtables.ISource2GameEntities_CheckTransmit]
 windows = 12
 linux   = 13
 

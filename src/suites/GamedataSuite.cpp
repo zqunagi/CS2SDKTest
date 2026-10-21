@@ -62,7 +62,7 @@ constexpr const char* kSignaturesPrefix = "signatures.";
 constexpr const char* kVtablesPrefix = "vtables.";
 
 /** Full TOML table paths for the two vtable keys an SDK declaration computes. */
-constexpr const char* kCheckTransmitTable = "vtables.ISource2GameEntities::CheckTransmit";
+constexpr const char* kCheckTransmitTable = "vtables.ISource2GameEntities_CheckTransmit";
 constexpr const char* kAddResourceTable = "vtables.CEntityResourceManifest_AddResource";
 
 /** CCommand's own COMMAND_MAX_ARGC, which is private, so it is restated here. */

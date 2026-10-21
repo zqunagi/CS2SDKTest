@@ -4,7 +4,7 @@
  * Not a TOML implementation. The gamedata file is written by this project,
  * for this project, and uses exactly four constructs: [table.sub.key]
  * headers (the key quoted when it carries characters bare keys cannot, like
- * "ISource2GameEntities::CheckTransmit"), `name = "string"`, `name = integer`
+ * "Foo::Bar"), `name = "string"`, `name = integer`
  * and `name = negative integer`. Comments run from # to end of line. That is
  * the whole grammar, and keeping it this small is the point: a gamedata file
  * a plugin parses at load time is attack surface, and every TOML feature not
