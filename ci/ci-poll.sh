@@ -20,14 +20,20 @@ log() { echo "[$(date -u +%FT%TZ)] $*"; }
 read_state() { cat "$STATE_DIR/$1" 2>/dev/null || true; }
 
 # ---- signal A: latest release ------------------------------------------------
-gh_api() {
-  curl -fsS -H "Accept: application/vnd.github+json" \
-    ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} "https://api.github.com/repos/$GH_REPO/$1"
+# No api.github.com: GH_PROXY (e.g. https://ghproxy.net/) only fronts github.com
+# and raw content. The tag comes from where /releases/latest redirects to, and
+# the asset name is fixed by build.yml: cs2sdktest-linux-x64-<tag>.zip
+GH_PROXY="${GH_PROXY:-}"
+latest_tag() {
+  local base="https://github.com/$GH_REPO/releases/latest" final
+  for prefix in "$GH_PROXY" ""; do
+    final="$(curl -fsSL -o /dev/null -w '%{url_effective}' --max-time 30 "${prefix}${base}")" || continue
+    case "$final" in */releases/tag/*) printf '%s' "${final##*/releases/tag/}"; return 0;; esac
+  done
+  return 1
 }
-rel_json="$(gh_api releases/latest)" || { log "github unreachable"; exit 0; }
-rel_tag="$(printf '%s' "$rel_json" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
-asset_url="$(printf '%s' "$rel_json" | sed -n 's/.*"browser_download_url": *"\([^"]*linux-x64[^"]*\.zip\)".*/\1/p' | head -1)"
-[ -n "$rel_tag" ] && [ -n "$asset_url" ] || { log "no usable release yet"; exit 0; }
+rel_tag="$(latest_tag)" || { log "github unreachable or no release yet"; exit 0; }
+asset_url="${GH_PROXY}https://github.com/$GH_REPO/releases/download/$rel_tag/cs2sdktest-linux-x64-$rel_tag.zip"
 
 # ---- signal B: installed game build id --------------------------------------
 # Another service keeps CS2 up to date; we only read what is installed.
@@ -49,7 +55,7 @@ log "triggered by: $reason (release $rel_tag, build $build)"
 run_id="$(date -u +%Y%m%d-%H%M%S)_${rel_tag}_b${build}"
 run_dir="$STATE_DIR/runs/$run_id"; mkdir -p "$run_dir"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-curl -fsSL ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} "$asset_url" -o "$tmp/pkg.zip" \
+curl -fsSL "$asset_url" -o "$tmp/pkg.zip" \
   || { log "download failed"; exit 1; }
 unzip -qo "$tmp/pkg.zip" -d "$CS2_DIR/game/csgo" || { log "unzip failed"; exit 1; }
 
