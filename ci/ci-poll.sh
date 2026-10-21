@@ -32,8 +32,11 @@ asset_url="$(printf '%s' "$rel_json" | sed -n 's/.*"browser_download_url": *"\([
 # ---- signal B: installed game build id --------------------------------------
 # Another service keeps CS2 up to date; we only read what is installed.
 local_build() { sed -n 's/.*"buildid"[^"]*"\([0-9]*\)".*//p' "$CS2_DIR/steamapps/appmanifest_$APP_ID.acf" 2>/dev/null | head -1; }
+state_flags() { sed -n 's/.*"StateFlags"[^"]*"\([0-9]*\)".*//p' "$CS2_DIR/steamapps/appmanifest_$APP_ID.acf" 2>/dev/null | head -1; }
 build="$(local_build)"
 [ -n "$build" ] || { log "cannot read installed build id"; exit 1; }
+# StateFlags 4 = fully installed; anything else means an update is in progress.
+[ "$(state_flags)" = "4" ] || { log "game update in progress (StateFlags=$(state_flags)); retry next poll"; exit 0; }
 
 reason=""
 [ "$rel_tag" != "$(read_state last_tag)" ] && reason="release"
@@ -41,10 +44,6 @@ reason=""
 [ "$FORCE" = 1 ] && reason="manual"
 [ -z "$reason" ] && exit 0
 log "triggered by: $reason (release $rel_tag, build $build)"
-
-# The updater may still be writing files; wait until the manifest is stable.
-sleep 30
-[ "$(local_build)" = "$build" ] || { log "build id changed during wait; retry next poll"; exit 0; }
 
 # ---- deploy the plugin -------------------------------------------------------
 run_id="$(date -u +%Y%m%d-%H%M%S)_${rel_tag}_b${build}"
