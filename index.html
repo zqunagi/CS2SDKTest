@@ -74,7 +74,8 @@ summary .cnt b{color:var(--c);font-weight:600}
 .row{display:grid;grid-template-columns:78px minmax(0,1.3fr) minmax(0,1.7fr);gap:12px;padding:6px 0;border-top:1px dashed var(--line)}
 .row:first-child{border-top:0}
 .tag{font-size:11px;font-weight:700;color:var(--c);letter-spacing:.03em}
-.row .d{color:var(--mut);word-break:break-word}
+.row code{min-width:0;overflow-wrap:anywhere}
+.row .d{color:var(--mut);min-width:0;word-break:break-word}
 @media(max-width:720px){.row{grid-template-columns:70px 1fr}.row .d{grid-column:1/-1}}
 .note{padding:14px 20px;color:var(--mut)}
 .diff{padding:4px 20px 12px}
@@ -97,7 +98,7 @@ footer{margin-top:36px;color:var(--mut);font-size:12px;text-align:center}
 <div class="card" id="history"></div>
 
 <div id="detail"></div>
-<footer>结果已脱敏，时间为 UTC</footer>
+<footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
 </main>
 
 <script>
@@ -112,7 +113,13 @@ const label=Object.fromEntries(OUT);
 const cache={};
 let runs=[];
 
-const when=t=>t?t.replace('T',' ').replace('Z',''):'-';
+// Valve 总部（Bellevue）所在时区，随夏令时在 PST / PDT 间切换
+const vfmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'});
+const vparts=t=>{const d=new Date(t);if(isNaN(d))return null;const o={};vfmt.formatToParts(d).forEach(p=>o[p.type]=p.value);return o};
+const zone=t=>{const o=t&&vparts(t);return o?o.timeZoneName:''};
+const when=t=>{const o=t&&vparts(t);return o?`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}:${o.second}`:'-'};
+// 与表头缩写不同（跨夏令时切换）时，在单元格里补上缩写
+const whenZ=(t,z)=>when(t)+(zone(t)&&zone(t)!==z?' '+zone(t):'');
 const ver=r=>r.game_version||r.game_buildid;
 const num=n=>n==null?'-':n.toLocaleString();
 
@@ -152,7 +159,7 @@ function hero(r,res){
         <span>CS2 版本 <b>${esc(ver(r))}</b></span>
         ${r.s2sdk?`<span>s2sdk <b>${esc(r.s2sdk)}</b></span>`:''}
         <span>${esc(REASON[r.reason]||r.reason)}</span>
-        <span>${esc(when(r.finished))}</span>
+        <span>${esc(when(r.finished))} ${esc(zone(r.finished))}</span>
       </div>
       ${r.suspect?`<div class="meta">最后一个未返回的调用：<code>${esc(r.suspect)}</code></div>`:''}
     </div>
@@ -171,8 +178,8 @@ async function init(){
     $('#history').innerHTML='';return;
   }
   $('#latest').innerHTML=hero(runs[0],await result(runs[0].id));
-  $('#history').innerHTML=`<table><thead><tr><th>时间</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 版本</th><th>s2sdk</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
-    runs.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(when(r.finished))}</td>
+  $('#history').innerHTML=`<table><thead><tr><th>时间 (${esc(zone(runs[0].finished)||'PT')})</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 版本</th><th>s2sdk</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
+    runs.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(whenZ(r.finished,zone(runs[0].finished)))}</td>
     <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
     <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td><td class="mono">${esc(r.s2sdk||'-')}</td>
     <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table>';
