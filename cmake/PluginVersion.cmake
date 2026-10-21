@@ -6,6 +6,29 @@
 #  version rather than a nice-to-have.
 # =============================================================================
 
+# The s2sdk checkout has no tags, so its "version" is the commit the submodule
+# points at (short hash and commit date). A tarball without git gives "unknown".
+function(cs2sdktest_resolve_sdk_revision sdk_dir out_var)
+  set(_revision "unknown")
+
+  find_package(Git QUIET)
+  if(GIT_FOUND AND EXISTS "${sdk_dir}/.git")
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" log -1 "--format=%h (%cs)"
+      WORKING_DIRECTORY "${sdk_dir}"
+      OUTPUT_VARIABLE _described
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE _git_result
+    )
+    if(_git_result EQUAL 0 AND _described)
+      set(_revision "${_described}")
+    endif()
+  endif()
+
+  set(${out_var} "${_revision}" PARENT_SCOPE)
+endfunction()
+
 function(cs2sdktest_resolve_git_revision out_var)
   set(_revision "unknown")
 

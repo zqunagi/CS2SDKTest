@@ -26,6 +26,9 @@
 /* Git description of the tree this binary was built from, or "unknown". */
 #define PLUGIN_GIT_REVISION     "@CS2SDKTEST_GIT_REVISION@"
 
+/* The s2sdk commit (short hash and date) this binary was compiled against. */
+#define PLUGIN_SDK_REVISION     "@CS2SDKTEST_SDK_REVISION@"
+
 /* Build environment - written into every log header, so a log found later can
  * be tied back to the exact SDK and toolchain that produced it. */
 #define PLUGIN_SDK_ENGINE       "@HL2SDK_ENGINE_NAME@"

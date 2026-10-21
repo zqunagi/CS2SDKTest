@@ -137,6 +137,8 @@ std::string ResultSink::MetaJson() const
 	out += ',';
 	AppendString(out, "sdk", PLUGIN_SDK_ENGINE);
 	out += ',';
+	AppendString(out, "s2sdk", PLUGIN_SDK_REVISION);
+	out += ',';
 	AppendNumber(out, "sdk_engine_code", PLUGIN_SDK_ENGINE_CODE);
 	out += ',';
 	AppendNumber(out, "metamod_plapi", PLUGIN_MM_PLAPI_VERSION);

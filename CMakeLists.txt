@@ -97,6 +97,7 @@ else()
 endif()
 
 cs2sdktest_resolve_git_revision(CS2SDKTEST_GIT_REVISION)
+cs2sdktest_resolve_sdk_revision("${CS2SDKTEST_HL2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
 set(CS2SDKTEST_FULL_VERSION "${PROJECT_VERSION}-${CS2SDKTEST_GIT_REVISION}")
 
 # -----------------------------------------------------------------------------
