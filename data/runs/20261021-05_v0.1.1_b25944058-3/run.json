@@ -1,9 +1,9 @@
 {
-    "status":  "completed",
-    "reason":  "manual",
-    "release":  "v0.1.1",
-    "game_buildid":  "25944058",
-    "duration_s":  "22",
-    "finished":  "2026-10-21T05:00:00Z",
-    "suspect":  ""
+ "status": "completed",
+ "reason": "manual",
+ "release": "v0.1.1",
+ "game_buildid": "25944058",
+ "duration_s": "22",
+ "finished": "2026-10-21T05:23:14Z",
+ "suspect": ""
 }
