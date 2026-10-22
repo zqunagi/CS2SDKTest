@@ -1,11 +1,15 @@
 #include "suites/FileSystemSuite.h"
 
 #include <cctype>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
+#include <string>
+#include <utility>
 
 #include <appframework/iappsystem.h>
 #include <filesystem/ifilesystem.h>
@@ -79,6 +83,75 @@ void* ProbeAlloc(const char* /*file_name*/, unsigned bytes)
 	return std::malloc(bytes != 0 ? bytes : 1);
 }
 
+/**
+ * Raw storage for a container the engine fills with its own allocations
+ * (CUtlBuffer, CUtlVector<CUtlString>). The object is constructed in place and
+ * never destroyed: its destructor would free engine-allocated memory on this
+ * module's heap, and a cross-heap free aborts the process. The few bytes that
+ * stay allocated go back to the OS when the process exits. One instance per
+ * call site; each site runs once per process.
+ */
+template <typename T>
+struct LeakedObject
+{
+	alignas(T) unsigned char bytes[sizeof(T)];
+
+	template <typename... Args>
+	T* Construct(Args&&... args)
+	{
+		return new (static_cast<void*>(bytes)) T(std::forward<Args>(args)...);
+	}
+};
+
+// Everything the write-side rows create lives under these names, in the
+// "GAME" path ID, and is removed again before the suite ends.
+const char* const kScratchDir = "cstmp_fs";
+const char* const kScratchTree = "cstmp_fs_tree";
+const char* const kScratchTreeInner = "cstmp_fs_tree/inner";
+const char* const kScratchTreeFile = "cstmp_fs_tree/inner/f.txt";
+const char* const kScratchFileA = "cstmp_fs/a.txt";
+const char* const kScratchFileB = "cstmp_fs/b.txt";
+const char* const kScratchFileC = "cstmp_fs/c.txt";
+const char* const kScratchFileW = "cstmp_fs/w.bin";
+// A path ID nothing else uses, so mounting and unmounting it cannot change
+// where any real file resolves.
+const char* const kScratchPathId = "cstmp_pathid";
+
+/**
+ * Appends printf-formatted text. A row keeps only its last Detail, so a row
+ * that makes several calls builds its text here and reports it once.
+ */
+void AppendF(std::string& out, const char* format, ...)
+{
+	char piece[512];
+	va_list args;
+	va_start(args, format);
+	std::vsnprintf(piece, sizeof(piece), format, args);
+	va_end(args);
+	out += piece;
+}
+
+/** The directory part of a full path, without the trailing separator. */
+std::string DirectoryOf(const char* full_path)
+{
+	std::string path(full_path != nullptr ? full_path : "");
+	const std::size_t cut = path.find_last_of("/\\");
+	return cut == std::string::npos ? std::string() : path.substr(0, cut);
+}
+
+/** Reads up to capacity bytes of a file by name; -1 when it cannot be opened. */
+int ReadBack(IFileSystem* fs, const char* name, char* out, int capacity)
+{
+	FileHandle_t file = fs->Open(name, "rb", kProbePathId);
+	if (file == FILESYSTEM_INVALID_HANDLE)
+	{
+		return -1;
+	}
+	const int got = fs->Read(out, capacity, file);
+	fs->Close(file);
+	return got;
+}
+
 FileFindHandle_t InvalidFindHandle()
 {
 	FileFindHandle_t find;
@@ -134,6 +207,7 @@ void FileSystemSuite::ExerciseCalls(TestContext& context)
 	ExerciseFinds(context);
 	ExerciseNameDictionary(context);
 	ExerciseMiscState(context);
+	ExerciseScratchCalls(context);
 	NoteSideEffectingCalls(context);
 }
 
@@ -271,13 +345,21 @@ void FileSystemSuite::ExerciseFileQueries(TestContext& context)
 		context.Detail("-> \"%s\"", text.Get());
 	});
 
+	// The SDK header declares (pPathID, pFileName); the engine reads the first
+	// string as the file and the second as the path ID (libfilesystem_stdio.so,
+	// checked in IDA), so the arguments go in that order.
 	CS2ST_CALL(context, "IFileSystem::IsFileInReadOnlySearchPath", {
 		context.Detail("-> %s",
-			YesNo(fs_->IsFileInReadOnlySearchPath(kProbePathId, kProbeFile)));
+			YesNo(fs_->IsFileInReadOnlySearchPath(kProbeFile, kProbePathId)));
 	});
 
-	context.SkipCall("IFileSystem::Precache", "loads the file into the engine's cache");
-	context.SkipCall("IFileSystem::SetFileWritable", "changes file attributes");
+	// Only warms the engine's cache with the probe file.
+	CS2ST_CALL(context, "IFileSystem::Precache", {
+		const bool ok = fs_->Precache(kProbeFile, kProbePathId);
+		context.Detail("-> %s", YesNo(ok));
+	});
+
+	// SetFileWritable is called in ExerciseScratchCalls, on a cstmp_ file.
 }
 
 // -----------------------------------------------------------------------------
@@ -439,10 +521,29 @@ void FileSystemSuite::ExerciseHandleIo(TestContext& context)
 		}
 	});
 
-	// Crashed the process (heap critical failure): the engine allocates the CUtlBuffer
-	// storage and ~CUtlBuffer frees it here with this module's CRT free. A cross-heap
-	// free is not an exception SEH can turn into a CRASHED row.
-	context.SkipCall("IFileSystem::ReadToBuffer", "fills a CUtlBuffer; the engine-allocated storage would be freed on this module's heap");
+	// The engine allocates the CUtlBuffer storage; ~CUtlBuffer would free it here
+	// with this module's CRT free, which crashed the process (heap critical
+	// failure, not an exception SEH can turn into a CRASHED row). The buffer is
+	// built in leaked storage and never destroyed.
+	CS2ST_CALL(context, "IFileSystem::ReadToBuffer", {
+		// Intentional leak: never destroyed, freed when the process exits.
+		static LeakedObject<CUtlBuffer> storage;
+		CUtlBuffer* buf = storage.Construct();
+		fs_->Seek(handle, 0, FILESYSTEM_SEEK_HEAD);
+		const bool ok = fs_->ReadToBuffer(handle, *buf);
+		const int put = buf->TellPut();
+		context.Detail("-> %s, %d bytes in the buffer (Size %lld)", YesNo(ok), put,
+			static_cast<long long>(name_size));
+		if (ok && name_size >= 0 && put != name_size)
+		{
+			context.Suspect("ReadToBuffer put %d bytes, Size says %lld", put,
+				static_cast<long long>(name_size));
+		}
+		if (ok && put > 0 && buf->Base() == nullptr)
+		{
+			context.Fail("%d bytes reported but the buffer has no storage", put);
+		}
+	});
 
 	// Read-only mapping through the open handle; the name overload is exercised
 	// in ExercisePaths. Both should describe the same file.
@@ -470,8 +571,8 @@ void FileSystemSuite::ExerciseHandleIo(TestContext& context)
 		context.Detail("-> closed %p", handle);
 	});
 
-	context.SkipCall("IFileSystem::Write", "the probe handle is read-only; writing would touch game files");
-	context.SkipCall("IFileSystem::FPrintf", "the probe handle is read-only; writing would touch game files");
+	// Write and FPrintf are called in ExerciseScratchCalls, on a handle to a
+	// cstmp_ file; the probe handle stays read-only.
 }
 
 // -----------------------------------------------------------------------------
@@ -482,7 +583,23 @@ void FileSystemSuite::ExerciseBufferReads(TestContext& context)
 {
 	context.Note("[IFileSystem] whole-file reads; the file length has several routes");
 
-	context.SkipCall("IFileSystem::ReadFile", "fills a CUtlBuffer; the engine-allocated storage would be freed on this module's heap (ReadFileEx covers the whole-file read)");
+	// Fills a CUtlBuffer with engine-allocated storage; see ReadToBuffer for why
+	// the buffer is built in leaked storage and never destroyed.
+	CS2ST_CALL(context, "IFileSystem::ReadFile", {
+		// Intentional leak: never destroyed, freed when the process exits.
+		static LeakedObject<CUtlBuffer> storage;
+		CUtlBuffer* buf = storage.Construct();
+		const int64 size = fs_->Size(kProbeFile, kProbePathId);
+		const bool ok = fs_->ReadFile(kProbeFile, kProbePathId, *buf);
+		const int put = buf->TellPut();
+		context.Detail("-> %s, %d bytes in the buffer (Size %lld)", YesNo(ok), put,
+			static_cast<long long>(size));
+		if (ok && size >= 0 && put != size)
+		{
+			context.Suspect("ReadFile put %d bytes, Size says %lld", put,
+				static_cast<long long>(size));
+		}
+	});
 
 	CS2ST_CALL(context, "IFileSystem::ReadFileEx", {
 		const int64 size = fs_->Size(kProbeFile, kProbePathId);
@@ -500,9 +617,8 @@ void FileSystemSuite::ExerciseBufferReads(TestContext& context)
 		std::free(data);
 	});
 
-	context.SkipCall("IFileSystem::WriteFile", "writes a file on the write path");
-	context.SkipCall("IFileSystem::UnzipFile", "writes extracted files to disk");
-	context.SkipCall("IFileSystem::CopyAFile", "writes a file on the write path");
+	// WriteFile and CopyAFile are called in ExerciseScratchCalls, on cstmp_ files.
+	context.SkipCall("IFileSystem::UnzipFile", "needs a zip archive to extract and this suite has none; extraction writes to disk");
 }
 
 // -----------------------------------------------------------------------------
@@ -551,7 +667,26 @@ void FileSystemSuite::ExercisePaths(TestContext& context)
 		context.Detail("-> %s, \"%.200s\"", YesNo(ok), paths.Get());
 	});
 
-	context.SkipCall("IFileSystem::GetSearchPathsForPathID", "fills a CUtlVector<CUtlString>; the engine-allocated array would be freed on this module's heap (cross-heap free aborts the process)");
+	// The engine allocates the vector's array; the vector is built in leaked
+	// storage and never destroyed (a cross-heap free aborts the process).
+	CS2ST_CALL(context, "IFileSystem::GetSearchPathsForPathID", {
+		// Intentional leak: never destroyed, freed when the process exits.
+		static LeakedObject<CUtlVector<CUtlString>> storage;
+		CUtlVector<CUtlString>* paths = storage.Construct();
+		fs_->GetSearchPathsForPathID(kProbePathId, GET_SEARCH_PATH_ALL, *paths);
+		const int count = paths->Count();
+		std::string text;
+		AppendF(text, "-> %d path(s) for %s", count, kProbePathId);
+		for (int i = 0; i < count && i < 3; ++i)
+		{
+			AppendF(text, "; [%d] \"%.120s\"", i, (*paths)[i].Get());
+		}
+		context.Detail("%s", text.c_str());
+		if (count <= 0)
+		{
+			context.Suspect("no search paths for %s, which resolves %s", kProbePathId, kProbeFile);
+		}
+	});
 
 	CS2ST_CALL(context, "IFileSystem::GetSearchPathID", {
 		CBufferString id;
@@ -589,15 +724,10 @@ void FileSystemSuite::ExercisePaths(TestContext& context)
 		context.Detail("-> printed to the engine console");
 	});
 
-	context.SkipCall("IFileSystem::AddSearchPath", "mounts a search path");
-	context.SkipCall("IFileSystem::RemoveSearchPath", "unmounts a search path");
-	context.SkipCall("IFileSystem::SaveSearchPathState", "allocates engine state that must be restored or destroyed in order");
-	context.SkipCall("IFileSystem::RestoreSearchPathState", "replaces the live search paths");
-	context.SkipCall("IFileSystem::DestroySearchPathState", "pairs with SaveSearchPathState, which is skipped");
-	context.SkipCall("IFileSystem::RemoveAllSearchPaths", "would empty every search path");
-	context.SkipCall("IFileSystem::RemoveSearchPaths", "unmounts every path with a path ID");
-	context.SkipCall("IFileSystem::MarkPathIDByRequestOnly", "changes how a path ID is searched");
-	context.SkipCall("IFileSystem::SetSearchPathReadOnly", "changes search path attributes");
+	// AddSearchPath, RemoveSearchPath, RemoveSearchPaths, MarkPathIDByRequestOnly,
+	// SetSearchPathReadOnly and the Save/Restore/Destroy state triple are called
+	// in ExerciseScratchCalls, against the cstmp_pathid path ID.
+	context.SkipCall("IFileSystem::RemoveAllSearchPaths", "would empty every search path, and a failed restore would leave the game without any");
 
 	CS2ST_CALL(context, "IFileSystem::CreateMemoryMap(name,pathID,flags)", {
 		IMemoryMappedFile* map = fs_->CreateMemoryMap(kProbeFile, kProbePathId, MMF_READ);
@@ -672,9 +802,42 @@ void FileSystemSuite::ExerciseFinds(TestContext& context)
 		fs_->FindClose(find);
 	});
 
-	context.SkipCall("IFileSystem::FindFileAbsoluteList", "fills a CUtlVector<CUtlString>; the engine-allocated array would be freed on this module's heap (cross-heap free aborts the process)");
+	// Both fill a CUtlVector<CUtlString> with engine-allocated storage; the
+	// vectors are built in leaked storage and never destroyed.
+	CS2ST_CALL(context, "IFileSystem::FindFileAbsoluteList", {
+		// Intentional leak: never destroyed, freed when the process exits.
+		static LeakedObject<CUtlVector<CUtlString>> storage;
+		CUtlVector<CUtlString>* found = storage.Construct();
+		fs_->FindFileAbsoluteList(*found, kProbeFile, kProbePathId);
+		const int count = found->Count();
+		std::string text;
+		AppendF(text, "-> %d hit(s) for %s", count, kProbeFile);
+		for (int i = 0; i < count && i < 3; ++i)
+		{
+			AppendF(text, "; [%d] \"%.120s\"", i, (*found)[i].Get());
+		}
+		context.Detail("%s", text.c_str());
+		if (count <= 0 && fs_->FileExists(kProbeFile, kProbePathId))
+		{
+			context.Suspect("FileExists finds %s in %s, FindFileAbsoluteList lists none",
+				kProbeFile, kProbePathId);
+		}
+	});
 
-	context.SkipCall("IFileSystem::GetAvailableDrives", "fills a CUtlVector<CUtlString>; the engine-allocated array would be freed on this module's heap (cross-heap free aborts the process)");
+	CS2ST_CALL(context, "IFileSystem::GetAvailableDrives", {
+		// Intentional leak: never destroyed, freed when the process exits.
+		static LeakedObject<CUtlVector<CUtlString>> storage;
+		CUtlVector<CUtlString>* drives = storage.Construct();
+		fs_->GetAvailableDrives(*drives);
+		const int count = drives->Count();
+		std::string text;
+		AppendF(text, "-> %d drive(s)", count);
+		for (int i = 0; i < count && i < 3; ++i)
+		{
+			AppendF(text, "; [%d] \"%.60s\"", i, (*drives)[i].Get());
+		}
+		context.Detail("%s", text.c_str());
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -779,6 +942,491 @@ void FileSystemSuite::ExerciseMiscState(TestContext& context)
 		fs_->Trace_DumpUnclosedFiles();
 		context.Detail("-> dumped to the engine console");
 	});
+
+	// A nesting counter: the true call is undone by the matching false one.
+	CS2ST_CALL(context, "IFileSystem::SuppressAsyncFileRequestFlushOnPathChange", {
+		fs_->SuppressAsyncFileRequestFlushOnPathChange(true);
+		fs_->SuppressAsyncFileRequestFlushOnPathChange(false);
+		context.Detail("-> true then false, counter balanced");
+	});
+
+	// Switches the policy off and puts the original value back, so nothing is
+	// auto-mounted by the call and the state afterwards is the state before.
+	CS2ST_CALL(context, "IFileSystem::EnableAutoVPKFileLoading", {
+		const bool original = fs_->GetAutoVPKFileLoading();
+		fs_->EnableAutoVPKFileLoading(false);
+		const bool disabled = fs_->GetAutoVPKFileLoading();
+		fs_->EnableAutoVPKFileLoading(original);
+		const bool restored = fs_->GetAutoVPKFileLoading();
+		context.Detail("-> original %s, after false %s, restored %s", YesNo(original),
+			YesNo(disabled), YesNo(restored));
+		if (restored != original)
+		{
+			context.Fail("the original policy %s was not restored, it reads %s",
+				YesNo(original), YesNo(restored));
+		}
+		else if (disabled)
+		{
+			context.Suspect("GetAutoVPKFileLoading still true after EnableAutoVPKFileLoading(false)");
+		}
+	});
+
+	// UGC handle 0 names nothing: the open is expected to fail, with no effect.
+	CS2ST_CALL(context, "IFileSystem::OpenUGCFile", {
+		FileHandle_t ugc = fs_->OpenUGCFile(0);
+		context.Detail("-> %p (for UGC handle 0)", ugc);
+		if (ugc != FILESYSTEM_INVALID_HANDLE)
+		{
+			fs_->Close(ugc);
+			context.Suspect("UGC handle 0 opened a file");
+		}
+	});
+
+	// The header documents 0.0 as "turn off the functionality", which is also
+	// the state it is in unless something armed it.
+	CS2ST_CALL(context, "IFileSystem::SetIODelayAlarm", {
+		fs_->SetIODelayAlarm(0.0f);
+		context.Detail("-> disarmed (0.0)");
+	});
+
+	// Hashes every mounted VPK; takes seconds, but changes nothing.
+	CS2ST_CALL(context, "IFileSystem::ValidateLoadedVPKs", {
+		const bool ok = fs_->ValidateLoadedVPKs();
+		context.Detail("-> %s", YesNo(ok));
+	});
+}
+
+// -----------------------------------------------------------------------------
+//  Scratch objects: calls that write, copy, rename, delete or mount
+// -----------------------------------------------------------------------------
+
+void FileSystemSuite::ExerciseScratchCalls(TestContext& context)
+{
+	context.Note("[scratch] calls that write, rename, delete or mount, made against "
+	             "cstmp_* files in %s and the %s path ID; every one is removed again",
+		kProbePathId, kScratchPathId);
+
+	// Which scratch files exist right now; later rows only act on what earlier
+	// rows managed to create.
+	bool a_ready = false;
+	bool b_ready = false;
+	// Full path of the scratch directory, for the rows that need a path the
+	// engine does not resolve through a path ID.
+	std::string scratch_dir_full;
+
+	CS2ST_CALL(context, "IFileSystem::CreateDirHierarchy", {
+		fs_->CreateDirHierarchy(kScratchDir, kProbePathId);
+		const bool made = fs_->IsDirectory(kScratchDir, kProbePathId);
+		context.Detail("-> IsDirectory(%s) %s", kScratchDir, YesNo(made));
+		if (!made)
+		{
+			context.Fail("%s is not a directory after CreateDirHierarchy", kScratchDir);
+		}
+	});
+
+	CS2ST_CALL(context, "IFileSystem::CreateDirHierarchyForFile", {
+		fs_->CreateDirHierarchyForFile(kScratchTreeFile, kProbePathId);
+		const bool made = fs_->IsDirectory(kScratchTreeInner, kProbePathId);
+		context.Detail("-> IsDirectory(%s) %s", kScratchTreeInner, YesNo(made));
+		if (!made)
+		{
+			context.Fail("%s is not a directory after CreateDirHierarchyForFile of %s",
+				kScratchTreeInner, kScratchTreeFile);
+		}
+	});
+
+	// A file written through Write, then a second handle appends through
+	// FPrintf; reading the file back gives the bytes both calls were given.
+	CS2ST_CALL(context, "IFileSystem::Write", {
+		static const char text[] = "hello\n";
+		const int expected = static_cast<int>(sizeof(text) - 1);
+		FileHandle_t out = fs_->Open(kScratchFileA, "wb", kProbePathId);
+		if (out == FILESYSTEM_INVALID_HANDLE)
+		{
+			context.Detail("-> could not open %s for writing", kScratchFileA);
+			context.Suspect("%s has no writable path; the write rows have nothing to act on",
+				kProbePathId);
+			return;
+		}
+		const int wrote = fs_->Write(text, static_cast<uint64>(expected), out);
+		fs_->Close(out);
+		const int64 size = fs_->Size(kScratchFileA, kProbePathId);
+		a_ready = fs_->FileExists(kScratchFileA, kProbePathId);
+		context.Detail("-> wrote %d of %d bytes, Size %lld", wrote, expected,
+			static_cast<long long>(size));
+		if (wrote != expected || size != expected)
+		{
+			context.Fail("wrote %d of %d bytes and the file is %lld bytes", wrote, expected,
+				static_cast<long long>(size));
+		}
+	});
+
+	if (a_ready)
+	{
+		// The full path of the scratch directory comes from the file just made.
+		CBufferString full;
+		fs_->RelativePathToFullPath(kScratchFileA, kProbePathId, full, FILTER_NONE, nullptr);
+		scratch_dir_full = DirectoryOf(full.Get());
+	}
+
+	if (a_ready)
+	{
+		CS2ST_CALL(context, "IFileSystem::FPrintf", {
+			static const char expected_text[] = "hello\n42\n";
+			const int expected_size = static_cast<int>(sizeof(expected_text) - 1);
+			FileHandle_t out = fs_->Open(kScratchFileA, "ab", kProbePathId);
+			if (out == FILESYSTEM_INVALID_HANDLE)
+			{
+				context.Detail("-> could not reopen %s for appending", kScratchFileA);
+				context.Suspect("append open failed on a file Write just created");
+				return;
+			}
+			const int printed = fs_->FPrintf(out, "%d\n", 42);
+			fs_->Close(out);
+			const int64 size = fs_->Size(kScratchFileA, kProbePathId);
+			char back[32];
+			std::memset(back, 0, sizeof(back));
+			const int got = ReadBack(fs_, kScratchFileA, back, static_cast<int>(sizeof(back)));
+			context.Detail("-> printed %d, Size %lld, read back %d bytes", printed,
+				static_cast<long long>(size), got);
+			if (size != expected_size || got != expected_size
+				|| std::memcmp(back, expected_text, static_cast<std::size_t>(expected_size)) != 0)
+			{
+				context.Fail("after Write(\"hello\\n\") + FPrintf(\"42\\n\") the file is %lld bytes, "
+				             "read back %d bytes, not the %d written",
+					static_cast<long long>(size), got, expected_size);
+			}
+			else if (printed != 3)
+			{
+				context.Suspect("FPrintf returned %d for 3 characters", printed);
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("IFileSystem::FPrintf", "no scratch file could be written");
+	}
+
+	// WriteFile takes a CUtlBuffer this suite fills (storage is the engine's
+	// allocator via the imported Put), so the buffer is never destroyed.
+	CS2ST_CALL(context, "IFileSystem::WriteFile", {
+		// Intentional leak: never destroyed, freed when the process exits.
+		static LeakedObject<CUtlBuffer> storage;
+		static const char payload[] = "cs2sdktest-writefile";
+		const int length = static_cast<int>(sizeof(payload) - 1);
+		CUtlBuffer* buf = storage.Construct();
+		buf->Put(payload, length);
+		const bool ok = fs_->WriteFile(kScratchFileW, kProbePathId, *buf);
+		const int64 size = fs_->Size(kScratchFileW, kProbePathId);
+		char back[64];
+		std::memset(back, 0, sizeof(back));
+		const int got = ReadBack(fs_, kScratchFileW, back, static_cast<int>(sizeof(back)));
+		context.Detail("-> %s, Size %lld, read back %d bytes", YesNo(ok),
+			static_cast<long long>(size), got);
+		if (ok && (size != length || got != length
+			|| std::memcmp(back, payload, static_cast<std::size_t>(length)) != 0))
+		{
+			context.Fail("WriteFile said ok for %d bytes; the file is %lld bytes, read back %d",
+				length, static_cast<long long>(size), got);
+		}
+		else if (!ok)
+		{
+			context.Suspect("WriteFile returned false for a writable path");
+		}
+	});
+
+	// The destination goes in as a full path: a relative one might be taken
+	// relative to the process, outside the scratch directory.
+	if (a_ready && !scratch_dir_full.empty())
+	{
+		CS2ST_CALL(context, "IFileSystem::CopyAFile", {
+			const std::string destination = scratch_dir_full + "/" + "c.txt";
+			const bool ok = fs_->CopyAFile(kScratchFileA, kProbePathId, destination.c_str());
+			const bool present = fs_->FileExists(kScratchFileC, kProbePathId);
+			const int64 source_size = fs_->Size(kScratchFileA, kProbePathId);
+			const int64 copy_size = fs_->Size(kScratchFileC, kProbePathId);
+			std::string text;
+			AppendF(text, "-> %s, copy %s, Size %lld (source %lld)", YesNo(ok),
+				present ? "present" : "absent", static_cast<long long>(copy_size),
+				static_cast<long long>(source_size));
+			if (present)
+			{
+				const bool again = fs_->CopyAFile(kScratchFileA, kProbePathId,
+					destination.c_str(), true);
+				AppendF(text, "; second copy with bDontOverwrite -> %s", YesNo(again));
+			}
+			context.Detail("%s", text.c_str());
+			if (present && copy_size != source_size)
+			{
+				context.Fail("the copy is %lld bytes, the source %lld",
+					static_cast<long long>(copy_size), static_cast<long long>(source_size));
+			}
+			else if (ok && !present)
+			{
+				context.Suspect("CopyAFile said ok but %s is not found through %s",
+					kScratchFileC, kProbePathId);
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("IFileSystem::CopyAFile", "no scratch file or no full path to name a destination");
+	}
+
+	if (a_ready)
+	{
+		CS2ST_CALL(context, "IFileSystem::RenameFile", {
+			// A leftover from an interrupted run would make the rename fail.
+			if (fs_->FileExists(kScratchFileB, kProbePathId))
+			{
+				fs_->RemoveFile(kScratchFileB, kProbePathId);
+			}
+			const bool ok = fs_->RenameFile(kScratchFileA, kScratchFileB, kProbePathId);
+			const bool a_after = fs_->FileExists(kScratchFileA, kProbePathId);
+			const bool b_after = fs_->FileExists(kScratchFileB, kProbePathId);
+			a_ready = a_after;
+			b_ready = b_after;
+			context.Detail("-> %s, old name %s, new name %s", YesNo(ok),
+				a_after ? "present" : "gone", b_after ? "present" : "absent");
+			if (ok && (a_after || !b_after))
+			{
+				context.Fail("RenameFile said ok but the old name is %s and the new name is %s",
+					a_after ? "still there" : "gone", b_after ? "there" : "missing");
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("IFileSystem::RenameFile", "no scratch file could be written");
+	}
+
+	if (b_ready)
+	{
+		// Always ends with writable restored, so the clean-up below can delete it.
+		CS2ST_CALL(context, "IFileSystem::SetFileWritable", {
+			const bool before = fs_->IsFileWritable(kScratchFileB, kProbePathId);
+			const bool locked = fs_->SetFileWritable(kScratchFileB, false, kProbePathId);
+			const bool while_locked = fs_->IsFileWritable(kScratchFileB, kProbePathId);
+			const bool unlocked = fs_->SetFileWritable(kScratchFileB, true, kProbePathId);
+			const bool after = fs_->IsFileWritable(kScratchFileB, kProbePathId);
+			context.Detail("-> writable %s; SetFileWritable(false) %s -> %s; SetFileWritable(true) %s -> %s",
+				YesNo(before), YesNo(locked), YesNo(while_locked), YesNo(unlocked), YesNo(after));
+			if (!after)
+			{
+				context.Fail("the file is not writable after SetFileWritable(true)");
+			}
+			else if (locked && while_locked)
+			{
+				context.Suspect("still writable after SetFileWritable(false) returned true");
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("IFileSystem::SetFileWritable", "no scratch file to change");
+	}
+
+	// ---- search paths: the scratch directory mounted under cstmp_pathid ----
+
+	if (b_ready && !scratch_dir_full.empty())
+	{
+		// Marked before it has any path, as the header asks.
+		CS2ST_CALL(context, "IFileSystem::MarkPathIDByRequestOnly", {
+			fs_->MarkPathIDByRequestOnly(kScratchPathId, true);
+			context.Detail("-> %s marked request-only", kScratchPathId);
+		});
+
+		CS2ST_CALL(context, "IFileSystem::AddSearchPath", {
+			const bool before = fs_->FileExists("b.txt", kScratchPathId);
+			fs_->AddSearchPath(scratch_dir_full.c_str(), kScratchPathId);
+			const bool after = fs_->FileExists("b.txt", kScratchPathId);
+			context.Detail("-> b.txt through %s: before %s, after %s", kScratchPathId,
+				YesNo(before), YesNo(after));
+			if (before)
+			{
+				context.Fail("b.txt resolved through %s before anything was mounted under it",
+					kScratchPathId);
+			}
+			else if (!after)
+			{
+				context.Suspect("b.txt is not found through %s after AddSearchPath of \"%.120s\"",
+					kScratchPathId, scratch_dir_full.c_str());
+			}
+		});
+
+		// The SDK header declares (pPathID, <unnamed>, bReadOnly) and
+		// (pPathID, pFileName) for the getter. The engine takes the path first and
+		// the path ID second in both (libfilesystem_stdio.so, checked in IDA), so
+		// the arguments go in that order; with the header's order the setter looks
+		// the directory up as a path ID, matches nothing and changes nothing.
+		CS2ST_CALL(context, "IFileSystem::SetSearchPathReadOnly", {
+			fs_->SetSearchPathReadOnly(scratch_dir_full.c_str(), kScratchPathId, true);
+			const bool read_only = fs_->IsFileInReadOnlySearchPath("b.txt", kScratchPathId);
+			fs_->SetSearchPathReadOnly(scratch_dir_full.c_str(), kScratchPathId, false);
+			const bool writable = !fs_->IsFileInReadOnlySearchPath("b.txt", kScratchPathId);
+			context.Detail("-> read-only after true: %s; writable after false: %s",
+				YesNo(read_only), YesNo(writable));
+			if (!read_only || !writable)
+			{
+				context.Suspect("IsFileInReadOnlySearchPath did not follow SetSearchPathReadOnly "
+				                "(true -> %s, false -> %s)", YesNo(read_only),
+					writable ? "writable" : "read-only");
+			}
+		});
+
+		CS2ST_CALL(context, "IFileSystem::RemoveSearchPath", {
+			const bool ok = fs_->RemoveSearchPath(scratch_dir_full.c_str(), kScratchPathId);
+			const bool after = fs_->FileExists("b.txt", kScratchPathId);
+			context.Detail("-> %s, b.txt through %s afterwards: %s", YesNo(ok), kScratchPathId,
+				after ? "found" : "not found");
+			if (ok && after)
+			{
+				context.Fail("RemoveSearchPath said ok but b.txt still resolves through %s",
+					kScratchPathId);
+			}
+		});
+
+		// Mounts the directory again so RemoveSearchPaths has something to
+		// remove, and leaves the path ID empty and no longer request-only.
+		CS2ST_CALL(context, "IFileSystem::RemoveSearchPaths", {
+			fs_->AddSearchPath(scratch_dir_full.c_str(), kScratchPathId);
+			const bool mounted = fs_->FileExists("b.txt", kScratchPathId);
+			fs_->RemoveSearchPaths(kScratchPathId);
+			const bool after = fs_->FileExists("b.txt", kScratchPathId);
+			fs_->MarkPathIDByRequestOnly(kScratchPathId, false);
+			context.Detail("-> b.txt through %s: mounted %s, after RemoveSearchPaths %s",
+				kScratchPathId, mounted ? "found" : "not found", after ? "found" : "not found");
+			if (after)
+			{
+				context.Fail("b.txt still resolves through %s after RemoveSearchPaths", kScratchPathId);
+			}
+		});
+	}
+	else
+	{
+		const char* reason = "no scratch directory to mount";
+		context.SkipCall("IFileSystem::MarkPathIDByRequestOnly", "%s", reason);
+		context.SkipCall("IFileSystem::AddSearchPath", "%s", reason);
+		context.SkipCall("IFileSystem::SetSearchPathReadOnly", "%s", reason);
+		context.SkipCall("IFileSystem::RemoveSearchPath", "%s", reason);
+		context.SkipCall("IFileSystem::RemoveSearchPaths", "%s", reason);
+	}
+
+	// Saves the live search paths, restores the same state, destroys it. Nothing
+	// changes in between, so GAME resolves to the same paths before and after.
+	CS2ST_CALL(context, "IFileSystem::SaveSearchPathState + RestoreSearchPathState + DestroySearchPathState", {
+		CBufferString before;
+		fs_->GetSearchPath(kProbePathId, GET_SEARCH_PATH_ALL, before, 64);
+		SearchPathStateHandle_t* state = fs_->SaveSearchPathState("cstmp_state");
+		if (state == nullptr)
+		{
+			context.Detail("-> Save returned null; Restore and Destroy were not called");
+			context.Suspect("SaveSearchPathState returned null");
+			return;
+		}
+		fs_->RestoreSearchPathState(state);
+		fs_->DestroySearchPathState(state);
+		CBufferString after;
+		fs_->GetSearchPath(kProbePathId, GET_SEARCH_PATH_ALL, after, 64);
+		const bool same = std::strcmp(before.Get(), after.Get()) == 0;
+		context.Detail("-> state %p; %s search paths %s", static_cast<void*>(state), kProbePathId,
+			same ? "unchanged" : "differ before and after");
+		if (!same)
+		{
+			context.Suspect("%s search paths differ after Save + Restore of the same state", kProbePathId);
+		}
+	});
+
+	// ---- clean-up: also the rows for the delete calls ----
+
+	// Outside the macro: a braced list's commas would split the macro arguments.
+	const char* const scratch_files[] = { kScratchFileA, kScratchFileB, kScratchFileC, kScratchFileW };
+
+	CS2ST_CALL(context, "IFileSystem::RemoveFile", {
+		std::string left;
+		for (const char* file : scratch_files)
+		{
+			if (!fs_->FileExists(file, kProbePathId))
+			{
+				continue;
+			}
+			fs_->RemoveFile(file, kProbePathId);
+			if (fs_->FileExists(file, kProbePathId))
+			{
+				AppendF(left, " %s", file);
+			}
+		}
+		context.Detail("-> %s", left.empty() ? "every scratch file removed" : "some files remain");
+		if (!left.empty())
+		{
+			context.Fail("still present after RemoveFile:%s", left.c_str());
+		}
+	});
+
+	CS2ST_CALL(context, "IFileSystem::DeleteDirectory", {
+		const bool ok = fs_->DeleteDirectory(kScratchDir, kProbePathId);
+		const bool gone = !fs_->IsDirectory(kScratchDir, kProbePathId);
+		context.Detail("-> %s, directory %s", YesNo(ok), gone ? "gone" : "still there");
+		if (ok && !gone)
+		{
+			context.Fail("DeleteDirectory said ok but %s is still a directory", kScratchDir);
+		}
+		else if (!ok && !gone)
+		{
+			context.Suspect("DeleteDirectory failed on the emptied %s", kScratchDir);
+		}
+	});
+
+	// The third parameter is not named by the SDK. true is tried first; if the
+	// tree survives, false is tried and the row says which one worked. Whatever
+	// is left is removed by hand, so the tree never outlives the suite.
+	CS2ST_CALL(context, "IFileSystem::DeleteDirectoryAndContents_R", {
+		FileHandle_t out = fs_->Open(kScratchTreeFile, "wb", kProbePathId);
+		if (out != FILESYSTEM_INVALID_HANDLE)
+		{
+			fs_->Write("x", 1, out);
+			fs_->Close(out);
+		}
+		const bool had_file = fs_->FileExists(kScratchTreeFile, kProbePathId);
+		const bool ok_true = fs_->DeleteDirectoryAndContents_R(kScratchTree, kProbePathId, true);
+		bool gone = !fs_->IsDirectory(kScratchTree, kProbePathId);
+		bool ok_false = false;
+		bool tried_false = false;
+		if (!gone)
+		{
+			tried_false = true;
+			ok_false = fs_->DeleteDirectoryAndContents_R(kScratchTree, kProbePathId, false);
+			gone = !fs_->IsDirectory(kScratchTree, kProbePathId);
+		}
+		const bool file_gone = !fs_->FileExists(kScratchTreeFile, kProbePathId);
+		std::string text;
+		AppendF(text, "-> file made %s; (..., true) %s", YesNo(had_file), YesNo(ok_true));
+		if (tried_false)
+		{
+			AppendF(text, "; tree survived, (..., false) %s", YesNo(ok_false));
+		}
+		AppendF(text, "; tree %s, file %s", gone ? "gone" : "still there",
+			file_gone ? "gone" : "still there");
+		context.Detail("%s", text.c_str());
+		// By hand, whatever the call left behind.
+		if (!file_gone)
+		{
+			fs_->RemoveFile(kScratchTreeFile, kProbePathId);
+		}
+		if (!gone)
+		{
+			fs_->DeleteDirectory(kScratchTreeInner, kProbePathId);
+			fs_->DeleteDirectory(kScratchTree, kProbePathId);
+		}
+		if (had_file && !file_gone)
+		{
+			context.Fail("the file inside %s survived DeleteDirectoryAndContents_R", kScratchTree);
+		}
+		else if (!gone)
+		{
+			context.Suspect("the directory %s survived DeleteDirectoryAndContents_R", kScratchTree);
+		}
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -787,31 +1435,27 @@ void FileSystemSuite::ExerciseMiscState(TestContext& context)
 
 void FileSystemSuite::NoteSideEffectingCalls(TestContext& context)
 {
-	context.Note("[IFileSystem] state-changing slots: not called");
+	context.Note("[IFileSystem] global state-changing slots with no way to put the state back: not called");
 
-	context.SkipCall("IFileSystem::RemoveFile", "deletes a file");
-	context.SkipCall("IFileSystem::RenameFile", "renames a file");
-	context.SkipCall("IFileSystem::CreateDirHierarchy", "creates directories on disk");
-	context.SkipCall("IFileSystem::CreateDirHierarchyForFile", "creates directories on disk");
-	context.SkipCall("IFileSystem::DeleteDirectory", "deletes a directory");
-	context.SkipCall("IFileSystem::DeleteDirectoryAndContents_R", "recursively deletes a directory");
 	context.SkipCall("IFileSystem::LoadModule", "loads a native library into the game process");
 	context.SkipCall("IFileSystem::UnloadModule", "pairs with LoadModule, which is skipped");
 	context.SkipCall("IFileSystem::SetWarningFunc", "replaces the file system's global warning callback");
 	context.SkipCall("IFileSystem::SetWarningLevel", "changes global verbosity and there is no getter to restore it");
-	context.SkipCall("IFileSystem::LoadKeyValues(type,filename,pathID)", "returns a KeyValues owned by the engine's allocator");
-	context.SkipCall("IFileSystem::LoadKeyValues(head,type,filename,pathID)", "fills a KeyValues; its allocator would cross heaps");
-	context.SkipCall("IFileSystem::OpenUGCFile", "opens a UGC file; no UGC content is mounted");
-	context.SkipCall("IFileSystem::AddUGCVPKFile", "mounts a UGC VPK");
-	context.SkipCall("IFileSystem::RemoveUGCVPKFile", "unmounts a UGC VPK");
-	context.SkipCall("IFileSystem::EnableAutoVPKFileLoading", "changes global VPK loading policy");
-	context.SkipCall("IFileSystem::ValidateLoadedVPKs", "hashes every mounted VPK; takes seconds");
-	context.SkipCall("IFileSystem::LoadUGC", "loads UGC content");
-	context.SkipCall("IFileSystem::UnloadUGC", "unloads UGC content");
-	context.SkipCall("IFileSystem::SetIODelayAlarm", "arms a process-wide breakpoint alarm");
+	// The returned KeyValues is only recorded: this plugin links no KeyValues
+	// implementation, so it is neither read nor deleted (it is left allocated),
+	// and the overload below cannot get a head object to fill.
+	CS2ST_CALL(context, "IFileSystem::LoadKeyValues(type,filename,pathID)", {
+		// Intentional leak: the result is never deleted, freed when the process exits.
+		KeyValues* kv = fs_->LoadKeyValues(IFileSystem::TYPE_VMT, kProbeFile, kProbePathId);
+		context.Detail("-> %p (left allocated, not read)", static_cast<void*>(kv));
+	});
+	context.SkipCall("IFileSystem::LoadKeyValues(head,type,filename,pathID)", "needs a constructed KeyValues head and this plugin links no KeyValues constructor");
+	context.SkipCall("IFileSystem::AddUGCVPKFile", "mounts a UGC VPK and this suite has none to mount");
+	context.SkipCall("IFileSystem::RemoveUGCVPKFile", "pairs with AddUGCVPKFile, which is skipped");
+	context.SkipCall("IFileSystem::LoadUGC", "loads UGC content and no UGC content exists to load");
+	context.SkipCall("IFileSystem::UnloadUGC", "pairs with LoadUGC, which is skipped");
 	context.SkipCall("IFileSystem::MarkContentCorrupt", "flags content as corrupt for the whole session");
 	context.SkipCall("IFileSystem::SetContentCorruptionReportingEnabled", "changes global corruption reporting and there is no getter to restore it");
-	context.SkipCall("IFileSystem::SuppressAsyncFileRequestFlushOnPathChange", "nesting counter with no getter; an unbalanced call would change async flush behaviour");
 	context.SkipCall("IFileSystem::WriteFileAccessLog", "writes a file to disk and may clear the access log");
 	context.SkipCall("IFileSystem::SetVPKSignatureVerification", "changes the key and callbacks used to verify VPKs mounted afterwards");
 	context.SkipCall("IFileSystem::MarkVPKAsUntrustedAddon", "marks a mounted VPK untrusted for the whole session");

@@ -4,11 +4,14 @@
  * "VFileSystem017" @ filesystem_stdio.
  *
  * A large surface (~90 virtual slots, several overloaded) whose methods are
- * mostly either read-only or destructive. This suite keeps to the read-only
- * half: everything that would write, delete, rename, mount, unmount, load a
- * module or change global filesystem state is a one-line SkipCall with the
- * reason. The probe file is gameinfo.gi in the "GAME" path ID - every Source 2
- * game ships one and every search path set-up resolves it.
+ * mostly either read-only or destructive. The read-only half runs against the
+ * probe file, gameinfo.gi in the "GAME" path ID - every Source 2 game ships
+ * one and every search path set-up resolves it. The writing half (write, copy,
+ * rename, delete, mount, unmount) runs against cstmp_* files under "GAME" and
+ * the cstmp_pathid path ID, which are removed again before the suite ends.
+ * What is left as a one-line SkipCall with the reason is what has no scratch
+ * target: module loading, lifecycle slots, and global settings with no getter
+ * to restore.
  *
  * Oracles specific to this suite (two independent routes to one fact):
  *
@@ -27,7 +30,10 @@
  *
  * Buffers handed to the engine for it to allocate (ReadFileEx) are given this
  * module's own allocator through pfnAlloc, so they are freed on the heap that
- * made them - CS2SDKTEST_USE_MEMOVERRIDE is off.
+ * made them - CS2SDKTEST_USE_MEMOVERRIDE is off. Containers the engine fills
+ * with its own allocator (CUtlBuffer, CUtlVector<CUtlString>) are built in
+ * storage that is never destroyed: freeing them here would be a cross-heap
+ * free. They stay allocated until the process exits.
  */
 
 #ifndef CS2SDKTEST_SUITES_FILESYSTEMSUITE_H_
@@ -64,6 +70,7 @@ private:
 	void ExerciseFinds(TestContext& context);
 	void ExerciseNameDictionary(TestContext& context);
 	void ExerciseMiscState(TestContext& context);
+	void ExerciseScratchCalls(TestContext& context);
 	void NoteSideEffectingCalls(TestContext& context);
 
 	IFileSystem* fs_ = nullptr;
