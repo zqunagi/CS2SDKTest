@@ -191,6 +191,32 @@ public:
 	int implausible = 0;
 };
 
+/**
+ * A visitor that only counts. EnumerateVisitor hands it each stored member
+ * function pointer slot; nothing is dereferenced beyond checking the entity.
+ */
+class CountingEntityVisitor : public IEntityVisitor
+{
+public:
+	void Visit(CEntityInstance* entity, void* field) override
+	{
+		++visited;
+		if (entity != expected_entity)
+		{
+			++foreign_entity;
+		}
+		if (field == nullptr)
+		{
+			++null_field;
+		}
+	}
+
+	CEntityInstance* expected_entity = nullptr;
+	int visited = 0;
+	int foreign_entity = 0;
+	int null_field = 0;
+};
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -1126,6 +1152,66 @@ void GameEntitySystemSuite::ExerciseNameLookups(TestContext& context)
 		}
 	});
 
+	CS2ST_CALL(context, "CEntitySystem::AllocPooledString", {
+		// Permanently adds one cstmp_* entry to the entity symbol table, which
+		// nothing else looks for. Run after the absent-name probes above so
+		// those still see a pool without it, and under a name kAbsentName is not.
+		const char* const scratch_name = "cstmp_pooled_string_probe";
+		const bool pooled_before = entity_system_->FindPooledString(scratch_name).IsValid();
+		const CUtlSymbolLarge allocated = entity_system_->AllocPooledString(scratch_name);
+		const CUtlSymbolLarge found = entity_system_->FindPooledString(scratch_name);
+		const CUtlSymbolLarge again = entity_system_->AllocPooledString(scratch_name);
+		context.Detail("\"%s\": pooled before=%s, alloc -> %p, find -> %p, alloc again -> %p",
+			scratch_name, pooled_before ? "true" : "false",
+			static_cast<const void*>(allocated.String()),
+			static_cast<const void*>(found.String()),
+			static_cast<const void*>(again.String()));
+		if (pooled_before)
+		{
+			context.Suspect("the scratch string was already pooled; a previous run in this "
+			                "process may have left it behind");
+		}
+		if (!allocated.IsValid())
+		{
+			context.Fail("AllocPooledString returned no symbol");
+		}
+		else
+		{
+			char text[64];
+			if (strcmp(SafeStringArg(allocated.String(), text), scratch_name) != 0)
+			{
+				context.Fail("the symbol it returned does not spell the string it was given");
+			}
+			if (found != allocated)
+			{
+				context.Fail("FindPooledString does not find what AllocPooledString just pooled");
+			}
+			if (again != allocated)
+			{
+				context.Fail("pooling the same string twice produced two different symbols");
+			}
+		}
+	});
+
+	CS2ST_CALL(context, "CEntitySystem::AddEntityKeyValuesAllocatorRef", {
+		// Raises the count by one; the count is put back by hand below because
+		// ReleaseEntityKeyValuesAllocatorRef cannot be called (see its SkipCall).
+		const int before = entity_system_->m_nEntityKeyValuesAllocatorRefCount;
+		entity_system_->AddEntityKeyValuesAllocatorRef();
+		const int raised = entity_system_->m_nEntityKeyValuesAllocatorRefCount;
+		entity_system_->m_nEntityKeyValuesAllocatorRefCount = before;
+		context.Detail("count %d -> %d, restored to %d", before, raised,
+			entity_system_->m_nEntityKeyValuesAllocatorRefCount);
+		if (raised != before + 1)
+		{
+			context.Fail("AddEntityKeyValuesAllocatorRef did not raise the count by one");
+		}
+	});
+
+	context.SkipCall("CEntitySystem::ReleaseEntityKeyValuesAllocatorRef",
+		"inline, but its body calls CKV3Arena::Clear, which this plugin does not link; "
+		"referencing it leaves an undefined symbol and the plugin fails to load");
+
 	if (named_identity_ == nullptr)
 	{
 		context.SkipCall("CEntitySystem::FindPooledString (live name)",
@@ -1415,12 +1501,99 @@ void GameEntitySystemSuite::ExerciseIterators(TestContext& context)
 		});
 	}
 
-	context.SkipCall("EntityInstanceByClassIter_t(CEntityInstance* start, ...)",
-		"the start-from-an-entity overload resumes a by-class walk mid-chain; "
-		"the from-scratch overload above already covers m_pNextByClass");
-	context.SkipCall("EntityInstanceIter_t::SetWorldGroupId",
-		"filters the walk to one world group; covered implicitly by the "
-		"default group the iterators above run with");
+	if (probe_designer_name_ == nullptr || probe_instance_ == nullptr)
+	{
+		context.SkipCall("EntityInstanceByClassIter_t(CEntityInstance* start, ...)",
+			"no live entity was found to start from");
+	}
+	else
+	{
+		CS2ST_CALL(context, "EntityInstanceByClassIter_t(CEntityInstance* start, ...)", {
+			// Resumes the by-class walk at a live entity of that class. It can
+			// only reach what the from-scratch walk reaches, so it must not
+			// produce more.
+			EntityInstanceByClassIter_t whole(probe_designer_name_);
+			int total = 0;
+			for (CEntityInstance* entity = whole.First();
+			     entity != nullptr && total < kMaxEntitiesScanned;
+			     entity = whole.Next())
+			{
+				++total;
+			}
+
+			// First() would reset the start entity the constructor stored, so
+			// the walk begins with Next(), which continues from it.
+			EntityInstanceByClassIter_t resumed(probe_instance_, probe_designer_name_);
+			int count = 0;
+			for (CEntityInstance* entity = resumed.Next();
+			     entity != nullptr && count < kMaxEntitiesScanned;
+			     entity = resumed.Next())
+			{
+				++count;
+			}
+
+			char scratch[64];
+			context.Detail("\"%.63s\" from %p -> %d instance(s), the from-scratch walk has %d",
+				SafeStringArg(probe_designer_name_, scratch),
+				static_cast<void*>(probe_instance_), count, total);
+			if (count > total && total < kMaxEntitiesScanned)
+			{
+				context.Fail("resuming a by-class walk produced more entities than walking it whole");
+			}
+		});
+	}
+
+	CS2ST_CALL(context, "EntityInstance*Iter_t::SetWorldGroupId", {
+		// Setting the group the iterators already use has to be a no-op. Only a
+		// Suspect on disagreement: what the default group is belongs to the engine.
+		EntityInstanceIter_t plain;
+		int plain_count = 0;
+		for (CEntityInstance* entity = plain.First();
+		     entity != nullptr && plain_count < kMaxEntitiesScanned;
+		     entity = plain.Next())
+		{
+			++plain_count;
+		}
+
+		EntityInstanceIter_t grouped;
+		grouped.SetWorldGroupId(WorldGroupId_t());
+		int grouped_count = 0;
+		for (CEntityInstance* entity = grouped.First();
+		     entity != nullptr && grouped_count < kMaxEntitiesScanned;
+		     entity = grouped.Next())
+		{
+			++grouped_count;
+		}
+
+		EntityInstanceByNameIter_t by_name(kAbsentName);
+		by_name.SetWorldGroupId(WorldGroupId_t());
+		const bool by_name_empty = by_name.First() == nullptr;
+
+		int by_class_count = 0;
+		if (probe_designer_name_ != nullptr)
+		{
+			EntityInstanceByClassIter_t by_class(probe_designer_name_);
+			by_class.SetWorldGroupId(WorldGroupId_t());
+			for (CEntityInstance* entity = by_class.First();
+			     entity != nullptr && by_class_count < kMaxEntitiesScanned;
+			     entity = by_class.Next())
+			{
+				++by_class_count;
+			}
+		}
+
+		context.Detail("EntityInstanceIter_t: %d without, %d with a default group; "
+			"by name (absent) empty=%s; by class -> %d",
+			plain_count, grouped_count, by_name_empty ? "true" : "false", by_class_count);
+		if (plain_count != grouped_count)
+		{
+			context.Suspect("setting a default WorldGroupId_t changed what the walk returns");
+		}
+		if (!by_name_empty)
+		{
+			context.Fail("a by-name walk for a name nothing has returned an entity");
+		}
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -1518,14 +1691,98 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 				context.Fail("the entity and its class name different schema bindings");
 			}
 		});
+
+		// Inline forwards through m_pEntity: the same fact reached from the
+		// instance and from the identity it points at.
+		CS2ST_CALL(context, "CEntityInstance::GetEntityIndex", {
+			const int from_instance = probe_instance_->GetEntityIndex().Get();
+			const int from_identity = probe_instance_->m_pEntity->GetEntityIndex().Get();
+			context.Detail("-> %d, the identity says %d", from_instance, from_identity);
+			if (from_instance != from_identity)
+			{
+				context.Fail("the instance and its identity disagree about the entity index");
+			}
+		});
+
+		CS2ST_CALL(context, "CEntityInstance::GetClassname", {
+			const char* from_instance = probe_instance_->GetClassname();
+			const char* from_identity = probe_instance_->m_pEntity->GetClassname();
+			char scratch[64];
+			context.Detail("-> \"%.63s\", the identity says %p",
+				SafeStringArg(from_instance, scratch), static_cast<const void*>(from_identity));
+			if (from_instance != from_identity)
+			{
+				context.Fail("the instance and its identity disagree about the classname");
+			}
+		});
+
+		// Documented in the SDK as doing nothing in every entity class.
+		CS2ST_CALL(context, "CEntityInstance::unk101", {
+			probe_instance_->unk101();
+			context.Detail("returned");
+		});
+
+		// Documented in the SDK as returning false in every entity class.
+		CS2ST_CALL(context, "CEntityInstance::unk201", {
+			const bool result = probe_instance_->unk201();
+			context.Detail("-> %s", result ? "true" : "false");
+			if (result)
+			{
+				context.Suspect("returned true; the SDK documents false in every entity class");
+			}
+		});
+
+		CS2ST_CALL(context, "CEntityInstance::NetworkStateChangedLog", {
+			probe_instance_->NetworkStateChangedLog("cstmp_field", "cstmp_info");
+			context.Detail("returned");
+		});
+
+		// Only flags the polymorphic metadata helper for a rebuild.
+		CS2ST_CALL(context, "CEntityInstance::InvalidatePolymorphicMetadataHelper", {
+			probe_instance_->InvalidatePolymorphicMetadataHelper();
+			context.Detail("returned");
+		});
+
+		// Copies the entity's own world group id into its nested members, so it
+		// writes values the entity already holds.
+		CS2ST_CALL(context, "CEntityInstance::UpdateNestedWorldGroupIds", {
+			probe_instance_->UpdateNestedWorldGroupIds();
+			context.Detail("returned");
+		});
+
+		// The class name of the entity is not one of its members, so a lookup
+		// by it has to come back empty rather than as a pointer to something.
+		CS2ST_CALL(context, "CEntityInstance::FindComponent", {
+			void* component = probe_instance_->FindComponent(probe_instance_->m_pEntity->m_designerName);
+			context.Detail("-> %p", component);
+			if (component != nullptr && !LooksLikeObjectPointer(component))
+			{
+				context.Fail("returned something that is not a pointer");
+			}
+		});
+
+		CS2ST_CALL(context, "CEntityInstance::EnumerateVisitor", {
+			CountingEntityVisitor visitor;
+			visitor.expected_entity = probe_instance_;
+			probe_instance_->EnumerateVisitor(&visitor);
+			context.Detail("-> %d slot(s) visited, %d for another entity, %d null",
+				visitor.visited, visitor.foreign_entity, visitor.null_field);
+			if (visitor.foreign_entity > 0)
+			{
+				context.Fail("the visitor was handed an entity other than the one enumerated");
+			}
+			if (visitor.null_field > 0)
+			{
+				context.Fail("the visitor was handed a null field pointer");
+			}
+		});
 	}
 
-	// One line per remaining slot. The vtable is 44 entries long and most of it
-	// drives the entity through its lifecycle; a reader has to be able to tell
-	// which of those were considered and rejected.
-	context.SkipCall("CEntityInstance::unk001", "unidentified slot; calling it means "
-		"calling something with unknown arguments and unknown effects");
-	context.SkipCall("CEntityInstance::unk002", "unidentified slot");
+	// One line per remaining slot. The vtable is long and most of it drives the
+	// entity through its lifecycle; a reader has to be able to tell which of
+	// those were considered and rejected. Names follow entityinstance.h.
+	context.SkipCall("CEntityInstance::KV3TransferSave", "needs a CKV3TransferSaveContext the plugin cannot construct");
+	context.SkipCall("CEntityInstance::KV3TransferLoad", "needs a CKV3TransferLoadContext and overwrites the entity");
 	context.SkipCall("CEntityInstance::~CEntityInstance", "would destroy a live entity");
 	context.SkipCall("CEntityInstance::Connect", "part of entity construction");
 	context.SkipCall("CEntityInstance::Disconnect", "part of entity teardown");
@@ -1533,7 +1790,7 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 		"CEntityPrecacheContext the plugin cannot construct");
 	context.SkipCall("CEntityInstance::AddedToEntityDatabase", "a database insertion callback");
 	context.SkipCall("CEntityInstance::Spawn", "spawns the entity a second time");
-	context.SkipCall("CEntityInstance::unk101", "unidentified slot");
+	context.SkipCall("CEntityInstance::DispatchPostDataUpdate", "drives the network update path");
 	context.SkipCall("CEntityInstance::PostDataUpdate", "drives the network update path");
 	context.SkipCall("CEntityInstance::OnDataUnchangedInPVS", "drives the network update path");
 	context.SkipCall("CEntityInstance::Activate", "re-activates a live entity");
@@ -1549,27 +1806,15 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 	context.SkipCall("CEntityInstance::Restore", "needs an IRestore and overwrites the entity");
 	context.SkipCall("CEntityInstance::OnSave", "a save-cycle callback");
 	context.SkipCall("CEntityInstance::OnRestore", "a restore-cycle callback");
-	context.SkipCall("CEntityInstance::unk201", "unidentified slot");
 	context.SkipCall("CEntityInstance::NetworkStateChanged", "marks fields dirty for transmission");
-	context.SkipCall("CEntityInstance::unk301", "unidentified slot");
-	context.SkipCall("CEntityInstance::unk302", "unidentified slot");
+	context.SkipCall("CEntityInstance::NetworkStateChangedBranch", "marks a field path dirty for transmission");
+	context.SkipCall("CEntityInstance::NetworkStateChangedRemove", "removes pending network changes");
 	context.SkipCall("CEntityInstance::NetworkUpdateState", "would stop the entity networking");
-	context.SkipCall("CEntityInstance::NetworkStateChangedLog", "spews to the console");
-	context.SkipCall("CEntityInstance::unk401", "unidentified slot");
-	context.SkipCall("CEntityInstance::unk402", "unidentified slot");
-	context.SkipCall("CEntityInstance::AddChangeAccessorPath", "allocates a field path id");
+	context.SkipCall("CEntityInstance::AddChangeAccessorPath", "allocates a field path id and needs a CFieldPath");
 	context.SkipCall("CEntityInstance::AssignChangeAccessorPathIds", "renumbers field paths");
-	context.SkipCall("CEntityInstance::unk501", "unidentified slot");
-	context.SkipCall("CEntityInstance::unk502", "unidentified slot");
-	context.SkipCall("CEntityInstance::Pulse_OnDynamicAttributeChanged",
-		"a Pulse notification callback");
+	context.SkipCall("CEntityInstance::GetFieldPathChildIndices", "needs a CFieldPath the plugin cannot construct");
+	context.SkipCall("CEntityInstance::Pulse_OnDynamicAttributeChanged", "a Pulse notification callback");
 	context.SkipCall("CEntityInstance::ReloadPrivateScripts", "reloads and re-runs vscript");
-	context.SkipCall("CEntityInstance::unk601", "unidentified slot");
-	context.SkipCall("CEntityInstance::unk602", "unidentified slot");
-	context.SkipCall("CEntityInstance::GetEntityIndex", "an inline forward to "
-		"CEntityIdentity::GetEntityIndex, already exercised through the identity");
-	context.SkipCall("CEntityInstance::GetClassname", "an inline forward to "
-		"CEntityIdentity::GetClassname, already exercised through the identity");
 }
 
 // -----------------------------------------------------------------------------
@@ -2262,14 +2507,8 @@ void GameEntitySystemSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("CEntitySystem::OnSetDormant", "changes entity dormancy and PVS membership");
 	context.SkipCall("CEntitySystem::UpdateOnRemove", "begins deleting entities");
 
-	context.SkipCall("CEntitySystem::AllocPooledString",
-		"adds a string to the entity symbol table permanently; FindPooledString is "
-		"the read-only half and is exercised above");
-	context.SkipCall("CEntitySystem::AddEntityKeyValuesAllocatorRef",
-		"increments a refcount nothing in this plugin will ever release");
-	context.SkipCall("CEntitySystem::ReleaseEntityKeyValuesAllocatorRef",
-		"drops a reference this plugin never took, and clears the keyvalues arena "
-		"when the count reaches zero");
+	// AllocPooledString and AddEntityKeyValuesAllocatorRef are called from
+	// ExerciseNameLookups; ReleaseEntityKeyValuesAllocatorRef is skipped there.
 
 	context.SkipCall("CGameEntitySystem::~CGameEntitySystem", "would destroy the entity system");
 	context.SkipCall("CGameEntitySystem::AddListenerEntity",
