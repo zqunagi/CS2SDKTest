@@ -41,10 +41,19 @@
  * Writes are confined to convars this plugin owns. Nothing here sets an engine
  * cvar: the value path has to be exercised to mean anything, and doing it on
  * our own registrations tests the same code without changing how the server
- * plays. The methods that would reach every cvar in the process -
- * StripDevelopmentFlags, ResetConVarsToDefaultValuesByFlag,
- * ResetConVarsToSnapshot, SetConVarsFromGameInfo, SetMaxSplitScreenSlots - are
- * listed and skipped, one line each.
+ * plays.
+ *
+ * Calls that would rewrite a probe's declared shape or registration - the
+ * ConVarData default/min/max mutators, constructing and destroying a CConVar,
+ * ConCommand or member accessor - are made against a second set of
+ * registrations named cstmp_*, which nothing else reads, and are restored or
+ * torn down in the same row. ResetConVarsToDefaultValuesByFlag,
+ * ResetConVarsToSnapshot, SetMaxSplitScreenSlots and CallGlobalChangeCallbacks
+ * are called with arguments that make them no-ops for everything but those
+ * scratch objects. What cannot be undone or has no safe target -
+ * StripDevelopmentFlags, SetConVarsFromGameInfo, the IAppSystem lifecycle,
+ * ConVarData::Construct/Destruct/Invalidate - is listed and skipped, one line
+ * each.
  */
 
 #ifndef CS2SDKTEST_SUITES_CONVARSUITE_H_
@@ -110,6 +119,7 @@ private:
 	void ExerciseSnapshots(TestContext& context);
 	void ExerciseUserInfoCvars(TestContext& context);
 	void ExerciseCharacterSet(TestContext& context);
+	void ExerciseScratchCalls(TestContext& context);
 	void InspectCvarObjectLayout(TestContext& context);
 	void InspectCharacterSetLayout(TestContext& context);
 	void InspectConVarRefLayout(TestContext& context);

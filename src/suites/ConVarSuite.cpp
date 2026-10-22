@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 #include <appframework/iappsystem.h>
 #include <tier0/buffer_string.h>
@@ -374,6 +375,93 @@ ConCommand g_probe_command_defensive("cs2sdktest_cmd_defensive", ProbeCommandCal
 	"cs2sdktest: FCVAR_DEFENSIVE probe console command",
 	kProbeFlags | FCVAR_DEFENSIVE);
 
+// -----------------------------------------------------------------------------
+//  Scratch fixtures
+// -----------------------------------------------------------------------------
+//
+// The probes above are the baseline every oracle compares the engine against,
+// so a call that rewrites their declared shape (default, bounds, registration)
+// would change what the rest of the log means. Those calls are made against
+// these instead: a convar and a command nothing else reads, named outside the
+// cs2sdktest_ prefix so the by-prefix oracles still match exactly what they
+// were written for.
+//
+// Like the probes they are POD-valued and register at load, which is the one
+// registration per plugin load that any plugin costs. The few calls that
+// register or unregister something (CConVar, ConCommand, the member accessor)
+// run on objects built in static storage and torn down again in the same
+// call; g_runtime_fixtures_spent keeps a second sweep in the same load from
+// leaking another set.
+
+/** A flag no probe carries; ResetConVarsToDefaultValuesByFlag keys on it. */
+constexpr uint64 kScratchFlags = kProbeFlags | FCVAR_UNLOGGED;
+
+int g_scratch_command_calls = 0;
+int g_scratch_completion_calls = 0;
+
+void ScratchCommandCallback(const CCommandContext& context, const CCommand& args)
+{
+	(void)context;
+	(void)args;
+	++g_scratch_command_calls;
+}
+
+/**
+ * Counts and appends nothing, on purpose: the console hands this the engine's
+ * own CUtlVector, and an entry added here would be a CUtlString allocated from
+ * this module's heap for the engine to free.
+ */
+void ScratchCompletionFn(const CCommand& command, CUtlVector<CUtlString>& completions)
+{
+	(void)command;
+	(void)completions;
+	++g_scratch_completion_calls;
+}
+
+CConVar<int32> g_scratch_int("cstmp_scratch_int", kScratchFlags,
+	"cstmp: int32 scratch convar, min 0 max 100, mutated by the suite and restored",
+	50, true, 0, true, 100);
+
+ConCommand g_scratch_command("cstmp_scratch_cmd", ScratchCommandCallback,
+	"cstmp: scratch console command with a completion callback that adds nothing",
+	kProbeFlags | FCVAR_VCONSOLE_FUZZY_MATCHING,
+	CompletionCallbackInfo_t(ScratchCompletionFn));
+
+/**
+ * Bounds handed to ConVarData::SetMinValue / SetMaxValue. The SDK stores the
+ * pointer rather than copying, so they have to outlive the convar.
+ */
+CVValue_t g_scratch_min_value(static_cast<int32>(10));
+CVValue_t g_scratch_max_value(static_cast<int32>(90));
+
+struct ScratchOwner
+{
+	int calls = 0;
+
+	void OnCommand(const CCommandContext& context, const CCommand& command)
+	{
+		(void)context;
+		(void)command;
+		++calls;
+	}
+};
+
+ScratchOwner g_scratch_owner_a;
+ScratchOwner g_scratch_owner_b;
+
+typedef CConCommandMemberAccessor<ScratchOwner> ScratchAccessor;
+
+alignas(CConVar<int32>) unsigned char g_runtime_cvar_storage[sizeof(CConVar<int32>)];
+alignas(ConCommand) unsigned char g_runtime_command_storage[sizeof(ConCommand)];
+alignas(ScratchAccessor) unsigned char g_runtime_accessor_storage[sizeof(ScratchAccessor)];
+
+CConVar<int32>* g_runtime_cvar = nullptr;
+ConCommand* g_runtime_command = nullptr;
+ScratchAccessor* g_runtime_accessor = nullptr;
+
+/** Set the first time the construct/destroy calls run in this load. */
+bool g_runtime_fixtures_spent = false;
+
 /**
  * The creation listener used by the closed-loop test.
  *
@@ -456,6 +544,10 @@ constexpr std::size_t kProbeTypeCount =
  * macro-argument reason as the table above.
  */
 const char* kProbeArgv[] = {"cs2sdktest_cmd", "alpha", "with space"};
+
+/** Engine convar types the Clamp row scans for; at file scope for the same macro reason. */
+const EConVarType kClampKinds[] = {EConVarType_Int32, EConVarType_Float32};
+constexpr std::size_t kClampKindCount = sizeof(kClampKinds) / sizeof(kClampKinds[0]);
 
 /**
  * Gives ConVarRefAbstracts protected members to offsetof.
@@ -598,6 +690,12 @@ bool IsProbeCvarName(const char* name)
 	return false;
 }
 
+/** True for the scratch convars, which are ours but not part of the probe set. */
+bool IsScratchCvarName(const char* name)
+{
+	return name != nullptr && std::strncmp(name, "cstmp_", 6) == 0;
+}
+
 /**
  * Walks the registered convars for the first one of `type` that is not one of
  * ours, so a type this plugin cannot safely register is still covered by
@@ -615,7 +713,7 @@ bool FindEngineCvarOfType(ICvar* cvar, EConVarType type, ConVarRef* out)
 		{
 			continue;
 		}
-		if (IsProbeCvarName(ref.GetName()))
+		if (IsProbeCvarName(ref.GetName()) || IsScratchCvarName(ref.GetName()))
 		{
 			continue;
 		}
@@ -689,6 +787,7 @@ void ConVarSuite::ExerciseCalls(TestContext& context)
 	ExerciseSnapshots(context);
 	ExerciseUserInfoCvars(context);
 	ExerciseCharacterSet(context);
+	ExerciseScratchCalls(context);
 	InspectCvarObjectLayout(context);
 	InspectCharacterSetLayout(context);
 	InspectConVarRefLayout(context);
@@ -1419,9 +1518,54 @@ void ConVarSuite::ExerciseConVarRefApi(TestContext& context)
 		}
 	});
 
-	context.SkipCall("ConVarRefAbstract::Clamp (engine convars)",
-		"clamping a convar the game owns can move its value if the game left it "
-		"outside its own bounds; only cs2sdktest_int is clamped above");
+	CS2ST_CALL(context, "ConVarRefAbstract::Clamp (engine convars)", {
+		// Clamping a convar the game owns can move its value if the game left
+		// it outside its own bounds. That is a state change, but not one any
+		// later row reads, so what is checked is the part that must hold
+		// either way: a second Clamp finds nothing left to move.
+		int clamped = 0;
+		for (std::size_t i = 0; i < kClampKindCount; ++i)
+		{
+			const EConVarType kind = kClampKinds[i];
+			ConVarRef found;
+			if (!FindEngineCvarOfType(cvar_, kind, &found))
+			{
+				continue;
+			}
+
+			ConVarRefAbstract ref(found);
+			CBufferStringN<256> before_value(false);
+			CBufferStringN<256> first_value(false);
+			CBufferStringN<256> second_value(false);
+
+			ref.GetValueAsString(before_value);
+			char before[128];
+			std::snprintf(before, sizeof(before), "%.127s", before_value.Get());
+
+			ref.Clamp();
+			ref.GetValueAsString(first_value);
+			char first[128];
+			std::snprintf(first, sizeof(first), "%.127s", first_value.Get());
+
+			ref.Clamp();
+			ref.GetValueAsString(second_value);
+
+			context.Detail("%s \"%s\": \"%s\" -> \"%s\"", ConVarTypeName(kind),
+				ref.GetName(), before, first);
+			++clamped;
+
+			if (std::strcmp(first, second_value.Get()) != 0)
+			{
+				context.Fail("a second Clamp moved \"%s\" again, so the first one "
+				             "did not reach a fixed point", ref.GetName());
+			}
+		}
+
+		if (clamped == 0)
+		{
+			context.Detail("no engine int32 or float32 convar found in the list");
+		}
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -1732,23 +1876,10 @@ void ConVarSuite::ExerciseConVarDataApi(TestContext& context)
 		}
 	});
 
-	// The mutators the oracles above depend on. Each would permanently rewrite
-	// the declared shape of a probe convar, which is the one thing in this
-	// suite that has to stay fixed for the rest of the log to mean anything.
-	context.SkipCall("ConVarData::SetDefaultValue", "rewrites the default the "
-		"value-path oracles compare against");
-	context.SkipCall("ConVarData::SetMinValue", "the SDK requires caller-owned "
-		"storage that outlives the convar, and would replace the declared min");
-	context.SkipCall("ConVarData::SetMaxValue", "same as SetMinValue");
-	context.SkipCall("ConVarData::RemoveDefaultValue", "resets the default to the "
-		"per-type global default, permanently for this load");
-	context.SkipCall("ConVarData::RemoveMinValue", "drops the declared min and "
-		"leaks the engine-allocated bound");
-	context.SkipCall("ConVarData::RemoveMaxValue", "drops the declared max");
-	context.SkipCall("ConVarData::UpdateDefaultValueString", "rewrites the default "
-		"in place");
-	context.SkipCall("ConVarData::UpdateMinValueString", "rewrites the declared min");
-	context.SkipCall("ConVarData::UpdateMaxValueString", "rewrites the declared max");
+	// The default/min/max mutators are called in ExerciseScratchCalls, against
+	// cstmp_scratch_int, so the probe's declared shape stays fixed here. These
+	// three have no safe target: the engine still holds the block they would
+	// reset or destroy.
 	context.SkipCall("ConVarData::Construct", "would re-construct a live value in "
 		"engine-owned storage");
 	context.SkipCall("ConVarData::Destruct", "would destruct a live value the "
@@ -1865,12 +1996,7 @@ void ConVarSuite::ExerciseTypedRefs(TestContext& context)
 		}
 	});
 
-	context.SkipCall("CConVar<T>::CConVar",
-		"constructing one registers a convar for the life of the process; the "
-		"eight at file scope are what this suite measures instead");
-	context.SkipCall("CConVar<T>::~CConVar",
-		"only unregisters the callbacks and invalidates the ref, leaving the "
-		"convar in the engine lists; it runs on plugin unload either way");
+	// CConVar<T>::CConVar and ~CConVar are called in ExerciseScratchCalls.
 }
 
 // -----------------------------------------------------------------------------
@@ -2315,11 +2441,7 @@ void ConVarSuite::ExerciseChangeCallbacks(TestContext& context)
 		}
 	});
 
-	context.SkipCall("ICvar::CallGlobalChangeCallbacks",
-		"a direct call would deliver a change notification that did not happen "
-		"to every other plugin's global callback; the same slot is exercised for "
-		"real by the write above, which reaches it through "
-		"ConVarRefAbstract::CallChangeCallbacks");
+	// ICvar::CallGlobalChangeCallbacks is called directly in ExerciseScratchCalls.
 }
 
 // -----------------------------------------------------------------------------
@@ -2563,9 +2685,7 @@ void ConVarSuite::ExerciseDynamicRegistration(TestContext& context)
 		}
 	});
 
-	context.SkipCall("ConVarValueInfo_t::SetCompletionCallback",
-		"a completion callback is invoked with the console's own CUtlVector, "
-		"which this module must not allocate into (see ExerciseCompletion)");
+	// ConVarValueInfo_t::SetCompletionCallback is called in ExerciseScratchCalls.
 
 	CS2ST_CALL(context, "ICvar::GetConCommandData (the directly registered command)", {
 		if (!dynamic_command_.IsValidRef())
@@ -3028,14 +3148,8 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 		}
 	});
 
-	context.SkipCall("ConCommand::Create",
-		"registers a command permanently, the way the two file-scope probe "
-		"commands already do at load");
-	context.SkipCall("ConCommand::Destroy",
-		"unregisters the callbacks of a command this suite still dispatches to "
-		"further down");
-	context.SkipCall("ConCommand::~ConCommand",
-		"calls Destroy; it runs on plugin unload for both probe commands anyway");
+	// ConCommand::Create, Destroy and the destructor are called in
+	// ExerciseScratchCalls, on a command built and torn down there.
 }
 
 // -----------------------------------------------------------------------------
@@ -3249,12 +3363,8 @@ void ConVarSuite::ExerciseCallbackInfoShapes(TestContext& context)
 		}
 	});
 
-	context.SkipCall("CConCommandMemberAccessor<T>::CConCommandMemberAccessor",
-		"registers a console command bound to a member function for the life of "
-		"the process; the ICommandCallback shape it relies on is dispatched "
-		"above instead");
-	context.SkipCall("CConCommandMemberAccessor<T>::SetOwner",
-		"only meaningful on an instance that was registered");
+	// The member accessor constructor and SetOwner are called in
+	// ExerciseScratchCalls.
 }
 
 // -----------------------------------------------------------------------------
@@ -3640,11 +3750,8 @@ void ConVarSuite::ExerciseCompletion(TestContext& context)
 		}
 	});
 
-	context.SkipCall("ICvar::GetCompletionResults (a command with a completion callback)",
-		"the callback fills a caller-owned CUtlVector, so this plugin would "
-		"allocate CUtlStrings for the engine to free; the build keeps allocation "
-		"inside the module (CS2SDKTEST_USE_MEMOVERRIDE is off), which is also why "
-		"neither probe command registers one");
+	// GetCompletionResults against a command that does have a completion
+	// callback is in ExerciseScratchCalls.
 }
 
 // -----------------------------------------------------------------------------
@@ -3673,9 +3780,8 @@ void ConVarSuite::ExerciseSnapshots(TestContext& context)
 		context.Detail("-> %p, destroyed", static_cast<void*>(snapshot));
 	});
 
-	context.SkipCall("ICvar::ResetConVarsToSnapshot",
-		"rolls every convar in the process back to the values it held when the "
-		"snapshot was taken, including ones the operator set since");
+	// ResetConVarsToSnapshot is called in ExerciseScratchCalls, straight after
+	// a fresh snapshot so there is nothing for it to roll back.
 }
 
 // -----------------------------------------------------------------------------
@@ -4722,12 +4828,505 @@ void ConVarSuite::NoteTypeTraitsTable(TestContext& context)
 }
 
 // -----------------------------------------------------------------------------
+//  Scratch calls - what the probes could not take
+// -----------------------------------------------------------------------------
+
+void ConVarSuite::ExerciseScratchCalls(TestContext& context)
+{
+	context.Note("[scratch] calls that rewrite a declared shape or a registration, "
+	             "made against cstmp_* objects so the probes keep the shape every "
+	             "oracle above assumed");
+
+	// Decided once, before any row runs, so the constructors and the matching
+	// destructors agree on whether this sweep is the one that builds them.
+	const bool build_runtime = !g_runtime_fixtures_spent;
+	g_runtime_fixtures_spent = true;
+
+	ConVarData* data = g_scratch_int.GetConVarData();
+	if (data == nullptr)
+	{
+		context.SkipCall("ConVarData default/min/max mutators",
+			"cstmp_scratch_int has no ConVarData");
+	}
+	else
+	{
+		CS2ST_CALL(context, "ConVarData::UpdateDefaultValueString / UpdateMinValueString / "
+		                    "UpdateMaxValueString", {
+			const bool default_ok = data->UpdateDefaultValueString("60");
+			const bool min_ok = data->UpdateMinValueString("5");
+			const bool max_ok = data->UpdateMaxValueString("95");
+			const int32 got_default = g_scratch_int.GetDefault();
+			const int32 got_min = g_scratch_int.GetMin();
+			const int32 got_max = g_scratch_int.GetMax();
+
+			data->UpdateDefaultValueString("50");
+			data->UpdateMinValueString("0");
+			data->UpdateMaxValueString("100");
+			const bool restored = g_scratch_int.GetDefault() == 50
+				&& g_scratch_int.GetMin() == 0 && g_scratch_int.GetMax() == 100;
+
+			context.Detail("default 50 -> %d, min 0 -> %d, max 100 -> %d; restored=%s",
+				got_default, got_min, got_max, restored ? "yes" : "no");
+
+			if (!default_ok || !min_ok || !max_ok)
+			{
+				context.Fail("an Update*String call on a value that exists returned "
+				             "false (default=%d min=%d max=%d)",
+					default_ok ? 1 : 0, min_ok ? 1 : 0, max_ok ? 1 : 0);
+			}
+			if (got_default != 60 || got_min != 5 || got_max != 95)
+			{
+				context.Fail("the strings 60/5/95 did not land in the default, min "
+				             "and max (read back %d/%d/%d)", got_default, got_min, got_max);
+			}
+			if (!restored)
+			{
+				context.Fail("writing the declared 50/0/100 back did not restore them");
+			}
+		});
+
+		CS2ST_CALL(context, "ConVarData::SetDefaultValue", {
+			CVValue_t replacement(static_cast<int32>(60));
+			data->SetDefaultValue(&replacement);
+			const int32 changed = g_scratch_int.GetDefault();
+
+			// Put back through UpdateDefaultValueString, not SetDefaultValue:
+			// the SDK's SetDefaultValue passes its CVValue_t* to
+			// CVTypeTraits::Copy, whose parameter is a const CVValue_t&, so the
+			// pointer is converted through CVValue_t(bool) into a temporary
+			// with uninitialised bytes and that is what gets copied. Using it to
+			// restore would leave the default corrupted for every later row.
+			const bool restored_ok = data->UpdateDefaultValueString("50");
+			const int32 restored = g_scratch_int.GetDefault();
+
+			context.Detail("default 50 -> %d -> %d", changed, restored);
+			if (changed != 60)
+			{
+				context.Suspect("SetDefaultValue(&60) left the default at %d; the SDK "
+				                "hands Copy a pointer where it wants a reference, so "
+				                "the value copied is a temporary built from the "
+				                "pointer as a bool", changed);
+			}
+			if (!restored_ok || restored != 50)
+			{
+				context.Fail("writing 50 back with UpdateDefaultValueString left the "
+				             "default at %d", restored);
+			}
+		});
+
+		CS2ST_CALL(context, "ConVarData::SetMinValue / SetMaxValue", {
+			// The pointers are stored, not copied: the engine's own bounds are
+			// kept aside and handed back, so nothing is orphaned.
+			CVValue_t* original_min = data->MinValue();
+			CVValue_t* original_max = data->MaxValue();
+
+			data->SetMinValue(&g_scratch_min_value);
+			data->SetMaxValue(&g_scratch_max_value);
+			const int32 got_min = g_scratch_int.GetMin();
+			const int32 got_max = g_scratch_int.GetMax();
+			const bool swapped = data->MinValue() == &g_scratch_min_value
+				&& data->MaxValue() == &g_scratch_max_value;
+
+			data->SetMinValue(original_min);
+			data->SetMaxValue(original_max);
+			const bool restored = data->MinValue() == original_min
+				&& data->MaxValue() == original_max
+				&& g_scratch_int.GetMin() == 0 && g_scratch_int.GetMax() == 100;
+
+			context.Detail("min 0 -> %d, max 100 -> %d, pointers swapped=%s, restored=%s",
+				got_min, got_max, swapped ? "yes" : "no", restored ? "yes" : "no");
+
+			if (!swapped)
+			{
+				context.Fail("the stored min/max pointers are not the ones handed in");
+			}
+			if (got_min != 10 || got_max != 90)
+			{
+				context.Fail("the caller-owned bounds read back as %d/%d, not 10/90",
+					got_min, got_max);
+			}
+			if (!restored)
+			{
+				context.Fail("handing the engine's own bounds back did not restore 0/100");
+			}
+		});
+
+		CS2ST_CALL(context, "ConVarData::RemoveMinValue / RemoveMaxValue / RemoveDefaultValue", {
+			CVValue_t* original_min = data->MinValue();
+			CVValue_t* original_max = data->MaxValue();
+
+			data->RemoveMinValue();
+			data->RemoveMaxValue();
+			const bool min_gone = !data->HasMinValue();
+			const bool max_gone = !data->HasMaxValue();
+			// Put the engine's bounds back straight away: Remove* only drops the
+			// pointer, so leaving it dropped would leak the allocation.
+			data->SetMinValue(original_min);
+			data->SetMaxValue(original_max);
+
+			data->RemoveDefaultValue();
+			const int32 after_remove = g_scratch_int.GetDefault();
+			// Not SetDefaultValue: see the row above for why it cannot restore.
+			data->UpdateDefaultValueString("50");
+
+			const bool restored = data->HasMinValue() && data->HasMaxValue()
+				&& g_scratch_int.GetDefault() == 50
+				&& g_scratch_int.GetMin() == 0 && g_scratch_int.GetMax() == 100;
+
+			context.Detail("min gone=%s, max gone=%s, default 50 -> %d after remove; "
+			               "restored=%s",
+				min_gone ? "yes" : "no", max_gone ? "yes" : "no", after_remove,
+				restored ? "yes" : "no");
+
+			if (!min_gone || !max_gone)
+			{
+				context.Fail("Remove*Value left HasMinValue/HasMaxValue true");
+			}
+			if (after_remove == 50)
+			{
+				context.Fail("RemoveDefaultValue should reset the default to the "
+				             "per-type global one, but it still reads 50");
+			}
+			if (!restored)
+			{
+				context.Fail("the declared 50/0/100 were not restored after removal");
+			}
+		});
+	}
+
+	CS2ST_CALL(context, "ConVarValueInfo_t::SetCompletionCallback", {
+		// Only the struct is touched: the callback is stored, never dispatched,
+		// so nothing is handed a vector this module could allocate into.
+		ConVarValueInfo_t info(TranslateConVarType<int32>());
+		const bool before = info.m_CompletionCallBack.IsValid();
+		info.SetCompletionCallback(CompletionCallbackInfo_t(ScratchCompletionFn));
+		const bool after = info.m_CompletionCallBack.IsValid();
+		const bool same_fn = info.m_CompletionCallBack.m_fnCompletionCallback == ScratchCompletionFn;
+
+		context.Detail("valid %s -> %s, function pointer kept=%s",
+			before ? "yes" : "no", after ? "yes" : "no", same_fn ? "yes" : "no");
+		if (before)
+		{
+			context.Fail("a fresh ConVarValueInfo_t already holds a completion callback");
+		}
+		if (!after || !same_fn)
+		{
+			context.Fail("SetCompletionCallback did not store the callback it was given");
+		}
+	});
+
+	CS2ST_CALL(context, "ICvar::CallGlobalChangeCallbacks", {
+		// Called straight at the engine, not through a write: every other
+		// plugin's global callback hears a change that did not happen, which is
+		// harmless here and is the only way to reach the slot with arguments of
+		// our choosing.
+		const int before = g_probe.probe_global_changes;
+		cvar_->InstallGlobalChangeCallback(&ProbeGlobalChanged);
+		cvar_->CallGlobalChangeCallbacks(&g_scratch_int, CSplitScreenSlot(0), "51", "50", nullptr);
+		const int seen = g_probe.probe_global_changes - before;
+		cvar_->RemoveGlobalChangeCallback(&ProbeGlobalChanged);
+
+		context.Detail("-> %d call(s), name=\"%s\" new=\"%s\"", seen,
+			g_probe.probe_global_name, g_probe.probe_global_new);
+		if (seen != 1)
+		{
+			context.Fail("one direct call should reach the installed global callback "
+			             "once, it was reached %d time(s)", seen);
+		}
+		else if (std::strcmp(g_probe.probe_global_name, "cstmp_scratch_int") != 0
+			|| std::strcmp(g_probe.probe_global_new, "51") != 0)
+		{
+			context.Fail("the callback was handed \"%s\" / \"%s\", not the convar "
+			             "and value passed in", g_probe.probe_global_name,
+				g_probe.probe_global_new);
+		}
+		if (g_scratch_int.Get() != 50)
+		{
+			context.Fail("the notification must not write the value, but it is now %d",
+				g_scratch_int.Get());
+		}
+	});
+
+	CS2ST_CALL(context, "ICvar::ResetConVarsToDefaultValuesByFlag", {
+		// FCVAR_UNLOGGED is carried by the scratch convar and by no probe, so
+		// the reset reaches ours only where it should. Engine convars that carry
+		// it are reset too, which changes nothing any row reads.
+		g_scratch_int.SetInt(77);
+		const bool dirty_before = !g_scratch_int.IsSetToDefault();
+
+		cvar_->ResetConVarsToDefaultValuesByFlag(FCVAR_UNLOGGED);
+
+		const int32 value = g_scratch_int.Get();
+		context.Detail("dirty=%s, after reset value=%d set-to-default=%s",
+			dirty_before ? "yes" : "no", value,
+			g_scratch_int.IsSetToDefault() ? "yes" : "no");
+
+		if (!dirty_before)
+		{
+			context.Fail("the convar did not take the value 77, so the reset proves "
+			             "nothing");
+		}
+		else if (value != 50)
+		{
+			context.Fail("the flag matched this convar but its value is %d, not the "
+			             "declared default 50", value);
+		}
+		g_scratch_int.Revert();
+	});
+
+	CS2ST_CALL(context, "ICvar::SetMaxSplitScreenSlots (the current value)", {
+		// The same number back: this reaches the slot without changing what
+		// every convar sized its value storage against.
+		const int current = cvar_->GetMaxSplitScreenSlots();
+		cvar_->SetMaxSplitScreenSlots(current);
+		const int after = cvar_->GetMaxSplitScreenSlots();
+
+		context.Detail("%d -> %d", current, after);
+		if (after != current)
+		{
+			context.Fail("setting the slot count to its own value changed it to %d", after);
+		}
+	});
+
+	CS2ST_CALL(context, "ICvar::ResetConVarsToSnapshot (fresh snapshot, nothing changed)", {
+		// Taken and applied back to back, so the values it restores are the
+		// ones already there: the call is reached, and nothing is rolled back.
+		ConVarSnapshot_t* snapshot = cvar_->TakeConVarSnapshot();
+		if (snapshot == nullptr)
+		{
+			context.Fail("a snapshot of a populated convar list should not be null");
+			return;
+		}
+
+		const int32 probe_before = g_probe_int.Get();
+		const int32 scratch_before = g_scratch_int.Get();
+
+		cvar_->ResetConVarsToSnapshot(snapshot);
+		cvar_->DestroyConVarSnapshot(snapshot);
+
+		const int32 probe_after = g_probe_int.Get();
+		const int32 scratch_after = g_scratch_int.Get();
+
+		context.Detail("cs2sdktest_int %d -> %d, cstmp_scratch_int %d -> %d",
+			probe_before, probe_after, scratch_before, scratch_after);
+		if (probe_before != probe_after || scratch_before != scratch_after)
+		{
+			context.Fail("resetting to a snapshot taken a moment earlier moved a value");
+		}
+	});
+
+	CS2ST_CALL(context, "ICvar::GetCompletionResults (a command with a completion callback)", {
+		// The callback adds nothing, so the vector the console owns stays empty
+		// and no allocation crosses the module boundary. What this reaches is
+		// the dispatch to a callback that exists; the contents are not checked
+		// because there are none to check.
+		CCommand command;
+		if (!command.Tokenize("cstmp_scratch_cmd"))
+		{
+			context.Fail("could not tokenize the completion prefix");
+			return;
+		}
+
+		CUtlVector<CUtlString> completions;
+		UtlVectorGuard<decltype(completions)> completions_guard(completions);
+		bool successful = false;
+		const int before = g_scratch_completion_calls;
+		cvar_->GetCompletionResults(command, completions, &successful);
+
+		context.Detail("-> %d completion(s), callback fired %d time(s), successful=%s",
+			completions.Count(), g_scratch_completion_calls - before,
+			successful ? "true" : "false");
+
+		if (completions.Count() != 0)
+		{
+			context.Suspect("the only completion callback in range appends nothing, "
+			                "yet the vector holds %d entr%s", completions.Count(),
+				completions.Count() == 1 ? "y" : "ies");
+		}
+	});
+
+	// ---- registrations built and torn down in static storage -----------------
+
+	CS2ST_CALL(context, "CConVar<T>::CConVar (built after load)", {
+		if (!build_runtime)
+		{
+			context.SkipCall("CConVar<T>::CConVar",
+				"the runtime fixtures were already built in this load, and a "
+				"registration is permanent");
+			return;
+		}
+
+		g_runtime_cvar = new (g_runtime_cvar_storage) CConVar<int32>(
+			"cstmp_runtime_int", kScratchFlags,
+			"cstmp: int32 convar constructed after load, then destroyed", 5);
+
+		const ConVarRef found = cvar_->FindConVar("cstmp_runtime_int", false);
+		context.Detail("valid=%s, engine finds it=%s, default=%d",
+			g_runtime_cvar->IsValidRef() ? "yes" : "no", found.IsValidRef() ? "yes" : "no",
+			g_runtime_cvar->IsConVarDataValid() ? static_cast<int>(g_runtime_cvar->GetDefault()) : -1);
+
+		if (!g_runtime_cvar->IsValidRef())
+		{
+			context.Fail("a CConVar built after load should register at once and "
+			             "hold a valid ref");
+		}
+		if (!found.IsValidRef())
+		{
+			context.Fail("the engine cannot find a convar the constructor registered");
+		}
+		if (g_runtime_cvar->IsConVarDataValid() && g_runtime_cvar->GetDefault() != 5)
+		{
+			context.Fail("the default passed to the constructor did not survive");
+		}
+	});
+
+	CS2ST_CALL(context, "CConVar<T>::~CConVar", {
+		if (g_runtime_cvar == nullptr)
+		{
+			context.SkipCall("CConVar<T>::~CConVar", "no runtime CConVar was built in this sweep");
+			return;
+		}
+
+		g_runtime_cvar->~CConVar();
+		// The object is trivially laid out static storage and the destructor
+		// only unregisters callbacks and invalidates the ref, so reading it
+		// back is how the invalidation is observed.
+		const bool invalid = !g_runtime_cvar->IsValidRef();
+		const ConVarRef found = cvar_->FindConVar("cstmp_runtime_int", false);
+		g_runtime_cvar = nullptr;
+
+		context.Detail("ref invalid=%s, still listed by the engine=%s",
+			invalid ? "yes" : "no", found.IsValidRef() ? "yes" : "no");
+		if (!invalid)
+		{
+			context.Fail("the destructor should invalidate the ref");
+		}
+	});
+
+	CS2ST_CALL(context, "ConCommand::Create (via the constructor)", {
+		if (!build_runtime)
+		{
+			context.SkipCall("ConCommand::Create",
+				"the runtime fixtures were already built in this load, and a "
+				"registration is permanent");
+			return;
+		}
+
+		g_runtime_command = new (g_runtime_command_storage) ConCommand(
+			"cstmp_runtime_cmd", ScratchCommandCallback,
+			"cstmp: command constructed after load, then destroyed", kProbeFlags);
+
+		const ConCommandRef found = cvar_->FindConCommand("cstmp_runtime_cmd", false);
+		const CCommandContext ctx(CT_NO_TARGET, CPlayerSlot(-1));
+		CCommand args;
+		args.Tokenize("cstmp_runtime_cmd once");
+		const int before = g_scratch_command_calls;
+		cvar_->DispatchConCommand(*g_runtime_command, ctx, args);
+		const int fired = g_scratch_command_calls - before;
+
+		context.Detail("valid=%s, engine finds it=%s, dispatch fired %d time(s)",
+			g_runtime_command->IsValidRef() ? "yes" : "no",
+			found.IsValidRef() ? "yes" : "no", fired);
+
+		if (!g_runtime_command->IsValidRef() || !found.IsValidRef())
+		{
+			context.Fail("a command built after load should register at once");
+		}
+		if (fired != 1)
+		{
+			context.Fail("one dispatch should reach the callback once, it was "
+			             "reached %d time(s)", fired);
+		}
+	});
+
+	CS2ST_CALL(context, "ConCommand::Destroy / ConCommand::~ConCommand", {
+		if (g_runtime_command == nullptr)
+		{
+			context.SkipCall("ConCommand::Destroy", "no runtime ConCommand was built in this sweep");
+			return;
+		}
+
+		g_runtime_command->~ConCommand();
+		const bool invalid = !g_runtime_command->IsValidRef();
+		g_runtime_command = nullptr;
+
+		context.Detail("ref invalid=%s", invalid ? "yes" : "no");
+		if (!invalid)
+		{
+			context.Fail("Destroy should invalidate the command ref");
+		}
+	});
+
+	CS2ST_CALL(context, "CConCommandMemberAccessor<T>::CConCommandMemberAccessor", {
+		if (!build_runtime)
+		{
+			context.SkipCall("CConCommandMemberAccessor<T>::CConCommandMemberAccessor",
+				"the runtime fixtures were already built in this load, and a "
+				"registration is permanent");
+			return;
+		}
+
+		g_scratch_owner_a.calls = 0;
+		g_scratch_owner_b.calls = 0;
+		g_runtime_accessor = new (g_runtime_accessor_storage) ScratchAccessor(
+			&g_scratch_owner_a, "cstmp_runtime_member_cmd", &ScratchOwner::OnCommand,
+			"cstmp: member-function command constructed after load", kProbeFlags);
+
+		const CCommandContext ctx(CT_NO_TARGET, CPlayerSlot(-1));
+		CCommand args;
+		args.Tokenize("cstmp_runtime_member_cmd once");
+		cvar_->DispatchConCommand(*g_runtime_accessor, ctx, args);
+
+		context.Detail("valid=%s, owner a reached %d time(s)",
+			g_runtime_accessor->IsValidRef() ? "yes" : "no", g_scratch_owner_a.calls);
+		if (!g_runtime_accessor->IsValidRef())
+		{
+			context.Fail("a member accessor built after load should register at once");
+		}
+		if (g_scratch_owner_a.calls != 1)
+		{
+			context.Fail("one dispatch should call the member function on the owner "
+			             "once, it was called %d time(s)", g_scratch_owner_a.calls);
+		}
+	});
+
+	CS2ST_CALL(context, "CConCommandMemberAccessor<T>::SetOwner", {
+		if (g_runtime_accessor == nullptr)
+		{
+			context.SkipCall("CConCommandMemberAccessor<T>::SetOwner",
+				"no member accessor was built in this sweep");
+			return;
+		}
+
+		g_runtime_accessor->SetOwner(&g_scratch_owner_b);
+
+		const CCommandContext ctx(CT_NO_TARGET, CPlayerSlot(-1));
+		CCommand args;
+		args.Tokenize("cstmp_runtime_member_cmd twice");
+		cvar_->DispatchConCommand(*g_runtime_accessor, ctx, args);
+
+		context.Detail("owner a=%d, owner b=%d", g_scratch_owner_a.calls, g_scratch_owner_b.calls);
+		if (g_scratch_owner_b.calls != 1 || g_scratch_owner_a.calls != 1)
+		{
+			context.Fail("after SetOwner the call should reach the new owner only "
+			             "(a=%d, b=%d)", g_scratch_owner_a.calls, g_scratch_owner_b.calls);
+		}
+
+		// Torn down here, not left to plugin unload: its callback pointer is
+		// this object's own address inside this module.
+		g_runtime_accessor->~ScratchAccessor();
+		g_runtime_accessor = nullptr;
+	});
+}
+
+// -----------------------------------------------------------------------------
 //  Everything deliberately not called
 // -----------------------------------------------------------------------------
 
 void ConVarSuite::NoteSideEffectingCalls(TestContext& context)
 {
-	context.Note("[ICvar] not called - would reach every convar in the process");
+	context.Note("[ICvar] not called - would reach every convar in the process "
+	             "and cannot be undone");
 
 	// Listed rather than omitted: a reader has to be able to tell "checked and
 	// fine" from "nobody ever looked", and an absent row cannot say which.
@@ -4735,13 +5334,6 @@ void ConVarSuite::NoteSideEffectingCalls(TestContext& context)
 		"clears FCVAR_DEVELOPMENTONLY and FCVAR_DEFENSIVE on every defensive "
 		"convar and command in the game, which cannot be undone and would take "
 		"the allow_defensive oracles above with it");
-	context.SkipCall("ICvar::ResetConVarsToDefaultValuesByFlag",
-		"resets every convar carrying the flag, including ones an operator set "
-		"deliberately; the by-name form is called above against a prefix that "
-		"matches one convar of ours");
-	context.SkipCall("ICvar::SetMaxSplitScreenSlots",
-		"changes the slot count every convar sizes its value storage against; "
-		"GetMaxSplitScreenSlots is read above");
 	context.SkipCall("ICvar::SetConVarsFromGameInfo",
 		"the KeyValues schema it expects is unconfirmed, and the flags it sets "
 		"(CVARGI_HAS_DEFAULT_VALUE and friends) mark defaults as no longer "
@@ -4750,9 +5342,10 @@ void ConVarSuite::NoteSideEffectingCalls(TestContext& context)
 	// The tally is worth stating because "no row" and "checked and fine" look
 	// the same to a reader scanning a log, and this interface is large enough
 	// that a missing row is easy to miss.
-	context.Note("all 35 ICvar virtuals are accounted for: 29 called, 6 skipped "
-	             "with reasons (the four above, plus CallGlobalChangeCallbacks "
-	             "and ResetConVarsToSnapshot in their own sections). "
+	context.Note("all 35 ICvar virtuals are accounted for: 33 called, 2 skipped "
+	             "with reasons (the two above). ResetConVarsToDefaultValuesByFlag, "
+	             "SetMaxSplitScreenSlots, CallGlobalChangeCallbacks and "
+	             "ResetConVarsToSnapshot are called in ExerciseScratchCalls. "
 	             "GetMaxSplitScreenSlots is non-virtual and is read alongside "
 	             "ConVarData::GetMaxSplitScreenSlots");
 }
