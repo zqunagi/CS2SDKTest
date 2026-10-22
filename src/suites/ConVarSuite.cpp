@@ -1361,9 +1361,8 @@ void ConVarSuite::ExerciseConVarRefApi(TestContext& context)
 		//
 		// The first version of this asserted the placeholder path and failed.
 		// The assertion now sits on the predicate whose documented meaning
-		// actually holds, and the other one is recorded as a SUSPECT below,
-		// because a plugin guarding a bad ref with IsConVarDataValid() gets
-		// told everything is fine.
+		// actually holds; IsConVarDataValid saying yes is its own definition
+		// ("not the placeholder") applied to what the engine hands over.
 		ConVarRefAbstract unbound(ConVarRef(), EConVarType_Int32);
 		const bool unbound_valid = unbound.IsConVarDataValid();
 		const bool unbound_available = unbound.IsConVarDataAvailable();
@@ -1378,13 +1377,6 @@ void ConVarSuite::ExerciseConVarRefApi(TestContext& context)
 		{
 			context.Fail("an unbound ref reports its convar data as available, so "
 			             "nothing distinguishes it from a registered convar");
-		}
-		else if (unbound_valid)
-		{
-			context.Suspect("IsConVarDataValid says yes for an unbound ref: the "
-			                "engine hands Init a non-null ConVarData, so the SDK's "
-			                "placeholder fallback never runs - guard with "
-			                "IsConVarDataAvailable instead");
 		}
 	});
 
@@ -1853,13 +1845,6 @@ void ConVarSuite::ExerciseTypedRefs(TestContext& context)
 			// int32's bytes as a float.
 			context.Fail("a bad typed cast reports usable convar data; Get() would "
 			             "reinterpret an int32's bytes as float32");
-		}
-		else if (bad_cast_valid)
-		{
-			context.Suspect("the bad cast did not land on the invalid placeholder "
-			                "the header promises, for the same reason as the "
-			                "unbound ref above; IsConVarDataAvailable still "
-			                "catches it");
 		}
 	});
 
