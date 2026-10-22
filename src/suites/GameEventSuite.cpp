@@ -15,6 +15,7 @@
 #include "core/Log.h"
 #include "hook/HookArg.h"
 #include "hook/HookRecorder.h"
+#include "testkit/NetworkMessageLookup.h"
 #include "testkit/StructInspector.h"
 
 // The SH_DECL_HOOK block used to live here; under KHook the hook templates are
@@ -195,15 +196,18 @@ struct EventMessageProbe
 
 	/** The one whose descriptor gets inspected and whose methods get called. */
 	bool primary;
+
+	/** The id libserver registers it under (CS2 b26087496), or -1 when not known. */
+	int id;
 };
 
 const EventMessageProbe kEventMessages[] = {
 	{"CMsgSource1LegacyGameEvent",
-	 "the wrapper every IGameEventManager2::FireEvent ends up inside", true},
+	 "the wrapper every IGameEventManager2::FireEvent ends up inside", true, 207},
 	{"CMsgSource1LegacyGameEventList",
-	 "the event descriptor table the server ships to clients", false},
+	 "the event descriptor table the server ships to clients", false, 205},
 	{"CMsgSource1LegacyListenEvents",
-	 "the per-client subscription bitfield", false},
+	 "the per-client subscription bitfield", false, -1},
 };
 
 /**
@@ -544,8 +548,16 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 			std::string("INetworkMessages::FindNetworkMessage(\"") + probe.name + "\")";
 
 		CS2ST_CALL(context, target, {
-			INetworkMessageInternal* message = messages->FindNetworkMessage(probe.name);
+			// The registry key is "Name [id]" on this build, so the bare name
+			// can miss; the helper falls back to the id and the partial lookup.
+			const char* how = "";
+			INetworkMessageInternal* message =
+				FindRegisteredMessage(messages, probe.name, probe.id, &how);
 			context.Detail("-> %p  (%s)", static_cast<void*>(message), probe.what);
+			if (message != nullptr && std::strcmp(how, "by name") != 0)
+			{
+				context.Detail("   found %s as \"%s\"", how, message->GetUnscopedName());
+			}
 			if (probe.primary)
 			{
 				legacy_event_message_ = message;

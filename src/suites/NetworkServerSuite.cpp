@@ -873,14 +873,24 @@ void NetworkServerSuite::ExerciseGameServerBase(TestContext& context)
 			return;
 		}
 		const char* there = engine->GetPlayerNetworkIDString(CPlayerSlot(kProbeSlot));
+		// IVEngineServer2 answers "BOT" itself for a fake client. The base-class
+		// getter (libengine2, reading CS2 b26087496) instead returns the string
+		// pointer stored in the client object, which a fake client never sets,
+		// so what it hands back is stale memory that differs every run - not a
+		// network id, and not worth printing or comparing.
+		if (there != nullptr && std::strcmp(there, "BOT") == 0)
+		{
+			context.Detail("-> slot %d is a bot (IVEngineServer2 gave \"BOT\"); the base "
+			               "getter reads an id string a fake client never sets, so its "
+			               "answer is not compared", kProbeSlot);
+			return;
+		}
+
 		context.Detail("-> \"%s\" (IVEngineServer2 gave \"%s\")",
 			here != nullptr ? here : "(null)", there != nullptr ? there : "(null)");
 
-		// Suspect and not Fail: the base-class getter's answer is not stable on
-		// this build - every sweep reads a different, often unprintable, string
-		// out of it while IVEngineServer2 keeps answering "BOT". A side that
-		// cannot agree with itself run to run is not the contract this row
-		// thought it was checking, so the disagreement goes yellow, not red.
+		// Suspect and not Fail: a real client's two answers should agree, but
+		// the SDK does not promise it, so a disagreement goes yellow, not red.
 		// The user-id row above keeps its Fail: its two sides do agree.
 		if ((here == nullptr) != (there == nullptr))
 		{
@@ -1269,7 +1279,18 @@ void NetworkServerSuite::InspectNetworkAddress(TestContext& context)
 		const unsigned short from_address = address->GetPort();
 		context.Detail("server -> %u, address -> %u",
 			static_cast<unsigned>(from_server), static_cast<unsigned>(from_address));
-		if (from_server != from_address)
+		if (from_address == 0 && from_server != 0)
+		{
+			// GetServerNetworkAddress (libengine2, CS2 b26087496) copies the
+			// 12-byte netadr_t out of the network system's own record, and that
+			// record holds the type and ip with the port left at 0: the port
+			// lives behind GetUDPPort, which asks the network system for it by
+			// socket index. So an address with no port is how this build
+			// answers, not a disagreement between the two.
+			context.Detail("the address carries the ip only; the port is reported by "
+			               "GetUDPPort");
+		}
+		else if (from_server != from_address)
 		{
 			// Suspect, not Fail: the SDK does not say the address this server
 			// reports is the address of the socket GetUDPPort names. On a

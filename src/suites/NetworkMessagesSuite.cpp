@@ -12,6 +12,7 @@
 #include <netmessages.pb.h>
 
 #include "hook/HookArg.h"
+#include "testkit/NetworkMessageLookup.h"
 #include "testkit/StructInspector.h"
 
 namespace cs2st
@@ -36,57 +37,34 @@ struct ProbeMessage
 {
 	const char* name;
 	const char* what;
+
+	/** The id the engine registers it under, or -1 when not known. */
+	int id;
+
+	/** Why the engine no longer registers it; null while it is expected. */
+	const char* retired;
 };
 
 const ProbeMessage kProbeMessages[] = {
-	{"CNETMsg_Tick", "the per-tick message; scalar fields only, the round-trip subject"},
+	{"CNETMsg_Tick", "the per-tick message; scalar fields only, the round-trip subject", 4,
+	 nullptr},
+	// libengine2 (CS2 b26087496) has the protobuf class for this one but no
+	// CNetMessagePB binding for it; libserver registers id 207 as
+	// CMsgSource1LegacyGameEvent instead, which is what a game event travels in.
 	{"CSVCMsg_GameEvent", "the networked form of a game event; sub-messages the engine "
-	                      "ships to clients"},
+	                      "ships to clients", -1,
+	 "no binding is registered for it any more; game events travel in "
+	 "CMsgSource1LegacyGameEvent (id 207)"},
 	{"CMsgSource1LegacyGameEvent",
-	 "registered by the engine, declared in no .proto the SDK ships"},
+	 "registered by the engine, declared in no .proto the SDK ships", 207, nullptr},
 	// svc_EncryptedData = 78 is this SDK revision's addition to the SVC_Messages
 	// range. Resolving it by name pins the registry entry without touching its
 	// payload: the message carries encrypted bytes, so there is nothing to walk.
 	{"CSVCMsg_EncryptedData",
 	 "new in this SDK revision (svc_EncryptedData = 78); payload is opaque "
-	 "encrypted bytes"},
+	 "encrypted bytes", 78,
+	 "added by a newer SDK than the running engine, or scoped out"},
 };
-
-/**
- * True when a registry key names `wanted`, with or without the " [id]" suffix
- * some builds append ("CNETMsg_Tick [4]").
- */
-bool RegistryNameIs(const char* key, const char* wanted)
-{
-	if (key == nullptr)
-	{
-		return false;
-	}
-	const std::size_t length = std::strlen(wanted);
-	if (std::strncmp(key, wanted, length) != 0)
-	{
-		return false;
-	}
-	const char* rest = key + length;
-	if (*rest == '\0')
-	{
-		return true;
-	}
-	if (rest[0] != ' ' || rest[1] != '[')
-	{
-		return false;
-	}
-	rest += 2;
-	if (*rest == '\0')
-	{
-		return false;
-	}
-	while (*rest >= '0' && *rest <= '9')
-	{
-		++rest;
-	}
-	return rest[0] == ']' && rest[1] == '\0';
-}
 
 /** A name nothing will ever register; null is the only right answer. */
 constexpr const char* kNoSuchMessage = "CMsgCs2SdkTestNoSuchMessage";
@@ -203,22 +181,17 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 			std::string("INetworkMessages::FindNetworkMessage(\"") + probe.name + "\")";
 
 		CS2ST_CALL(context, target, {
-			INetworkMessageInternal* message = messages_->FindNetworkMessage(probe.name);
+			// Some builds key the registry as "CNETMsg_Tick [4]", so the bare
+			// name can miss an entry that is there; FindRegisteredMessage
+			// falls back to the id and the partial lookup, and checks the name
+			// of whatever they hand back.
+			const char* how = "";
+			INetworkMessageInternal* message =
+				FindRegisteredMessage(messages_, probe.name, probe.id, &how);
 			context.Detail("-> %p  (%s)", static_cast<void*>(message), probe.what);
-
-			if (message == nullptr)
+			if (message != nullptr && std::strcmp(how, "by name") != 0)
 			{
-				// Some builds key the registry as "CNETMsg_Tick [4]", so the bare
-				// name misses an entry that is there. The partial lookup finds
-				// it, and the name check below keeps that from matching a longer
-				// message that merely starts with the same letters.
-				INetworkMessageInternal* partial = messages_->FindNetworkMessagePartial(probe.name);
-				if (partial != nullptr && RegistryNameIs(partial->GetUnscopedName(), probe.name))
-				{
-					context.Detail("   found through the partial lookup as \"%s\" (the registry "
-					               "key carries an id suffix)", partial->GetUnscopedName());
-					message = partial;
-				}
+				context.Detail("   found %s as \"%s\"", how, message->GetUnscopedName());
 			}
 
 			if (message == nullptr)
@@ -228,12 +201,9 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 				// each build registers is exactly what a diff across updates
 				// compares, so the value is in the row existing, not in a
 				// verdict attached to it.
-				if (std::strcmp(probe.name, "CSVCMsg_EncryptedData") == 0)
+				if (probe.retired != nullptr)
 				{
-					// Registered by name only for its presence row; this build
-					// not having it yet is the ordinary state of a new message.
-					context.Detail("not registered by this build (added by a newer "
-					               "SDK than the running engine, or scoped out)");
+					context.Detail("not registered by this build (%s)", probe.retired);
 				}
 				else
 				{
