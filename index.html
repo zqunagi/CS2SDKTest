@@ -55,11 +55,19 @@ tbody tr.run{cursor:pointer}
 tbody tr.run:hover td{background:var(--soft)}
 tbody tr.sel td{background:color-mix(in srgb,var(--acc) 8%,transparent)}
 .hfilter{margin:0;padding:12px 16px 4px}
-.hscroll{overflow:auto;overscroll-behavior:contain}
-.hscroll th{position:sticky;top:0;z-index:1;background:var(--surface);border-bottom:0;box-shadow:inset 0 -1px var(--line)}
+.hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
+.pager .pn{display:flex;align-items:center;gap:4px}
+.pager button{min-width:30px;height:30px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fg);font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer}
+.pager button:hover:not(:disabled):not([aria-current]){background:var(--soft);border-color:var(--line)}
+.pager button[aria-current]{background:var(--fg);color:var(--bg);border-color:var(--fg);cursor:default}
+.pager button:disabled{color:var(--na);cursor:default}
+.pager button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.pager .gap{min-width:18px;text-align:center}
 @media(max-width:720px){
   .hscroll th,.hscroll td{white-space:nowrap;padding-left:12px;padding-right:12px}
   .hfilter{padding:10px 12px 4px}
+  .pager{padding:10px 12px;justify-content:center}
 }
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .bad{color:var(--fail);font-weight:600}
@@ -187,29 +195,48 @@ async function init(){
     $('#history').innerHTML='';return;
   }
   $('#latest').innerHTML=hero(runs[0],await result(runs[0].id));
+  const hid=location.hash.length>1?decodeURIComponent(location.hash.slice(1)):'';
+  const hi=runs.findIndex(r=>r.id===hid);
+  if(hi>=0)pg=Math.floor(hi/PAGE_SIZE);
   renderHistory();
   show(location.hash.length>1?decodeURIComponent(location.hash.slice(1)):runs[0].id,true);
 }
 
-const VISIBLE_ROWS=7;
-let trig='ALL', curId=null;
+const PAGE_SIZE=7;
+let trig='ALL', curId=null, pg=0;
 const inTrig=r=>trig==='ALL'||r.reason===trig;
+
+function pager(total,pages){
+  if(pages<2)return '';
+  const set=new Set([0,pages-1,pg-1,pg,pg+1]),nums=[];
+  for(let i=0;i<pages;i++)if(set.has(i))nums.push(i);
+  let btn='',last=-1;
+  for(const i of nums){
+    if(last>=0&&i-last>1)btn+='<span class="gap">…</span>';
+    btn+=`<button data-p="${i}"${i===pg?' aria-current="page"':''} aria-label="第 ${i+1} 页">${i+1}</button>`;
+    last=i;
+  }
+  const from=pg*PAGE_SIZE+1,to=Math.min(total,(pg+1)*PAGE_SIZE);
+  return `<nav class="pager" aria-label="历史分页"><span>第 ${from}–${to} 条，共 ${total} 条</span><div class="pn">`+
+    `<button data-p="${pg-1}"${pg===0?' disabled':''} aria-label="上一页">‹</button>${btn}`+
+    `<button data-p="${pg+1}"${pg===pages-1?' disabled':''} aria-label="下一页">›</button></div></nav>`;
+}
 
 function renderHistory(){
   const reasons=[...new Set(runs.map(r=>r.reason))];
   const tabs=[['ALL','全部',runs.length],...reasons.map(k=>[k,REASON[k]||k,runs.filter(r=>r.reason===k).length])];
-  const list=runs.filter(inTrig);
+  const all=runs.filter(inTrig), pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));
+  pg=Math.min(Math.max(pg,0),pages-1);
+  const list=all.slice(pg*PAGE_SIZE,(pg+1)*PAGE_SIZE);
   $('#history').innerHTML=(reasons.length>1?`<div class="tabs hfilter">${tabs.map(t=>`<button class="tab" data-t="${esc(t[0])}" aria-pressed="${t[0]===trig}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>`:'')+
     `<div class="hscroll"><table><thead><tr><th>时间 (${esc(zone(runs[0].finished)||'PT')})</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 版本</th><th>s2sdk</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
     list.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(whenZ(r.finished,zone(runs[0].finished)))}</td>
     <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
     <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td><td class="mono">${esc(r.s2sdk||'-')}</td>
-    <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table></div>';
+    <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table></div>'+pager(all.length,pages);
   document.querySelectorAll('tr.run').forEach(tr=>tr.onclick=()=>show(tr.dataset.id));
-  document.querySelectorAll('.hfilter .tab').forEach(b=>b.onclick=()=>{trig=b.dataset.t;renderHistory();if(curId)show(curId,true)});
-  // 只显示最新 VISIBLE_ROWS 条，其余滚动查看
-  const sc=$('.hscroll'), rows=sc.querySelectorAll('tbody tr');
-  if(rows.length>VISIBLE_ROWS)sc.style.maxHeight=(sc.querySelector('thead').offsetHeight+rows[0].offsetHeight*VISIBLE_ROWS+1)+'px';
+  document.querySelectorAll('.hfilter .tab').forEach(b=>b.onclick=()=>{trig=b.dataset.t;pg=0;renderHistory();if(curId)show(curId,true)});
+  document.querySelectorAll('.pager button[data-p]').forEach(b=>b.onclick=()=>{pg=+b.dataset.p;renderHistory()});
   if(curId)document.querySelectorAll('tr.run').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===curId));
 }
 
