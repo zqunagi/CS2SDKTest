@@ -99,9 +99,8 @@ summary .cnt b{color:var(--c);font-weight:600}
 footer{margin-top:36px;color:var(--mut);font-size:12px;text-align:center}
 footer a,footer a:link,footer a:visited,footer a:hover,footer a:active{color:inherit;text-decoration:none}
 footer a:hover{text-decoration:underline}
-.vis{display:none;margin-top:6px;font-variant-numeric:tabular-nums}
-.vis b{color:var(--fg);font-weight:600}
-.vis i{font-style:normal;margin:0 8px;opacity:.5}
+.pv{display:none;align-items:center;gap:5px;color:var(--mut);font-variant-numeric:tabular-nums}
+.pv svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 </style>
 </head>
 <body>
@@ -109,6 +108,7 @@ footer a:hover{text-decoration:underline}
 <header>
   <div><h1>CS2SDKTest</h1><div class="sub">Linux 环境测试</div></div>
   <div class="hd"><div class="sub" id="count"></div>
+    <span class="pv sub" id="busuanzi_container_site_pv" title="累计访问"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span id="busuanzi_value_site_pv"></span></span>
     <a class="gh" href="https://github.com/zqunagi/CS2SDKTest" target="_blank" rel="noopener" aria-label="GitHub 仓库" title="GitHub 仓库"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></div>
 </header>
 
@@ -118,9 +118,7 @@ footer a:hover{text-decoration:underline}
 <div class="card" id="history"></div>
 
 <div id="detail"></div>
-<footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a>
-  <div class="vis" id="busuanzi_container_site_pv">累计访问 <b id="busuanzi_value_site_pv"></b> 次<i>·</i><span id="busuanzi_container_site_uv">访客 <b id="busuanzi_value_site_uv"></b></span></div>
-</footer>
+<footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
 <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
 </main>
 
