@@ -99,6 +99,9 @@ summary .cnt b{color:var(--c);font-weight:600}
 footer{margin-top:36px;color:var(--mut);font-size:12px;text-align:center}
 footer a,footer a:link,footer a:visited,footer a:hover,footer a:active{color:inherit;text-decoration:none}
 footer a:hover{text-decoration:underline}
+.vis{display:none;margin-top:6px;font-variant-numeric:tabular-nums}
+.vis b{color:var(--fg);font-weight:600}
+.vis i{font-style:normal;margin:0 8px;opacity:.5}
 </style>
 </head>
 <body>
@@ -115,7 +118,10 @@ footer a:hover{text-decoration:underline}
 <div class="card" id="history"></div>
 
 <div id="detail"></div>
-<footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
+<footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a>
+  <div class="vis" id="busuanzi_container_site_pv">累计访问 <b id="busuanzi_value_site_pv"></b> 次<i>·</i><span id="busuanzi_container_site_uv">访客 <b id="busuanzi_value_site_uv"></b></span></div>
+</footer>
+<script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
 </main>
 
 <script>
