@@ -21,10 +21,11 @@
  *     string: it is an engine-constructed instance of a type whose layout the
  *     SDK only asserts, and this is a free look at whether that layout holds
  *
- * The call side is thin by comparison, and deliberately so. Almost every method
- * here is the engine telling the game something happened; calling those
- * ourselves would fabricate player events on a live server. Only the genuine
- * queries are called.
+ * The call side is aimed at queries and at a slot nobody is in. Notifications
+ * and writers are called on that empty slot, where the game has no player to
+ * act on and only its guard clauses run; the connection-lifecycle calls that
+ * would create a controller (ClientConnect, ClientPutInServer, ...) stay
+ * skipped. If hooks are installed, the suite's own calls show up in the dump.
  */
 
 #ifndef CS2SDKTEST_SUITES_SOURCE2GAMECLIENTSSUITE_H_
@@ -40,6 +41,8 @@
 #include <khook.hpp>
 
 #include "testkit/ITestSuite.h"
+
+class IVEngineServer2;
 
 namespace cs2st
 {
@@ -139,9 +142,14 @@ private:
 	void ExerciseAppSystem(TestContext& context);
 	void ExercisePlayerQueries(TestContext& context);
 	void ExerciseHltv(TestContext& context);
+	void ExerciseEmptySlot(TestContext& context, CPlayerSlot slot);
+	void ExerciseMessageCalls(TestContext& context, CPlayerSlot slot);
 	void NoteSideEffectingCalls(TestContext& context);
 
 	ISource2GameClients* clients_ = nullptr;
+
+	/** Resolved with globals_; only used to fetch a slot's userinfo handle. */
+	IVEngineServer2* engine_ = nullptr;
 
 	/**
 	 * Resolved in Acquire through IVEngineServer2, only for maxClients. Without
