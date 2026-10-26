@@ -48,6 +48,7 @@ private:
 	void ExerciseAppSystem(TestContext& context);
 	void ExerciseSource2Engine(TestContext& context);
 	void ExerciseEngineState(TestContext& context);
+	void ExerciseWorldGroups(TestContext& context);
 	void ExercisePlayerQueries(TestContext& context);
 	void ExerciseSpawnGroups(TestContext& context);
 	void InspectGlobalVars(TestContext& context);

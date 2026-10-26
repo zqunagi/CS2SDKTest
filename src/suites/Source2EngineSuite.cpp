@@ -1,12 +1,18 @@
 #include "suites/Source2EngineSuite.h"
 
+#include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <appframework/iappsystem.h>
+#include <engine2/iscreenshotcallback.h>
 #include <engine2/isource2engine.h>
 #include <engine2/ivengineserver2.h>
 #include <engine2/gameshareddefs.h>
+#include <network_connection.pb.h>
+#include <networkbasetypes.pb.h>
 
 #include "core/Log.h"
 #include "testkit/StructInspector.h"
@@ -49,6 +55,46 @@ constexpr int kProbeSlot = 0;
  * answer but whether the call survives being handed a handle it does not know.
  */
 constexpr SpawnGroupHandle_t kUnknownSpawnGroup = 0;
+
+/**
+ * Handed to ISource2Engine::RequestScreenshot. The engine may keep the pointer
+ * and call back later, so it has static storage duration instead of living on
+ * the stack of the call that queued it. Every slot declines the data (false),
+ * which tells the engine it still owns and frees the buffer.
+ */
+class CountingScreenshotCallback final : public IScreenshotCallback
+{
+public:
+	bool Screenshot(int, int, int, uint8*, int, int64) override { ++calls; return false; }
+	bool ScreenshotJPEG(int, int, void*, int, void*) override { ++calls; return false; }
+	bool ScreenshotPNG(int, int, void*, int, void*) override { ++calls; return false; }
+	bool Screenshot_GPUFrame(uint32, uint32, int, const uint8*, size_t, int64, uint32) override
+	{
+		++calls;
+		return false;
+	}
+	bool IsDoneWithData(void*) override { ++calls; return true; }
+
+	// Atomic rather than volatile: a deferred callback may arrive on an engine thread.
+	std::atomic<int> calls{0};
+};
+
+CountingScreenshotCallback g_screenshot_callback;
+
+/** Number of set bits in a player bit vector, read through its raw bytes. */
+int CountSetBits(const void* data, size_t size)
+{
+	const uint8* bytes = static_cast<const uint8*>(data);
+	int count = 0;
+	for (size_t i = 0; i < size; ++i)
+	{
+		for (int bit = 0; bit < 8; ++bit)
+		{
+			count += (bytes[i] >> bit) & 1;
+		}
+	}
+	return count;
+}
 
 const char* TierName(AppSystemTier_t tier)
 {
@@ -101,6 +147,7 @@ void Source2EngineSuite::ExerciseCalls(TestContext& context)
 	ExerciseAppSystem(context);
 	ExerciseSource2Engine(context);
 	ExerciseEngineState(context);
+	ExerciseWorldGroups(context);
 	ExercisePlayerQueries(context);
 	ExerciseSpawnGroups(context);
 	InspectGlobalVars(context);
@@ -223,10 +270,49 @@ void Source2EngineSuite::ExerciseSource2Engine(TestContext& context)
 		}
 	});
 
+	// SetTimescale is only exercised when the timescale is already 1: GetTimescale
+	// reports the value multiplied with host_timescale, so writing back any other
+	// reading could compound the two and leave the server at a different speed
+	// for every suite after this one.
+	CS2ST_CALL(context, "IVEngineServer2::SetTimescale", {
+		const float before = engine_->GetTimescale();
+		if (std::fabs(before - 1.0f) > 0.0001f)
+		{
+			context.SkipCall("IVEngineServer2::SetTimescale",
+				"timescale is %.4f, not 1; writing it back could compound with host_timescale",
+				before);
+			return;
+		}
+		engine_->SetTimescale(1.0f);
+		const float after = engine_->GetTimescale();
+		context.Detail("1.0 -> read back %.4f", after);
+		if (std::fabs(after - 1.0f) > 0.001f)
+		{
+			context.Suspect("SetTimescale(1.0) did not read back as 1.0");
+		}
+	});
+
 	context.SkipCall("ISource2Engine::FindOrCreateWorldSession",
-		"creates a world session if one is missing");
+		"creates a world session and leaves it registered; the second and third "
+		"parameters are unidentified, so no argument is known to be safe");
 	context.SkipCall("ISource2Engine::GetEntityLumpForTemplate",
-		"may instantiate an entity lump; parameter meanings are unconfirmed");
+		"returns an entity lump the engine allocates for the caller; five unidentified "
+		"parameters and no known release path");
+	// Last in the interface because a dedicated server has no renderer: these two
+	// are the calls most likely to be answered by a null where a render context
+	// should be, and the fault guard is what turns that into a logged result.
+	CS2ST_CALL(context, "ISource2Engine::RequestScreenshot", {
+		const int before = g_screenshot_callback.calls;
+		engine_->RequestScreenshot(&g_screenshot_callback, nullptr);
+		context.Detail("queued; callback entered %d time(s) during the call",
+			g_screenshot_callback.calls - before);
+	});
+
+	CS2ST_CALL(context, "ISource2Engine::WriteJpegScreenshot", {
+		engine_->WriteJpegScreenshot("cs2sdktest_probe.jpg", 50, 16, 16, false);
+		context.Detail("returned (no result value; the file is only written with a renderer)");
+	});
+
 	context.SkipCall("ISource2Engine::UnknownFunc1", "unidentified in the SDK");
 	context.SkipCall("ISource2Engine::UnknownFunc2", "unidentified in the SDK");
 }
@@ -351,6 +437,263 @@ void Source2EngineSuite::ExerciseEngineState(TestContext& context)
 		context.Detail("-> %s for a nonexistent resource",
 			engine_->IsGenericPrecached("cs2sdktest/no_such_resource") ? "true" : "false");
 	});
+
+	// Precaching is after the IsGenericPrecached probe above on purpose: that
+	// query is only meaningful while the name is still unknown to the engine.
+	CS2ST_CALL(context, "IVEngineServer2::PrecacheGeneric", {
+		context.Detail("-> %d for a nonexistent resource (no preload)",
+			engine_->PrecacheGeneric("cs2sdktest/no_such_resource", false));
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetMapName", {
+		const char* name = engine_->GetMapName();
+		context.Detail("-> \"%s\"", name != nullptr ? name : "(null)");
+		if (name == nullptr)
+		{
+			context.Fail("GetMapName returned null instead of an empty string");
+			return;
+		}
+		// Second path to the same fact: CGlobalVars::mapname.
+		if (globals_ != nullptr)
+		{
+			const char* global_name = globals_->mapname.ToCStr();
+			if (std::strcmp(name, global_name) != 0)
+			{
+				context.Suspect("GetMapName \"%s\" != CGlobalVars::mapname \"%s\"",
+					name, global_name);
+			}
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetMainLoopTimes", {
+		// The SDK documents two floats: time before the frame ran, and the frame.
+		const float* times = engine_->GetMainLoopTimes();
+		if (times == nullptr)
+		{
+			context.Detail("-> null");
+			return;
+		}
+		const float before_frame = times[0];
+		const float frame = times[1];
+		context.Detail("-> %p before=%.6f frame=%.6f", static_cast<const void*>(times),
+			before_frame, frame);
+		if (!std::isfinite(before_frame) || !std::isfinite(frame)
+			|| before_frame < 0.0f || frame < 0.0f)
+		{
+			context.Suspect("a loop time is negative or not finite");
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::ShouldForceMaxFrametimeToTickInterval", {
+		context.Detail("-> %s",
+			engine_->ShouldForceMaxFrametimeToTickInterval() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetLongFrameCount", {
+		context.Detail("-> %u", engine_->GetLongFrameCount());
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::WasShutDownRequested", {
+		const bool requested = engine_->WasShutDownRequested();
+		context.Detail("-> %s", requested ? "true" : "false");
+		if (requested)
+		{
+			context.Suspect("a shutdown is already pending while the suite is running");
+		}
+	});
+
+	// ---- demo / TV recording: reads only. Starting or stopping a recording is a
+	// ---- one-way change (StopRecordingDemo needs a CGameInfo we cannot build).
+
+	CS2ST_CALL(context, "IVEngineServer2::IsTvRecording", {
+		context.Detail("-> %s", engine_->IsTvRecording() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::IsRecordingDemo", {
+		context.Detail("-> %s", engine_->IsRecordingDemo() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetTvRecordingDemoFilename", {
+		const char* filename = engine_->GetTvRecordingDemoFilename();
+		context.Detail("-> \"%s\"", filename != nullptr ? filename : "(null)");
+		if (filename == nullptr)
+		{
+			context.Fail("the SDK promises an empty string, not null, when not recording");
+			return;
+		}
+		// Oracle: IsTvRecording false <=> filename empty (SDK-documented).
+		if (!engine_->IsTvRecording() && filename[0] != '\0')
+		{
+			context.Fail("a filename is reported while IsTvRecording is false");
+		}
+	});
+
+	// ---- HLTV replay: global state reads.
+
+	CS2ST_CALL(context, "IVEngineServer2::IsHltvReplayBufferAvailable", {
+		context.Detail("-> %s", engine_->IsHltvReplayBufferAvailable() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::IsAnyHltvReplayActive", {
+		context.Detail("-> %s", engine_->IsAnyHltvReplayActive() ? "true" : "false");
+	});
+
+	// ---- round trips: write back exactly what was just read, so the end state is
+	// ---- the start state and the second read is the oracle.
+
+	CS2ST_CALL(context, "IVEngineServer2::SetGamestatsData", {
+		CGamestatsData* before = engine_->GetGamestatsData();
+		engine_->SetGamestatsData(before);
+		CGamestatsData* after = engine_->GetGamestatsData();
+		context.Detail("%p -> %p", static_cast<void*>(before), static_cast<void*>(after));
+		if (before != after)
+		{
+			context.Fail("GetGamestatsData did not return what SetGamestatsData stored");
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::SetAchievementMgr", {
+		IAchievementMgr* before = engine_->GetAchievementMgr();
+		engine_->SetAchievementMgr(before);
+		IAchievementMgr* after = engine_->GetAchievementMgr();
+		context.Detail("%p -> %p", static_cast<void*>(before), static_cast<void*>(after));
+		if (before != after)
+		{
+			context.Fail("GetAchievementMgr did not return what SetAchievementMgr stored");
+		}
+	});
+
+	// Benchmark mode is off on any server this runs against; writing false is the
+	// identity.
+	CS2ST_CALL(context, "IVEngineServer2::SetDedicatedServerBenchmarkMode", {
+		engine_->SetDedicatedServerBenchmarkMode(false);
+		context.Detail("set to false (the normal state)");
+	});
+
+	// A zero-length amnesty is the only kind that cannot excuse a real long frame.
+	CS2ST_CALL(context, "IVEngineServer2::SetFrameTimeAmnesty", {
+		engine_->SetFrameTimeAmnesty("cs2sdktest", 0, 0.0f);
+		const char* amnesty = engine_->GetFrameTimeAmnesty(false);
+		context.Detail("set \"cs2sdktest\"/0.0s -> GetFrameTimeAmnesty(false) = %s",
+			amnesty != nullptr ? amnesty : "(null)");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::SetFramePerformanceTag", {
+		engine_->SetFramePerformanceTag("cs2sdktest", 0, 0, 0.0f);
+		context.Detail("tag set with a zero duration");
+	});
+
+	// ---- output: harmless text.
+
+	CS2ST_CALL(context, "IVEngineServer2::LogPrint", {
+		engine_->LogPrint("cs2sdktest: Source2EngineSuite LogPrint probe\n");
+		context.Detail("-> IsLogEnabled=%s", engine_->IsLogEnabled() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::ServerCommand", {
+		engine_->ServerCommand("echo cs2sdktest: Source2EngineSuite ServerCommand probe\n");
+		context.Detail("queued an echo");
+	});
+
+	// ---- HLTV relay / chat ban: arguments chosen to be no-ops.
+
+	CS2ST_CALL(context, "IVEngineServer2::SetHLTVChatBan", {
+		// Un-banning an invalid SteamID: nothing to change.
+		engine_->SetHLTVChatBan(CSteamID(), false);
+		context.Detail("un-ban of an invalid SteamID");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::AddHltvRelayProxyWhitelist", {
+		// 192.0.2.1/32 is TEST-NET-1 (RFC 5737): never routable, so whitelisting it
+		// cannot admit a real relay.
+		engine_->AddHltvRelayProxyWhitelist(192, 0, 2, 1, 32);
+		context.Detail("whitelisted 192.0.2.1/32 (TEST-NET-1)");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::StopAllHltvReplays", {
+		engine_->StopAllHltvReplays();
+		context.Detail("-> IsAnyHltvReplayActive=%s",
+			engine_->IsAnyHltvReplayActive() ? "true" : "false");
+		if (engine_->IsAnyHltvReplayActive())
+		{
+			context.Fail("a replay is still active after StopAllHltvReplays");
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::StashHltvReplay", {
+		// Zero seconds of replay to stash, under an id nothing else uses.
+		context.Detail("-> %s", engine_->StashHltvReplay(0xC52C52u, 0.0f) ? "true" : "false");
+	});
+}
+
+// -----------------------------------------------------------------------------
+//  IVEngineServer2 - world groups
+// -----------------------------------------------------------------------------
+
+void Source2EngineSuite::ExerciseWorldGroups(TestContext& context)
+{
+	context.Note("[IVEngineServer2] world groups");
+
+	CS2ST_CALL(context, "IVEngineServer2::FindWorldGroupByName", {
+		const WorldGroupId_t id = engine_->FindWorldGroupByName("cs2sdktest_no_such_group");
+		context.Detail("-> 0x%08x for a nonexistent name", id.m_nId);
+		if (id != INVALID_WORLD_GROUP_ID)
+		{
+			context.Suspect("a nonexistent group name did not resolve to the invalid id");
+		}
+	});
+
+	// Both sides, because the high bit marks client-side groups and a slot shift
+	// would show up as the two answers swapping.
+	CS2ST_CALL(context, "IVEngineServer2::GetFirstWorldGroupId", {
+		context.Detail("-> server 0x%08x, client 0x%08x",
+			engine_->GetFirstWorldGroupId(false).m_nId,
+			engine_->GetFirstWorldGroupId(true).m_nId);
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::MaxWorldGroupId", {
+		context.Detail("-> server 0x%08x, client 0x%08x",
+			engine_->MaxWorldGroupId(false).m_nId,
+			engine_->MaxWorldGroupId(true).m_nId);
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::IsWorldGroupValid", {
+		const bool invalid_is_valid = engine_->IsWorldGroupValid(INVALID_WORLD_GROUP_ID);
+		const WorldGroupId_t first = engine_->GetFirstWorldGroupId(false);
+		context.Detail("-> invalid id: %s, first server group 0x%08x: %s",
+			invalid_is_valid ? "valid" : "invalid", first.m_nId,
+			engine_->IsWorldGroupValid(first) ? "valid" : "invalid");
+		if (invalid_is_valid)
+		{
+			context.Fail("INVALID_WORLD_GROUP_ID reported valid");
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetWorldGroupName", {
+		const WorldGroupId_t first = engine_->GetFirstWorldGroupId(false);
+		if (!engine_->IsWorldGroupValid(first))
+		{
+			// Nothing loaded yet; asking for the name of a group that does not
+			// exist is an out-of-range table read, which tests nothing.
+			context.SkipCall("IVEngineServer2::GetWorldGroupName",
+				"no valid server world group (first id 0x%08x)", first.m_nId);
+			return;
+		}
+		const char* name = engine_->GetWorldGroupName(first);
+		context.Detail("-> \"%s\" for 0x%08x", name != nullptr ? name : "(null)", first.m_nId);
+		if (name == nullptr || name[0] == '\0')
+		{
+			return;
+		}
+		// Oracle: the name must resolve back to the group it came from. Suspect,
+		// not Fail: nothing in the SDK says names are unique.
+		const WorldGroupId_t round_trip = engine_->FindWorldGroupByName(name);
+		if (round_trip != first)
+		{
+			context.Suspect("FindWorldGroupByName(\"%s\") = 0x%08x, expected 0x%08x",
+				name, round_trip.m_nId, first.m_nId);
+		}
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -457,10 +800,139 @@ void Source2EngineSuite::ExercisePlayerQueries(TestContext& context)
 			engine_->GetClientDeltaTick(slot));
 	});
 
-	context.SkipCall("IVEngineServer2::GetPlayerInfo",
-		"needs a protobuf message to fill; not wired up yet");
-	context.SkipCall("IVEngineServer2::Message_DetermineMulticastRecipients",
-		"needs a live PVS origin to mean anything");
+	CS2ST_CALL(context, "IVEngineServer2::GetClientSignonState", {
+		context.Detail("-> %d", static_cast<int>(engine_->GetClientSignonState(slot)));
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetClientHltvReplayDelay", {
+		context.Detail("-> %d", engine_->GetClientHltvReplayDelay(slot));
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetClientUserInfo", {
+		// A one-pointer handle; the data behind it is the engine's.
+		const ConVarUserInfoSet_t info = engine_->GetClientUserInfo(slot);
+		context.Detail("-> data=%p", static_cast<const void*>(info.m_pData));
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetEntityTransmitBitsForClient", {
+		context.Detail("-> %p",
+			static_cast<const void*>(engine_->GetEntityTransmitBitsForClient(slot)));
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::CanStartHltvReplay", {
+		context.Detail("-> %s for delay 0", engine_->CanStartHltvReplay(slot, 0) ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::GetPlayerInfo", {
+		CMsgPlayerInfo info;
+		const bool filled = engine_->GetPlayerInfo(slot, info);
+		context.Detail("-> %s name=\"%s\" userid=%d fakeplayer=%s", filled ? "true" : "false",
+			info.name().c_str(), info.userid(), info.fakeplayer() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::Message_DetermineMulticastRecipients", {
+		// usepas=false skips the PVS lookup, so the origin does not matter and no
+		// live level is needed; the output is a local bit vector. Pre-zeroed so a
+		// call that writes nothing reads as 0 rather than as stack garbage.
+		CPlayerBitVec recipients;
+		std::memset(static_cast<void*>(&recipients), 0, sizeof(recipients));
+		engine_->Message_DetermineMulticastRecipients(false, Vector(0.0f, 0.0f, 0.0f), recipients);
+		context.Detail("-> %d recipient bit(s) set", CountSetBits(&recipients, sizeof(recipients)));
+	});
+
+	// -------------------------------------------------------------------------
+	//  Slot-mutating calls. Only made on a slot that is provably empty: no net
+	//  channel and no user id. The slot is in range (checked above), so the
+	//  engine indexes its client table safely and finds nothing to act on.
+	// -------------------------------------------------------------------------
+
+	bool slot_empty = false;
+	CS2ST_CALL(context, "IVEngineServer2::<probe slot occupancy>", {
+		slot_empty = engine_->GetPlayerNetInfo(slot) == nullptr
+			&& engine_->GetPlayerUserId(slot).Get() < 0;
+		context.Detail("slot %d is %s", kProbeSlot, slot_empty ? "empty" : "occupied");
+	});
+
+	if (!slot_empty)
+	{
+		context.SkipCall("IVEngineServer2::<empty-slot mutators>",
+			"slot %d is occupied; they would act on a real client", kProbeSlot);
+		return;
+	}
+
+	CS2ST_CALL(context, "IVEngineServer2::ClientPrintf", {
+		engine_->ClientPrintf(slot, "cs2sdktest: ClientPrintf probe\n");
+		context.Detail("sent to the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::ClientCommand", {
+		engine_->ClientCommand(slot, "echo cs2sdktest");
+		context.Detail("sent to the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::StartHltvReplay", {
+		const HltvReplayParams_t params;
+		const bool started = engine_->StartHltvReplay(slot, params);
+		context.Detail("-> %s for the empty slot", started ? "true" : "false");
+		if (started)
+		{
+			context.Suspect("a replay started for a slot with no client");
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::ForceStopHltvReplay", {
+		engine_->ForceStopHltvReplay(slot);
+		context.Detail("returned for the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::ResetHltvReplayRequestTime", {
+		engine_->ResetHltvReplayRequestTime(slot);
+		context.Detail("returned for the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::SetClientUpdateRate", {
+		engine_->SetClientUpdateRate(slot, 64.0f);
+		context.Detail("returned for the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::SetClientJitterBadThresholdUp", {
+		engine_->SetClientJitterBadThresholdUp(slot, 100.0f);
+		context.Detail("returned for the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::SetRecyclePlayerSlot", {
+		engine_->SetRecyclePlayerSlot(slot, true);
+		context.Detail("returned for the empty slot");
+	});
+
+	// Written back unchanged, so the voice routing ends where it began and the
+	// re-read is the oracle.
+	CS2ST_CALL(context, "IVEngineServer2::SetClientListening", {
+		const bool before = engine_->GetClientListening(slot, slot);
+		const bool result = engine_->SetClientListening(slot, slot, before);
+		const bool after = engine_->GetClientListening(slot, slot);
+		context.Detail("%s -> returned %s, read back %s", before ? "true" : "false",
+			result ? "true" : "false", after ? "true" : "false");
+		if (before != after)
+		{
+			context.Suspect("writing the current listening state back changed it");
+		}
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::SetClientProximity", {
+		const bool result = engine_->SetClientProximity(slot, slot, false);
+		context.Detail("-> %s for the empty slot", result ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::DisconnectClient", {
+		engine_->DisconnectClient(slot, NETWORK_DISCONNECT_INVALID, "cs2sdktest");
+		context.Detail("returned for the empty slot");
+	});
+
+	CS2ST_CALL(context, "IVEngineServer2::KickClient", {
+		engine_->KickClient(slot, "cs2sdktest", NETWORK_DISCONNECT_INVALID);
+		context.Detail("returned for the empty slot");
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -503,6 +975,19 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 		}
 	});
 
+	CS2ST_CALL(context, "IVEngineServer2::GetAllSpawnGroupsWithPVS", {
+		// Both vectors are outputs and local, so this is a read of engine state.
+		CUtlVector<SpawnGroupHandle_t> groups;
+		CUtlVector<IPVS*> pvs;
+		engine_->GetAllSpawnGroupsWithPVS(&groups, &pvs);
+		context.Detail("-> %d group(s), %d PVS", groups.Count(), pvs.Count());
+		// Two outputs of one call describe the same set of groups.
+		if (groups.Count() != pvs.Count())
+		{
+			context.Suspect("%d groups but %d PVS pointers", groups.Count(), pvs.Count());
+		}
+	});
+
 	context.SkipCall("IVEngineServer2::UnloadSpawnGroup", "unloads level content");
 	context.SkipCall("IVEngineServer2::LoadSpawnGroup",
 		"loads level content into a live spawn group; the Oct 2026 rework "
@@ -513,9 +998,6 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 	context.SkipCall("IVEngineServer2::SynchronizeAndBlockUntilLoaded", "blocks the server");
 	context.SkipCall("IVEngineServer2::SetSpawnGroupDescription", "mutates spawn group state");
 
-	// GetAllSpawnGroupsWithPVS and P2PGroupChanged are declared inside an
-	// #if 0 block in the SDK - they name no vtable slot, so there is nothing
-	// to call and nothing to skip.
 }
 
 // -----------------------------------------------------------------------------
@@ -636,40 +1118,41 @@ void Source2EngineSuite::InspectGlobalVars(TestContext& context)
 
 void Source2EngineSuite::NoteSideEffectingCalls(TestContext& context)
 {
-	context.Note("[IVEngineServer2] not called - would change server state");
+	context.Note("[IVEngineServer2] not called - no argument is known that leaves "
+	             "state the later suites rely on untouched");
 
 	// Listed rather than omitted. A reader needs to be able to tell "this was
 	// checked and is fine" from "nobody ever looked at this", and an absent
-	// row cannot say which.
-	context.SkipCall("IVEngineServer2::ChangeLevel", "changes the map");
-	context.SkipCall("IVEngineServer2::ServerCommand", "executes console commands");
-	context.SkipCall("IVEngineServer2::ClientCommand", "executes commands as a client");
-	context.SkipCall("IVEngineServer2::ClientCommandKeyValues", "sends a command to a client");
-	context.SkipCall("IVEngineServer2::ClientPrintf", "writes to a player's console");
-	context.SkipCall("IVEngineServer2::CreateFakeClient", "adds a bot");
-	context.SkipCall("IVEngineServer2::DisconnectClient", "kicks a player");
-	context.SkipCall("IVEngineServer2::DisconnectAllClients",
-		"kicks every connected player; named unk301 in the SDK until the "
-		"Oct 2026 rework");
-	context.SkipCall("IVEngineServer2::KickClient", "kicks a player");
-	context.SkipCall("IVEngineServer2::BanClient", "bans a player");
-	context.SkipCall("IVEngineServer2::SetHLTVChatBan", "mutes an HLTV slot");
-	context.SkipCall("IVEngineServer2::LogPrint", "writes to the server log");
-	context.SkipCall("IVEngineServer2::PrecacheGeneric", "loads a resource");
-	context.SkipCall("IVEngineServer2::SetTimescale", "changes game speed");
-	context.SkipCall("IVEngineServer2::SetFrameTimeAmnesty", "changes frame timing");
-	context.SkipCall("IVEngineServer2::SetClientUpdateRate", "changes a client's rate");
-	context.SkipCall("IVEngineServer2::SetClientListening", "changes voice routing");
-	context.SkipCall("IVEngineServer2::SetClientProximity", "changes voice routing");
-	context.SkipCall("IVEngineServer2::SetFakeClientConVarValue", "mutates a bot's convars");
-	context.SkipCall("IVEngineServer2::SetGamestatsData", "replaces the stats container");
-	context.SkipCall("IVEngineServer2::SetAchievementMgr", "replaces the achievement manager");
-	context.SkipCall("IVEngineServer2::SetDedicatedServerBenchmarkMode", "changes tick pacing");
-	context.SkipCall("IVEngineServer2::ShowFrameTimeReport", "parameter meanings unconfirmed");
-	context.SkipCall("IVEngineServer2::DumpNetStats", "parameter meanings unconfirmed");
-
-	context.Note("plus 35 unnamed slots (unk001-unk613, minus the rework-named "
-	             "DisconnectAllClients) the SDK has not identified");
+	// row cannot say which. Everything whose arguments can be made harmless
+	// (empty slot, written-back values, TEST-NET addresses) is called above.
+	context.SkipCall("IVEngineServer2::ChangeLevel",
+		"changes the map out from under the other suites");
+	context.SkipCall("IVEngineServer2::ClientCommandKeyValues",
+		"needs a KeyValues built with the engine's allocator; this module's heap "
+		"is not the engine's (CS2SDKTEST_USE_MEMOVERRIDE is off)");
+	context.SkipCall("IVEngineServer2::CreateFakeClient",
+		"adds a bot that occupies a slot and a player count");
+	context.SkipCall("IVEngineServer2::CreateClient",
+		"creates a connectionless client whose slot stays locked (SDK: unaffected "
+		"by SetRecyclePlayerSlot), so it cannot be cleaned up");
+	context.SkipCall("IVEngineServer2::DisconnectAllClients", "kicks every connected player");
+	context.SkipCall("IVEngineServer2::BanClient",
+		"writes to the persistent ban list; both overloads");
+	context.SkipCall("IVEngineServer2::SetFakeClientConVarValue",
+		"acts on a bot, and no bot is created here");
+	context.SkipCall("IVEngineServer2::ShowFrameTimeReport",
+		"first parameter is an unidentified pointer the engine dereferences");
+	context.SkipCall("IVEngineServer2::DumpNetStats",
+		"first parameter is an unidentified pointer the engine dereferences");
+	context.SkipCall("IVEngineServer2::StartAutoRecording", "starts a demo file on disk");
+	context.SkipCall("IVEngineServer2::RecordDemo", "starts a demo file on disk");
+	context.SkipCall("IVEngineServer2::StopRecordingDemo",
+		"needs a CGameInfo the SDK gives no way to construct");
+	context.SkipCall("IVEngineServer2::BroadcastEvent",
+		"needs an INetworkMessageInternal and a matching CNetMessage; would be "
+		"sent to every client");
+	context.SkipCall("IVEngineServer2::unk101",
+		"unnamed; extends matchmaking reservation timeouts and sends packets");
 }
 
 } // namespace cs2st
