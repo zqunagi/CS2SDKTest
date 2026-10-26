@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <new>
 
 #include <appframework/iappsystem.h>
 #include <engine2/iscreenshotcallback.h>
@@ -16,6 +17,7 @@
 
 #include "core/Log.h"
 #include "testkit/StructInspector.h"
+#include "testkit/UtlVectorGuard.h"
 
 namespace cs2st
 {
@@ -824,7 +826,14 @@ void Source2EngineSuite::ExercisePlayerQueries(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "IVEngineServer2::GetPlayerInfo", {
-		CMsgPlayerInfo info;
+		// The engine fills this message with its own protobuf code and heap, so its
+		// string fields are not ours to free: destroying the message here runs our
+		// CRT's free on engine-owned memory and aborts on Windows (heap corruption in
+		// ~CMsgPlayerInfo). Build it in static storage and never destroy it; the
+		// leak is one small object for the whole run.
+		alignas(CMsgPlayerInfo) static unsigned char storage[sizeof(CMsgPlayerInfo)];
+		static CMsgPlayerInfo* const info_ptr = new (storage) CMsgPlayerInfo();
+		CMsgPlayerInfo& info = *info_ptr;
 		const bool filled = engine_->GetPlayerInfo(slot, info);
 		context.Detail("-> %s name=\"%s\" userid=%d fakeplayer=%s", filled ? "true" : "false",
 			info.name().c_str(), info.userid(), info.fakeplayer() ? "true" : "false");
@@ -979,6 +988,9 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 		// Both vectors are outputs and local, so this is a read of engine state.
 		CUtlVector<SpawnGroupHandle_t> groups;
 		CUtlVector<IPVS*> pvs;
+		// The engine grows both; see UtlVectorGuard for the Windows heap mismatch.
+		UtlVectorGuard<decltype(groups)> groups_guard(groups);
+		UtlVectorGuard<decltype(pvs)> pvs_guard(pvs);
 		engine_->GetAllSpawnGroupsWithPVS(&groups, &pvs);
 		context.Detail("-> %d group(s), %d PVS", groups.Count(), pvs.Count());
 		// Two outputs of one call describe the same set of groups.
