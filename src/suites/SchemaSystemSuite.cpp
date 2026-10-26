@@ -304,6 +304,8 @@ void SchemaSystemSuite::ExerciseCalls(TestContext& context)
 	ExerciseEnumLookups(context);
 	InspectEnumInfoLayout(context);
 	InspectEnumerators(context);
+	// After the enum probes: the Resolve*Threadsafe rows need probe_enum_.
+	ExerciseInternLookups(context);
 	ExerciseClassGraph(context);
 	NoteSideEffectingCalls(context);
 }
@@ -417,6 +419,19 @@ void SchemaSystemSuite::ExerciseSystemQueries(TestContext& context)
 		// future change to it is visible, and cross-checked against the field
 		// it must be reading in InspectSchemaSystemLayout.
 		context.Detail("-> %s", schema_->DefaultTypeScopeIsLocal() ? "true" : "false");
+	});
+
+	// Console output only: nothing comes back, so the row records that the call
+	// returned. The options string is the SDK's untyped const char*, and an empty
+	// one is the least-surprising value to hand a parser that is not described.
+	CS2ST_CALL(context, "ISchemaSystem::PrintSchemaStats", {
+		schema_->PrintSchemaStats("");
+		context.Detail("-> returned (output goes to the server console)");
+	});
+
+	CS2ST_CALL(context, "ISchemaSystem::PrintSchemaMetaStats", {
+		schema_->PrintSchemaMetaStats("");
+		context.Detail("-> returned (output goes to the server console)");
 	});
 }
 
@@ -1510,6 +1525,410 @@ void SchemaSystemSuite::ExerciseAtomicLookups(TestContext& context)
 	else
 	{
 		context.SkipCall("SchemaAtomicTypeInfo_t", "the atomic type carries no info pointer");
+	}
+}
+
+// -----------------------------------------------------------------------------
+//  Intern lookups with keys the scope already holds
+//
+//  The Type_* family creates on a miss, which is why the whole family used to
+//  be skipped. Called with the key of an entry already sitting in the scope's
+//  own map, it is a hit instead: nothing is created, and the answer has to be
+//  the very object the map holds. The keys are read straight out of the
+//  interned maps, which also supplies the (atomic ID, template type, manipulator)
+//  tuples the FindType_Atomic_* family needs and no class field could.
+// -----------------------------------------------------------------------------
+
+namespace
+{
+
+template <typename Map>
+bool HasFirstEntry(const Map& map)
+{
+	return map.Count() > 0 && map.IsValidIndex(0);
+}
+
+/** The shared verdict for an intern call made with an existing key. */
+void ReportInternHit(TestContext& context, const void* got, const void* entry)
+{
+	context.Detail("-> %p (the map holds %p)", got, entry);
+	if (got == nullptr)
+	{
+		context.Fail("a lookup with a key that is in the map returned null");
+	}
+	else if (got != entry)
+	{
+		// Suspect and not Fail: a module scope may legitimately answer from the
+		// global scope's copy, and the SDK does not say which one wins.
+		context.Suspect("the lookup returned a different object than the map holds");
+	}
+}
+
+} // namespace
+
+void SchemaSystemSuite::ExerciseInternLookups(TestContext& context)
+{
+	context.Note("[CSchemaSystemTypeScope] Type_* / FindType_Atomic_* called with "
+	             "keys read out of the scope's own interned maps");
+
+	if (probe_scope_ == nullptr)
+	{
+		context.SkipCall("CSchemaSystemTypeScope::Type_Ptr", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::Type_Atomic*", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::Type_DeclaredClass", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::Type_DeclaredEnum", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::Type_FixedArray", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::Type_Bitfield", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_T", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_CollectionOfT", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_TT", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_I", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::ResolveClassInfoThreadsafe", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::ResolveEnumInfoThreadsafe", "no type scope resolved");
+		context.SkipCall("CSchemaSystemTypeScope::ResolveAtomicInfoThreadsafe", "no type scope resolved");
+		return;
+	}
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Ptr (existing key)", {
+		auto& map = probe_scope_->m_Pointers.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_Pointers is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Ptr* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pObjectType == nullptr)
+		{
+			context.Detail("-> the first entry has no object type");
+			return;
+		}
+		ReportInternHit(context, probe_scope_->Type_Ptr(entry->m_pObjectType).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic (existing key)", {
+		auto& map = probe_scope_->m_Atomics.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_Atomics is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pAtomicInfo == nullptr)
+		{
+			context.Detail("-> the first entry has no atomic info to name it by");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_Atomic(entry->m_pAtomicInfo->m_pszName,
+				entry->m_nSize, entry->m_nAlignment).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic_T (existing key)", {
+		auto& map = probe_scope_->m_AtomicsT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsT is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_T* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pAtomicInfo == nullptr)
+		{
+			context.Detail("-> the first entry has no atomic info to name it by");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_Atomic_T(entry->m_pAtomicInfo->m_pszName,
+				entry->m_nSize, entry->m_nAlignment, entry->m_pTemplateType).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::FindType_Atomic_T (key from m_AtomicsT)", {
+		auto& map = probe_scope_->m_AtomicsT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsT is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_T* entry = map.Element(0);
+		if (entry == nullptr)
+		{
+			context.Detail("-> the first entry is null");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->FindType_Atomic_T(entry->m_nAtomicID, entry->m_pTemplateType).Get(),
+			entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic_CollectionOfT (existing key)", {
+		auto& map = probe_scope_->m_AtomicsCollectionOfT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsCollectionOfT is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_CollectionOfT* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pAtomicInfo == nullptr)
+		{
+			context.Detail("-> the first entry has no atomic info to name it by");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_Atomic_CollectionOfT(entry->m_pAtomicInfo->m_pszName,
+				entry->m_nSize, entry->m_nAlignment, entry->m_nElementSize,
+				entry->m_pTemplateType, entry->m_nFixedBufferCount,
+				entry->m_pfnManipulator).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::FindType_Atomic_CollectionOfT (key from m_AtomicsCollectionOfT)", {
+		auto& map = probe_scope_->m_AtomicsCollectionOfT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsCollectionOfT is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_CollectionOfT* entry = map.Element(0);
+		if (entry == nullptr)
+		{
+			context.Detail("-> the first entry is null");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->FindType_Atomic_CollectionOfT(entry->m_nAtomicID,
+				entry->m_pTemplateType, entry->m_pfnManipulator).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic_TT (existing key)", {
+		auto& map = probe_scope_->m_AtomicsTT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsTT is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_TT* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pAtomicInfo == nullptr)
+		{
+			context.Detail("-> the first entry has no atomic info to name it by");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_Atomic_TT(entry->m_pAtomicInfo->m_pszName,
+				entry->m_nSize, entry->m_nAlignment, entry->m_pTemplateType,
+				entry->m_pTemplateType2).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::FindType_Atomic_TT (key from m_AtomicsTT)", {
+		auto& map = probe_scope_->m_AtomicsTT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsTT is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_TT* entry = map.Element(0);
+		if (entry == nullptr)
+		{
+			context.Detail("-> the first entry is null");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->FindType_Atomic_TT(entry->m_nAtomicID, entry->m_pTemplateType,
+				entry->m_pTemplateType2).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic_I (existing key)", {
+		auto& map = probe_scope_->m_AtomicsI.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsI is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_I* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pAtomicInfo == nullptr)
+		{
+			context.Detail("-> the first entry has no atomic info to name it by");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_Atomic_I(entry->m_pAtomicInfo->m_pszName,
+				entry->m_nSize, entry->m_nAlignment, entry->m_nInteger).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::FindType_Atomic_I (key from m_AtomicsI)", {
+		auto& map = probe_scope_->m_AtomicsI.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsI is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Atomic_I* entry = map.Element(0);
+		if (entry == nullptr)
+		{
+			context.Detail("-> the first entry is null");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->FindType_Atomic_I(entry->m_nAtomicID, entry->m_nInteger).Get(),
+			entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_DeclaredClass (existing key)", {
+		auto& map = probe_scope_->m_DeclaredClasses.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_DeclaredClasses is empty; no key to look up");
+			return;
+		}
+		CSchemaType_DeclaredClass* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pClassInfo == nullptr
+			|| entry->m_pClassInfo->m_pName == nullptr)
+		{
+			context.Detail("-> the first entry has no class name");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_DeclaredClass(entry->m_pClassInfo->m_pName).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_DeclaredEnum (existing key)", {
+		auto& map = probe_scope_->m_DeclaredEnums.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_DeclaredEnums is empty; no key to look up");
+			return;
+		}
+		CSchemaType_DeclaredEnum* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pEnumInfo == nullptr
+			|| entry->m_pEnumInfo->m_pName == nullptr)
+		{
+			context.Detail("-> the first entry has no enum name");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_DeclaredEnum(entry->m_pEnumInfo->m_pName).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_FixedArray (existing key)", {
+		auto& map = probe_scope_->m_FixedArrays.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_FixedArrays is empty; no key to look up");
+			return;
+		}
+		CSchemaType_FixedArray* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pElementType == nullptr)
+		{
+			context.Detail("-> the first entry has no element type");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_FixedArray(entry->m_pElementType, entry->m_nElementCount,
+				entry->m_nElementSize, entry->m_nElementAlignment).Get(), entry);
+	});
+
+	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Bitfield (existing key)", {
+		auto& map = probe_scope_->m_Bitfields.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_Bitfields is empty; no key to look up");
+			return;
+		}
+		CSchemaType_Bitfield* entry = map.Element(0);
+		if (entry == nullptr)
+		{
+			context.Detail("-> the first entry is null");
+			return;
+		}
+		ReportInternHit(context,
+			probe_scope_->Type_Bitfield(entry->m_nBitfieldCount).Get(), entry);
+	});
+
+	// ---- the Resolve*Threadsafe family ---------------------------------------
+	//
+	// They keep the address of the out pointer on a miss so a later registration
+	// can fill it in. Static storage makes that harmless: the address stays
+	// valid for the life of the process, so a deferred write lands in memory
+	// nobody else reads. Measured: even with a name that is registered, all
+	// three leave the pointer untouched, so the call only records it. A write
+	// is judged if one ever happens; an untouched sentinel is just reported.
+	static const CSchemaClassInfo* resolved_class = nullptr;
+	static const CSchemaEnumInfo* resolved_enum = nullptr;
+	static const SchemaAtomicTypeInfo_t* resolved_atomic = nullptr;
+	const void* const unwritten = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(1));
+
+	if (probe_class_ != nullptr && probe_class_name_ != nullptr)
+	{
+		CS2ST_CALL(context, "CSchemaSystemTypeScope::ResolveClassInfoThreadsafe", {
+			resolved_class = static_cast<const CSchemaClassInfo*>(unwritten);
+			probe_scope_->ResolveClassInfoThreadsafe(&resolved_class, probe_class_name_);
+			context.Detail("-> %p for \"%.60s\" (we hold %p)",
+				static_cast<const void*>(resolved_class), probe_class_name_,
+				static_cast<void*>(probe_class_));
+			if (static_cast<const void*>(resolved_class) == unwritten)
+			{
+				// Seen live: even for a registered name the out pointer is left
+				// untouched, so the call only records it for a later fill-in.
+				context.Detail("(left untouched: the fill-in is deferred, not immediate)");
+			}
+			else if (resolved_class != probe_class_)
+			{
+				context.Fail("the resolved class is not the binding looked up by name");
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("CSchemaSystemTypeScope::ResolveClassInfoThreadsafe",
+			"no probe class resolved");
+	}
+
+	if (probe_enum_ != nullptr && probe_enum_name_ != nullptr)
+	{
+		CS2ST_CALL(context, "CSchemaSystemTypeScope::ResolveEnumInfoThreadsafe", {
+			resolved_enum = static_cast<const CSchemaEnumInfo*>(unwritten);
+			probe_scope_->ResolveEnumInfoThreadsafe(&resolved_enum, probe_enum_name_);
+			context.Detail("-> %p for \"%.60s\" (we hold %p)",
+				static_cast<const void*>(resolved_enum), probe_enum_name_,
+				static_cast<void*>(probe_enum_));
+			if (static_cast<const void*>(resolved_enum) == unwritten)
+			{
+				context.Detail("(left untouched: the fill-in is deferred, not immediate)");
+			}
+			else if (resolved_enum != probe_enum_)
+			{
+				context.Fail("the resolved enum is not the binding looked up by name");
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("CSchemaSystemTypeScope::ResolveEnumInfoThreadsafe",
+			"no enum binding resolved");
+	}
+
+	CSchemaType_Atomic* probe_atomic = static_cast<CSchemaType_Atomic*>(probe_atomic_type_);
+	if (probe_atomic != nullptr && probe_atomic->m_pAtomicInfo != nullptr
+		&& probe_atomic->m_pAtomicInfo->m_pszName != nullptr)
+	{
+		CS2ST_CALL(context, "CSchemaSystemTypeScope::ResolveAtomicInfoThreadsafe", {
+			resolved_atomic = static_cast<const SchemaAtomicTypeInfo_t*>(unwritten);
+			probe_scope_->ResolveAtomicInfoThreadsafe(&resolved_atomic,
+				probe_atomic->m_pAtomicInfo->m_pszName, probe_atomic->m_nAtomicID);
+			context.Detail("-> %p (the atomic's own info is %p)",
+				static_cast<const void*>(resolved_atomic),
+				static_cast<const void*>(probe_atomic->m_pAtomicInfo));
+			if (static_cast<const void*>(resolved_atomic) == unwritten)
+			{
+				context.Detail("(left untouched: the fill-in is deferred, not immediate)");
+			}
+			else if (resolved_atomic != probe_atomic->m_pAtomicInfo)
+			{
+				context.Suspect("the resolved atomic info is not the one the type carries");
+			}
+		});
+	}
+	else
+	{
+		context.SkipCall("CSchemaSystemTypeScope::ResolveAtomicInfoThreadsafe",
+			"no atomic type with an info pointer among the probe class's fields");
 	}
 }
 
@@ -3374,9 +3793,7 @@ void SchemaSystemSuite::NoteSideEffectingCalls(TestContext& context)
 
 	context.Note("[ISchemaSystem] not called - console output or undocumented arguments");
 
-	context.SkipCall("ISchemaSystem::PrintSchemaStats",
-		"spews to the console with nothing returned to read back");
-	context.SkipCall("ISchemaSystem::PrintSchemaMetaStats", "same");
+	// PrintSchemaStats and PrintSchemaMetaStats are called in ExerciseSystemQueries.
 	context.SkipCall("ISchemaSystem::ConvertOldIntrospectedResourceDataToKV3",
 		"three undocumented void* arguments and a CKV3Arena; no way to "
 		"construct a meaningful call, and a wrong one writes into the arena");
@@ -3397,54 +3814,12 @@ void SchemaSystemSuite::NoteSideEffectingCalls(TestContext& context)
 
 	context.Note("[CSchemaSystemTypeScope] not called - Type_* interns on a miss");
 
-	// Type_Builtin is the exception and is exercised for all fourteen builtins:
-	// it indexes the scope's pre-initialised array instead of interning. Every
-	// other member of the family creates and inserts, so each is listed with
-	// what it would leave behind.
-	context.SkipCall("CSchemaSystemTypeScope::Type_Ptr",
-		"interns a pointer-to-T type; Type_Builtin is the only member of this "
-		"family that is a pure lookup, and it is called in full above");
-	context.SkipCall("CSchemaSystemTypeScope::Type_Atomic", "interns an atomic type");
-	context.SkipCall("CSchemaSystemTypeScope::Type_Atomic_T", "interns an atomic-of-T type");
-	context.SkipCall("CSchemaSystemTypeScope::Type_Atomic_CollectionOfT",
-		"interns a collection-of-T type");
-	context.SkipCall("CSchemaSystemTypeScope::Type_Atomic_TT", "interns a two-parameter atomic");
-	context.SkipCall("CSchemaSystemTypeScope::Type_Atomic_I", "interns an integer-keyed atomic");
-	context.SkipCall("CSchemaSystemTypeScope::Type_DeclaredClass",
-		"interns a declared-class type; FindType_DeclaredClass is the "
-		"read-only half and is called above");
-	context.SkipCall("CSchemaSystemTypeScope::Type_DeclaredEnum",
-		"interns a declared-enum type; FindType_DeclaredEnum is the "
-		"read-only half and is called above");
-	context.SkipCall("CSchemaSystemTypeScope::Type_FixedArray", "interns an array type");
+	// Every other Type_* and FindType_Atomic_* member, and the three
+	// Resolve*Threadsafe methods, are called in ExerciseInternLookups with keys
+	// the scope's own maps already hold, which turns the intern into a hit.
+	// Type_Builtin is exercised for all fourteen builtins in ExerciseBuiltinTypes.
 	context.SkipCall("CSchemaSystemTypeScope::Type_FixedArray_Multidimensional",
 		"interns an array type, and is variadic with no documented terminator");
-	context.SkipCall("CSchemaSystemTypeScope::Type_Bitfield", "interns a bitfield type");
-
-	context.Note("[CSchemaSystemTypeScope] not called - lookup key cannot be supplied");
-
-	context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_T",
-		"keyed by atomic ID plus a template CSchemaType*; the pair can only be "
-		"had from an existing _T type, and no field on the probe class has one");
-	context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_CollectionOfT",
-		"keyed by atomic ID, template type and a manipulator function pointer");
-	context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_TT",
-		"keyed by atomic ID and two template types");
-	context.SkipCall("CSchemaSystemTypeScope::FindType_Atomic_I",
-		"keyed by atomic ID and an integer whose meaning is type-specific");
-
-	context.Note("[CSchemaSystemTypeScope] not called - writes through an out pointer "
-	             "that outlives the call");
-
-	// These take the address of a caller-owned pointer and, on a miss, appear
-	// to keep it so a later registration can fill it in. Handing the engine a
-	// stack address it might write to after this function returns is a hazard
-	// worth more than the coverage.
-	context.SkipCall("CSchemaSystemTypeScope::ResolveAtomicInfoThreadsafe",
-		"stores the address of a caller-owned pointer for deferred fill-in; "
-		"a stack address handed to the engine would dangle on a miss");
-	context.SkipCall("CSchemaSystemTypeScope::ResolveEnumInfoThreadsafe", "same");
-	context.SkipCall("CSchemaSystemTypeScope::ResolveClassInfoThreadsafe", "same");
 
 	context.Note("[CSchemaType] not called");
 

@@ -115,6 +115,7 @@ private:
 	void ExerciseClassGraph(TestContext& context);
 	void ExerciseSchemaTypeVirtuals(TestContext& context);
 	void ExerciseAtomicLookups(TestContext& context);
+	void ExerciseInternLookups(TestContext& context);
 
 	// ---- layout ------------------------------------------------------------
 
