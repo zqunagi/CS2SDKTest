@@ -146,6 +146,32 @@ GameEventManager (slot 93 on ISource2Server), the ecosystem's route to
 IGameEventManager2; nothing consumes that route anymore, so the row
 records the number and skips the decode.
 
+Which s2sdk headers each suite covers (paths relative to s2sdk/public unless
+noted). Derived from what the suites include and exercise; the suite name is
+the unit, the directory is not, so one suite can span several. When bumping the
+submodule, `git -C s2sdk diff --stat <old>..<new> -- public game common` lists
+the headers that moved, and this table says which suites to re-audit (use
+`.claude/skills/cs2-add-suite/scripts/audit-coverage.sh` for the method-level
+check).
+
+  Source2EngineSuite       engine2/isource2engine.h, engine2/ivengineserver2.h, engine2/gameshareddefs.h (CGlobalVars), appframework/iappsystem.h
+  Source2ServerSuite       engine2/isource2server.h (ISource2Server)
+  Source2GameClientsSuite  engine2/isource2server.h (ISource2GameClients), engine2/ivengineserver2.h
+  ServerConfigSuite        engine2/isource2serverconfig.h, steam/steamuniverse.h
+  ConVarSuite              tier0/icvar.h, tier0/convar.h
+  SchemaSystemSuite        schemasystem/schemasystem.h, schemasystem/ischemasystem.h
+  GameEntitySystemSuite    entity2/entitysystem.h, entity2/entityinstance.h, entity2/entityclass.h, engine2/igameresourceservice.h,
+                           s2sdk/game/shared/gameentitysystem.h; compiles s2sdk/entity2/*.cpp
+  GameEventSuite           engine2/igameeventsystem.h, igameevents.h (IGameEventManager2), networksystem/inetworkmessages.h
+  NetworkServerSuite       engine2/inetworkserverservice.h, engine2/inetworkgameserver.h, engine2/networkgameserverbase.h,
+                           engine2/gamesessionconfiguration.h, engine2/iengineservicemgr.h, engine2/gameshareddefs.h, tier0/netadr.h
+  NetworkMessagesSuite     networksystem/inetworkmessages.h, networksystem/inetworkserializer.h, tier0/logging.h (LoggingChannel_t),
+                           protobuf messages generated from s2sdk/common (netmessages.pb.h)
+  FileSystemSuite          filesystem/ifilesystem.h, tier0/utlbuffer.h
+  GamedataSuite            no header of its own: configs/gamedata.toml; cross-checks against engine2/isource2server.h
+                           (CCheckTransmitInfo), engine2/igameresourceservice.h and the entity2/ headers
+  MetamodListenerSuite     metamod-source ISmmPlugin.h, not s2sdk; reads engine2/isource2serverconfig.h and engine2/ivengineserver2.h
+
 Vocabulary: a *module* in this codebase is always a loaded shared library
 (engine2.so, server.so — see data/GameModules.h). A *suite* is one of these
 files: our test code for one interface that lives inside such a module.
