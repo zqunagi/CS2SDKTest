@@ -28,7 +28,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # -----------------------------------------------------------------------------
 #  Options
 # -----------------------------------------------------------------------------
-set(CS2SDKTEST_HL2SDK_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/s2sdk"
+set(CS2SDKTEST_S2SDK_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/s2sdk"
     CACHE PATH "Path to the s2sdk checkout (cs2 branch)")
 set(CS2SDKTEST_METAMOD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/metamod-source"
     CACHE PATH "Path to the metamod-source checkout")
@@ -83,7 +83,7 @@ set(CS2SDKTEST_TARGET_NAME  "cs2sdktest")
 # -----------------------------------------------------------------------------
 #  Dependencies
 # -----------------------------------------------------------------------------
-include(HL2SDK)
+include(S2SDK)
 include(Metamod)
 include(PluginVersion)
 if(CS2SDKTEST_WITH_PROTOBUF)
@@ -97,7 +97,7 @@ else()
 endif()
 
 cs2sdktest_resolve_git_revision(CS2SDKTEST_GIT_REVISION)
-cs2sdktest_resolve_sdk_revision("${CS2SDKTEST_HL2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
+cs2sdktest_resolve_sdk_revision("${CS2SDKTEST_S2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
 set(CS2SDKTEST_FULL_VERSION "${PROJECT_VERSION}-${CS2SDKTEST_GIT_REVISION}")
 
 # -----------------------------------------------------------------------------
@@ -219,11 +219,11 @@ set(CS2SDKTEST_HEADERS
 # a crash. They need a definition of GameEntitySystem(), which the suite
 # supplies.
 set(CS2SDKTEST_SDK_SOURCES
-  "${HL2SDK_ROOT}/entity2/entitysystem.cpp"
-  "${HL2SDK_ROOT}/entity2/entityidentity.cpp"
+  "${S2SDK_ROOT}/entity2/entitysystem.cpp"
+  "${S2SDK_ROOT}/entity2/entityidentity.cpp"
 )
 if(CS2SDKTEST_USE_MEMOVERRIDE)
-  list(APPEND CS2SDKTEST_SDK_SOURCES "${HL2SDK_ROOT}/public/tier0/memoverride.cpp")
+  list(APPEND CS2SDKTEST_SDK_SOURCES "${S2SDK_ROOT}/public/tier0/memoverride.cpp")
 endif()
 
 add_library(cs2sdktest MODULE
@@ -267,7 +267,7 @@ endif()
 
 target_link_libraries(cs2sdktest PRIVATE
   metamod::metamod
-  hl2sdk::hl2sdk
+  s2sdk::s2sdk
 )
 
 # Upstream s2sdk builds itself as C++20 (AMBuildScript, Oct 2026); matching it
@@ -302,7 +302,7 @@ foreach(_config IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
   )
 endforeach()
 
-# Warnings for our own sources only - the SDK's are silenced in hl2sdk::headers.
+# Warnings for our own sources only - the SDK's are silenced in s2sdk::headers.
 if(MSVC)
   target_compile_options(cs2sdktest PRIVATE /W4)
   # C4355 fires on every suite constructor: the KHook::Virtual initializers

@@ -27,7 +27,7 @@ else()
   set(_protoc_relative "devtools/bin/linux/protoc")
 endif()
 
-set(CS2SDKTEST_PROTOC "${HL2SDK_ROOT}/${_protoc_relative}")
+set(CS2SDKTEST_PROTOC "${S2SDK_ROOT}/${_protoc_relative}")
 if(NOT EXISTS "${CS2SDKTEST_PROTOC}")
   message(FATAL_ERROR
     "s2sdk does not ship a protoc at '${CS2SDKTEST_PROTOC}'.\n"
@@ -52,7 +52,7 @@ endif()
 
 message(STATUS "protoc: ${CS2SDKTEST_PROTOC} (${_protoc_version})")
 
-set(CS2SDKTEST_PROTO_DIR "${HL2SDK_ROOT}/common")
+set(CS2SDKTEST_PROTO_DIR "${S2SDK_ROOT}/common")
 set(CS2SDKTEST_PROTO_OUT_DIR "${CMAKE_BINARY_DIR}/generated/protobuf")
 
 # Generates C++ sources for each named .proto (without extension, relative to
@@ -157,7 +157,7 @@ function(cs2sdktest_generate_protobuf out_sources_var)
               "--proto_path=${_stage_dir}"
               # descriptor.proto and the other well-known types are imported by
               # the SDK's protos and live in the bundled protobuf tree.
-              "--proto_path=${HL2SDK_ROOT}/thirdparty/protobuf-3.21.8/src"
+              "--proto_path=${S2SDK_ROOT}/thirdparty/protobuf-3.21.8/src"
               "--cpp_out=${CS2SDKTEST_PROTO_OUT_DIR}"
               "${_input}"
       DEPENDS "${_input}" "${CS2SDKTEST_PROTOC}"

@@ -43,7 +43,7 @@ target_compile_definitions(metamod_headers INTERFACE
   META_IS_SOURCE2
 )
 
-target_link_libraries(metamod_headers INTERFACE hl2sdk::headers)
+target_link_libraries(metamod_headers INTERFACE s2sdk::headers)
 
 # Read the Metamod API version out of the headers so the plugin can report the
 # version it was built against, and so a Metamod bump is visible in the diff.

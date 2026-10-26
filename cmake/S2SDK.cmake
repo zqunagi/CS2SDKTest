@@ -1,14 +1,14 @@
 # =============================================================================
-#  HL2SDK.cmake
+#  S2SDK.cmake
 #
 #  Defines the imported targets used to compile against the Source 2 (CS2)
-#  branch of s2sdk (formerly hl2sdk; the checkout folder was renamed with the
-#  upstream repository, the target names were not):
+#  branch of s2sdk (formerly hl2sdk; the checkout folder, the CMake variables
+#  and the target names all follow the upstream rename):
 #
-#    hl2sdk::headers   INTERFACE  - include paths + platform/compiler defines
-#    hl2sdk::tier1     STATIC     - the handful of tier1 .cpp files that are
-#                                   shipped as source rather than as a library
-#    hl2sdk::hl2sdk    INTERFACE  - headers + tier1 + the prebuilt libraries
+#    s2sdk::headers   INTERFACE  - include paths + platform/compiler defines
+#    s2sdk::tier1     STATIC     - the handful of tier1 .cpp files that are
+#                                 shipped as source rather than as a library
+#    s2sdk::s2sdk     INTERFACE  - headers + tier1 + the prebuilt libraries
 #
 #  All flags mirror what alliedmodders' own build does, as encoded in
 #  hl2sdk-manifests/manifests/cs2.json and SdkHelpers.ambuild. Keep them in
@@ -16,15 +16,15 @@
 #  fail loudly, it silently changes struct layout and calling conventions.
 # =============================================================================
 
-if(TARGET hl2sdk::hl2sdk)
+if(TARGET s2sdk::s2sdk)
   return()
 endif()
 
-set(HL2SDK_ROOT "${CS2SDKTEST_HL2SDK_DIR}" CACHE PATH "Root of the s2sdk checkout")
+set(S2SDK_ROOT "${CS2SDKTEST_S2SDK_DIR}" CACHE PATH "Root of the s2sdk checkout")
 
-if(NOT EXISTS "${HL2SDK_ROOT}/public/interfaces/interfaces.h")
+if(NOT EXISTS "${S2SDK_ROOT}/public/interfaces/interfaces.h")
   message(FATAL_ERROR
-    "s2sdk not found at '${HL2SDK_ROOT}'.\n"
+    "s2sdk not found at '${S2SDK_ROOT}'.\n"
     "Run: git submodule update --init --recursive")
 endif()
 
@@ -35,38 +35,38 @@ endif()
 #  ("code": 25). Metamod headers switch on these, so the value must match the
 #  upstream manifest exactly.
 # -----------------------------------------------------------------------------
-set(HL2SDK_ENGINE_NAME "cs2")
-set(HL2SDK_ENGINE_CODE 25)
+set(S2SDK_ENGINE_NAME "cs2")
+set(S2SDK_ENGINE_CODE 25)
 
 # -----------------------------------------------------------------------------
-#  hl2sdk::headers
+#  s2sdk::headers
 # -----------------------------------------------------------------------------
-add_library(hl2sdk_headers INTERFACE)
-add_library(hl2sdk::headers ALIAS hl2sdk_headers)
+add_library(s2sdk_headers INTERFACE)
+add_library(s2sdk::headers ALIAS s2sdk_headers)
 
 # Mirrors "include_paths" in manifests/cs2.json. The SDK's Oct 2026 reorg
 # moved the engine headers to public/engine2 and folded tier1 into tier0
 # (Valve's lowercase names); public/engine and public/tier1 are gone.
-set(_hl2sdk_includes
-  "${HL2SDK_ROOT}"
-  "${HL2SDK_ROOT}/public"
-  "${HL2SDK_ROOT}/public/engine2"
-  "${HL2SDK_ROOT}/public/mathlib"
-  "${HL2SDK_ROOT}/public/tier0"
-  "${HL2SDK_ROOT}/public/entity2"
-  "${HL2SDK_ROOT}/game/shared"
-  "${HL2SDK_ROOT}/common"
-  "${HL2SDK_ROOT}/thirdparty/protobuf-3.21.8/src"
+set(_s2sdk_includes
+  "${S2SDK_ROOT}"
+  "${S2SDK_ROOT}/public"
+  "${S2SDK_ROOT}/public/engine2"
+  "${S2SDK_ROOT}/public/mathlib"
+  "${S2SDK_ROOT}/public/tier0"
+  "${S2SDK_ROOT}/public/entity2"
+  "${S2SDK_ROOT}/game/shared"
+  "${S2SDK_ROOT}/common"
+  "${S2SDK_ROOT}/thirdparty/protobuf-3.21.8/src"
 )
-foreach(_dir IN LISTS _hl2sdk_includes)
+foreach(_dir IN LISTS _s2sdk_includes)
   if(EXISTS "${_dir}")
-    target_include_directories(hl2sdk_headers SYSTEM INTERFACE "${_dir}")
+    target_include_directories(s2sdk_headers SYSTEM INTERFACE "${_dir}")
   endif()
 endforeach()
 
-target_compile_definitions(hl2sdk_headers INTERFACE
-  SOURCE_ENGINE=${HL2SDK_ENGINE_CODE}
-  SE_CS2=${HL2SDK_ENGINE_CODE}
+target_compile_definitions(s2sdk_headers INTERFACE
+  SOURCE_ENGINE=${S2SDK_ENGINE_CODE}
+  SE_CS2=${S2SDK_ENGINE_CODE}
   GAME_DLL
   RAD_TELEMETRY_DISABLED
   # Every Source 2 target is 64-bit; the SDK has no 32-bit libs on this branch.
@@ -86,7 +86,7 @@ if(MSVC)
   # defined in CMakeLists.txt afterwards.
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
-  target_compile_definitions(hl2sdk_headers INTERFACE
+  target_compile_definitions(s2sdk_headers INTERFACE
     COMPILER_MSVC
     COMPILER_MSVC64
     WIN32
@@ -99,7 +99,7 @@ if(MSVC)
     _ALLOW_ITERATOR_DEBUG_LEVEL_MISMATCH
     _ALLOW_MSC_VER_MISMATCH
   )
-  target_compile_options(hl2sdk_headers INTERFACE
+  target_compile_options(s2sdk_headers INTERFACE
     /permissive-      # the SDK relies on some MSVC-isms but compiles clean here
     /Zc:__cplusplus
     /wd4005           # macro redefinition (SDK redefines several CRT names)
@@ -107,13 +107,13 @@ if(MSVC)
     /wd4267 /wd4244   # size_t/int narrowing, pervasive in the SDK
     /wd4355           # 'this' used in base member initializer list
   )
-  target_link_libraries(hl2sdk_headers INTERFACE legacy_stdio_definitions.lib)
+  target_link_libraries(s2sdk_headers INTERFACE legacy_stdio_definitions.lib)
   # Valve ships the .lib files without their .pdb; LNK4099 on every one of them
   # is noise, not a finding.
-  target_link_options(hl2sdk_headers INTERFACE /ignore:4099)
+  target_link_options(s2sdk_headers INTERFACE /ignore:4099)
 else()
   # POSIX must be defined or public/tier0/platform.h hits its #error branch.
-  target_compile_definitions(hl2sdk_headers INTERFACE
+  target_compile_definitions(s2sdk_headers INTERFACE
     COMPILER_GCC
     POSIX
     _LINUX
@@ -132,7 +132,7 @@ else()
     _alloca=alloca
     _finite=finite
   )
-  target_compile_options(hl2sdk_headers INTERFACE
+  target_compile_options(s2sdk_headers INTERFACE
     -fPIC
     -fno-strict-aliasing
     -march=nocona -mmmx -msse -msse2
@@ -151,36 +151,36 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
-#  hl2sdk::tier1
+#  s2sdk::tier1
 #
 #  There is no prebuilt tier1 on this branch: the headers are template-only
 #  code and the few real translation units live in s2sdk/tier0_perproject/
 #  (moved there from tier1/ in the Oct 2026 reorg). convar.cpp is mandatory
 #  for anything that registers a ConVar/ConCommand.
 # -----------------------------------------------------------------------------
-set(_hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier0_perproject/convar.cpp")
+set(_s2sdk_tier1_sources "${S2SDK_ROOT}/tier0_perproject/convar.cpp")
 
 if(CS2SDKTEST_TIER1_KEYVALUES3)
-  list(APPEND _hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier0_perproject/keyvalues3.cpp")
+  list(APPEND _s2sdk_tier1_sources "${S2SDK_ROOT}/tier0_perproject/keyvalues3.cpp")
 endif()
 if(CS2SDKTEST_TIER1_BITBUF)
-  list(APPEND _hl2sdk_tier1_sources "${HL2SDK_ROOT}/tier0_perproject/bitbuf.cpp")
+  list(APPEND _s2sdk_tier1_sources "${S2SDK_ROOT}/tier0_perproject/bitbuf.cpp")
 endif()
 
-add_library(hl2sdk_tier1 STATIC ${_hl2sdk_tier1_sources})
-add_library(hl2sdk::tier1 ALIAS hl2sdk_tier1)
+add_library(s2sdk_tier1 STATIC ${_s2sdk_tier1_sources})
+add_library(s2sdk::tier1 ALIAS s2sdk_tier1)
 
 # Foreign sources, compiled but not maintained here; silenced the same way
 # CMakeLists.txt silences the entity2 .cpp files and the protoc output. On
 # Linux bitbuf.cpp's `g_ExtraMasks[32] = ~0ul` warns - unsigned long is 64-bit
 # there and the truncation to uint32 is exactly the all-ones mask it wants.
 if(NOT MSVC)
-  set_source_files_properties(${_hl2sdk_tier1_sources} PROPERTIES
+  set_source_files_properties(${_s2sdk_tier1_sources} PROPERTIES
     COMPILE_OPTIONS "-w"
   )
 endif()
 
-set_target_properties(hl2sdk_tier1 PROPERTIES
+set_target_properties(s2sdk_tier1 PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   # AMBuildScript in s2sdk builds everything as C++20 now; keep the tier1
   # translation units this plugin compiles under the same standard.
@@ -188,7 +188,7 @@ set_target_properties(hl2sdk_tier1 PROPERTIES
   CXX_STANDARD_REQUIRED ON
   FOLDER "third_party"
 )
-target_link_libraries(hl2sdk_tier1 PUBLIC hl2sdk::headers)
+target_link_libraries(s2sdk_tier1 PUBLIC s2sdk::headers)
 
 # -----------------------------------------------------------------------------
 #  Prebuilt libraries
@@ -198,11 +198,11 @@ target_link_libraries(hl2sdk_tier1 PUBLIC hl2sdk::headers)
 #  (g_pCVar, g_pSchemaSystem, ...) are undefined symbols, and without tier0 the
 #  CUtl* container templates have no allocator.
 # -----------------------------------------------------------------------------
-add_library(hl2sdk_libs INTERFACE)
-add_library(hl2sdk::libs ALIAS hl2sdk_libs)
+add_library(s2sdk_libs INTERFACE)
+add_library(s2sdk::libs ALIAS s2sdk_libs)
 
-function(_hl2sdk_require_lib out_var relative_path)
-  set(_full "${HL2SDK_ROOT}/${relative_path}")
+function(_s2sdk_require_lib out_var relative_path)
+  set(_full "${S2SDK_ROOT}/${relative_path}")
   if(NOT EXISTS "${_full}")
     message(FATAL_ERROR "s2sdk library missing: ${_full}")
   endif()
@@ -210,30 +210,30 @@ function(_hl2sdk_require_lib out_var relative_path)
 endfunction()
 
 if(WIN32)
-  _hl2sdk_require_lib(_lib_tier0      "lib/public/win64/tier0.lib")
-  _hl2sdk_require_lib(_lib_interfaces "lib/public/win64/interfaces.lib")
-  _hl2sdk_require_lib(_lib_mathlib    "lib/public/win64/mathlib.lib")
+  _s2sdk_require_lib(_lib_tier0      "lib/public/win64/tier0.lib")
+  _s2sdk_require_lib(_lib_interfaces "lib/public/win64/interfaces.lib")
+  _s2sdk_require_lib(_lib_mathlib    "lib/public/win64/mathlib.lib")
 
-  target_link_libraries(hl2sdk_libs INTERFACE
+  target_link_libraries(s2sdk_libs INTERFACE
     "${_lib_tier0}"
     "${_lib_interfaces}"
     "${_lib_mathlib}"
   )
 
   if(CS2SDKTEST_WITH_PROTOBUF)
-    _hl2sdk_require_lib(_lib_protobuf "lib/public/win64/2015/libprotobuf.lib")
-    target_link_libraries(hl2sdk_libs INTERFACE "${_lib_protobuf}")
+    _s2sdk_require_lib(_lib_protobuf "lib/public/win64/2015/libprotobuf.lib")
+    target_link_libraries(s2sdk_libs INTERFACE "${_lib_protobuf}")
   endif()
 
-  set(HL2SDK_RUNTIME_DEPENDENCIES "" CACHE INTERNAL "")
+  set(S2SDK_RUNTIME_DEPENDENCIES "" CACHE INTERNAL "")
 else()
-  _hl2sdk_require_lib(_lib_tier0      "lib/linux64/libtier0.so")
-  _hl2sdk_require_lib(_lib_interfaces "lib/linux64/interfaces.a")
-  _hl2sdk_require_lib(_lib_mathlib    "lib/linux64/mathlib.a")
+  _s2sdk_require_lib(_lib_tier0      "lib/linux64/libtier0.so")
+  _s2sdk_require_lib(_lib_interfaces "lib/linux64/interfaces.a")
+  _s2sdk_require_lib(_lib_mathlib    "lib/linux64/mathlib.a")
 
   # The static archives must follow our own objects on the link line, hence
   # the explicit ordering here rather than a bare target_link_libraries set.
-  target_link_libraries(hl2sdk_libs INTERFACE
+  target_link_libraries(s2sdk_libs INTERFACE
     "${_lib_tier0}"
     "${_lib_interfaces}"
     "${_lib_mathlib}"
@@ -242,24 +242,24 @@ else()
   )
 
   if(CS2SDKTEST_WITH_PROTOBUF)
-    _hl2sdk_require_lib(_lib_protobuf "lib/linux64/release/libprotobuf.a")
-    target_link_libraries(hl2sdk_libs INTERFACE "${_lib_protobuf}")
+    _s2sdk_require_lib(_lib_protobuf "lib/linux64/release/libprotobuf.a")
+    target_link_libraries(s2sdk_libs INTERFACE "${_lib_protobuf}")
   endif()
 
   # libtier0.so has to sit next to the plugin binary at runtime; the game ships
   # its own copy, so this is only a build-tree convenience.
-  set(HL2SDK_RUNTIME_DEPENDENCIES "${_lib_tier0}" CACHE INTERNAL "")
+  set(S2SDK_RUNTIME_DEPENDENCIES "${_lib_tier0}" CACHE INTERNAL "")
 endif()
 
 # -----------------------------------------------------------------------------
 #  Umbrella target
 # -----------------------------------------------------------------------------
-add_library(hl2sdk_all INTERFACE)
-add_library(hl2sdk::hl2sdk ALIAS hl2sdk_all)
-target_link_libraries(hl2sdk_all INTERFACE
-  hl2sdk::headers
-  hl2sdk::tier1
-  hl2sdk::libs
+add_library(s2sdk_all INTERFACE)
+add_library(s2sdk::s2sdk ALIAS s2sdk_all)
+target_link_libraries(s2sdk_all INTERFACE
+  s2sdk::headers
+  s2sdk::tier1
+  s2sdk::libs
 )
 
-message(STATUS "s2sdk: ${HL2SDK_ROOT} (engine '${HL2SDK_ENGINE_NAME}', SOURCE_ENGINE=${HL2SDK_ENGINE_CODE})")
+message(STATUS "s2sdk: ${S2SDK_ROOT} (engine '${S2SDK_ENGINE_NAME}', SOURCE_ENGINE=${S2SDK_ENGINE_CODE})")

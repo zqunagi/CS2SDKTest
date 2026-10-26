@@ -91,7 +91,7 @@ constexpr std::size_t kNetMessageHeaderSize = 0x30;
 // tier1/bitbuf.cpp, which no prebuilt library exports - tier0 contains exactly
 // two bitbuf-mentioning symbols, netadr_t::Serialize and netadr_t::Unserialize,
 // and neither is a constructor. The CS2SDKTEST_TIER1_BITBUF option compiles
-// that translation unit into hl2sdk::tier1 (this suite is why it defaults to
+// that translation unit into s2sdk::tier1 (this suite is why it defaults to
 // ON); a build with it off reports the serialization methods as SKIP with this
 // reason rather than pretending to cover them.
 

@@ -31,8 +31,8 @@
 
 /* Build environment - written into every log header, so a log found later can
  * be tied back to the exact SDK and toolchain that produced it. */
-#define PLUGIN_SDK_ENGINE       "@HL2SDK_ENGINE_NAME@"
-#define PLUGIN_SDK_ENGINE_CODE  @HL2SDK_ENGINE_CODE@
+#define PLUGIN_SDK_ENGINE       "@S2SDK_ENGINE_NAME@"
+#define PLUGIN_SDK_ENGINE_CODE  @S2SDK_ENGINE_CODE@
 #define PLUGIN_MM_PLAPI_VERSION @METAMOD_PLAPI_VERSION@
 #define PLUGIN_BUILD_PLATFORM   "@CS2SDKTEST_PLATFORM@"
 #define PLUGIN_BUILD_COMPILER   "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@"
