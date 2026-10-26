@@ -2,9 +2,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <appframework/iappsystem.h>
 #include <engine2/isource2server.h>
+#include <steam/steamclientpublic.h>
 #include <tier0/buffer_string.h>
 #include <tier0/utlbuffer.h>
 #include <tier0/utlstring.h>
@@ -100,6 +102,7 @@ void Source2ServerSuite::ExerciseCalls(TestContext& context)
 	ExerciseAppSystem(context);
 	ExerciseServerState(context);
 	ExerciseEnumerations(context);
+	ExerciseLookups(context);
 	NoteSideEffectingCalls(context);
 }
 
@@ -363,6 +366,221 @@ void Source2ServerSuite::ExerciseEnumerations(TestContext& context)
 }
 
 // -----------------------------------------------------------------------------
+//  Lookups, policy questions and no-op notifications with inert arguments
+//
+//  Every name below is one no game content will have, every id one no entity or
+//  client holds, so each call answers from its rules alone and changes nothing
+//  later suites look at. A hook, if installed, will see the ones that are hooked.
+// -----------------------------------------------------------------------------
+
+void Source2ServerSuite::ExerciseLookups(TestContext& context)
+{
+	context.Note("[ISource2Server] lookups with names and ids that match nothing");
+
+	constexpr const char* kNoSuchName = "cs2sdktest_no_such_name";
+	const CEntityIndex no_entity(-1);
+	const CSteamID no_steam_id;
+
+	CS2ST_CALL(context, "ISource2Server::GetEntity2Networkable", {
+		Entity2Networkable_t out;
+		std::memset(static_cast<void*>(&out), 0, sizeof(out));
+		const bool found = server_->GetEntity2Networkable(no_entity, &out);
+		context.Detail("-> %s for entity index -1", found ? "true" : "false");
+		if (found)
+		{
+			context.Suspect("an invalid entity index resolved to a networkable");
+		}
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetEntityUniqueHammerID", {
+		const char* id = server_->GetEntityUniqueHammerID(no_entity);
+		context.Detail("-> %s for entity index -1", id != nullptr ? id : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::PrintStatus", {
+		CBufferStringN<512> output(false);
+		server_->PrintStatus(no_entity, output);
+		context.Detail("-> %d byte(s) for entity index -1: \"%.100s\"",
+			output.Length(), output.Get());
+		if (output.Length() > output.AllocatedNum())
+		{
+			context.Fail("length exceeds the allocation; the layout does not hold");
+		}
+	});
+
+	// ---- VData / subclass scopes: a null scope matches any, so a nonexistent
+	// ---- name is what makes the answer small and checkable.
+
+	CS2ST_CALL(context, "ISource2Server::GetVDataClassName", {
+		const char* name = server_->GetVDataClassName(kNoSuchName, nullptr);
+		context.Detail("-> %s", name != nullptr ? name : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetVDataClassNameByDataType", {
+		const char* name = server_->GetVDataClassNameByDataType(kNoSuchName, kNoSuchName);
+		context.Detail("-> %s", name != nullptr ? name : "(null)");
+	});
+
+	// Observed: both of these SIGSEGV at address 0, for a nonexistent scope and
+	// for the empty one the SDK documents as "matches any". The SDK declares a
+	// reference return, and reading through a null one is exactly that fault -
+	// but the fault could equally be inside the engine, and a reference cannot be
+	// null-checked (the compiler may assume it is not). So the same slot is called
+	// through a pointer-returning signature, identical in the ABI, and the pointer
+	// is checked before anything reads it. If this still crashes, it is inside the
+	// engine and not our read.
+	using SubclassNamesFn = const CUtlVector<CUtlString>* (ISource2Server::*)(const char*);
+
+	CS2ST_CALL(context, "ISource2Server::GetSubclassNamesInScope", {
+		const SubclassNamesFn call = reinterpret_cast<SubclassNamesFn>(
+			&ISource2Server::GetSubclassNamesInScope);
+		const CUtlVector<CUtlString>* names = (server_->*call)("");
+		if (names == nullptr)
+		{
+			context.Detail("-> null reference for the empty (any) scope");
+			return;
+		}
+		context.Detail("-> %d name(s) for the empty (any) scope", names->Count());
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetSubclassNamesInScopeByDataType", {
+		const SubclassNamesFn call = reinterpret_cast<SubclassNamesFn>(
+			&ISource2Server::GetSubclassNamesInScopeByDataType);
+		const CUtlVector<CUtlString>* names = (server_->*call)("");
+		if (names == nullptr)
+		{
+			context.Detail("-> null reference for the empty (any) data type");
+			return;
+		}
+		context.Detail("-> %d name(s) for the empty (any) data type", names->Count());
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetAllSubclassNames", {
+		CUtlVector<CUtlString> names;
+		UtlVectorGuard<decltype(names)> names_guard(names);
+		server_->GetAllSubclassNames(names);
+		context.Detail("-> %d subclass name(s)", names.Count());
+		NoteListPreview(context, names);
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetSubclassDesignerName", {
+		const char* name = server_->GetSubclassDesignerName(kNoSuchName);
+		context.Detail("-> %s", name != nullptr ? name : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetDesignerNamesForClass", {
+		const CUtlVector<CUtlString>& names = server_->GetDesignerNamesForClass(kNoSuchName);
+		context.Detail("-> %d name(s) for a nonexistent class", names.Count());
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetNativeClassForScriptClass", {
+		const char* name = server_->GetNativeClassForScriptClass(kNoSuchName);
+		context.Detail("-> %s", name != nullptr ? name : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetScriptClassForDesignerName", {
+		CEntityClass* entity_class = server_->GetScriptClassForDesignerName(kNoSuchName);
+		context.Detail("-> %p", static_cast<void*>(entity_class));
+		if (entity_class != nullptr)
+		{
+			context.Suspect("a nonexistent designer name resolved to a class");
+		}
+	});
+
+	CS2ST_CALL(context, "ISource2Server::IsScriptClassDerivedFrom", {
+		const bool derived = server_->IsScriptClassDerivedFrom(kNoSuchName, kNoSuchName);
+		context.Detail("-> %s for two nonexistent classes", derived ? "true" : "false");
+	});
+
+	// ---- save pipeline: queries, and a path computation, on a save that does
+	// ---- not exist. Nothing here starts, drives or finishes a save.
+
+	bool pending = false;
+	CS2ST_CALL(context, "ISource2Server::IsAsyncSaveInProgress", {
+		context.Detail("-> %s", server_->IsAsyncSaveInProgress() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::HasPendingSaveRequest", {
+		pending = server_->HasPendingSaveRequest();
+		context.Detail("-> %s", pending ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::ProcessPendingSaveRequest", {
+		if (pending)
+		{
+			context.SkipCall("ISource2Server::ProcessPendingSaveRequest",
+				"a save request is pending; processing it would start a real save");
+			return;
+		}
+		context.Detail("-> %s with nothing pending",
+			server_->ProcessPendingSaveRequest() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::SaveGame_CalcFileName", {
+		CUtlString file_name;
+		const bool ok = server_->SaveGame_CalcFileName(kNoSuchName, file_name);
+		context.Detail("-> %s \"%s\"", ok ? "true" : "false",
+			file_name.Get() != nullptr ? file_name.Get() : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetRequiredAddonsFromSaveFile", {
+		CUtlString addons;
+		const bool ok = server_->GetRequiredAddonsFromSaveFile(kNoSuchName, addons);
+		context.Detail("-> %s for a save that does not exist (\"%s\")", ok ? "true" : "false",
+			addons.Get() != nullptr ? addons.Get() : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::GetAddonForMap", {
+		CUtlString addon;
+		const bool ok = server_->GetAddonForMap(kNoSuchName, addon);
+		context.Detail("-> %s for a nonexistent map (\"%s\")", ok ? "true" : "false",
+			addon.Get() != nullptr ? addon.Get() : "(null)");
+	});
+
+	// ---- policy questions about nobody.
+
+	CS2ST_CALL(context, "ISource2Server::GetClientConnectRejectReason", {
+		const int reason = static_cast<int>(server_->GetClientConnectRejectReason(no_steam_id));
+		context.Detail("-> %d for an invalid SteamID", reason);
+	});
+
+	CS2ST_CALL(context, "ISource2Server::ClientConnectionValidatePreNetChan", {
+		const char* answer = server_->ClientConnectionValidatePreNetChan(no_steam_id, "cs2sdktest");
+		context.Detail("-> %s for an invalid SteamID (null means accepted)",
+			answer != nullptr ? answer : "(null)");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::ShouldHoldGameServerReservation", {
+		context.Detail("-> %s at 0s without clients",
+			server_->ShouldHoldGameServerReservation(0.0f) ? "true" : "false");
+	});
+
+	// ---- notifications with a payload that carries nothing.
+
+	CS2ST_CALL(context, "ISource2Server::ServerConVarChanged", {
+		server_->ServerConVarChanged("cs2sdktest_no_such_cvar", "0");
+		context.Detail("returned for a convar that does not exist");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::LogForHTTPListeners", {
+		const bool delivered = server_->LogForHTTPListeners("cs2sdktest: LogForHTTPListeners probe");
+		context.Detail("-> %s", delivered ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "ISource2Server::OnSteamAuthWarning", {
+		server_->OnSteamAuthWarning("cs2sdktest: OnSteamAuthWarning probe");
+		context.Detail("returned");
+	});
+
+	// SDK: all four do nothing in CS2. Called anyway - a slot that starts doing
+	// something is the kind of change a rename in the SDK would otherwise hide.
+	CS2ST_CALL(context, "ISource2Server::unk_301", { server_->unk_301(); context.Detail("returned"); });
+	CS2ST_CALL(context, "ISource2Server::unk_302", { server_->unk_302(); context.Detail("returned"); });
+	CS2ST_CALL(context, "ISource2Server::unk_303", { server_->unk_303(); context.Detail("returned"); });
+	CS2ST_CALL(context, "ISource2Server::unk_304", { server_->unk_304(); context.Detail("returned"); });
+}
+
+// -----------------------------------------------------------------------------
 //  Everything deliberately not called
 // -----------------------------------------------------------------------------
 
@@ -401,28 +619,22 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2Server::ServerConVarChanged",
 		"runs convar change handling - hooked instead");
 
-	// Callable in principle, but they need a structure we cannot honestly
-	// build yet. Separated from the side-effecting list so the reason is clear.
-	context.SkipCall("ISource2Server::GetNavMeshData", "needs a CNavData to fill");
-	context.SkipCall("ISource2Server::GetTaggedConVarList", "needs a KeyValues to fill");
-	context.SkipCall("ISource2Server::PrintStatus", "needs a valid entity index");
-	context.SkipCall("ISource2Server::GetEntity2Networkable",
-		"needs a CEntityIndex-backed out-struct this suite has no honest value for");
-
-	// ---- the save-game tail the Oct 2026 rework added ------------------------
-	// The slots behind GetHitGroupInfo, now all named in the SDK (unk_101/102/
-	// 103/201/301-303 in older logs). KeyValues3 plumbing, save-file lookups
-	// and the async save pipeline; each listed so a future renaming shows as a
-	// diff rather than a gap.
-	context.SkipCall("ISource2Server::WriteStatusJson",
-		"appends the game's fields into a live status_json KeyValues3");
-	context.SkipCall("ISource2Server::SaveGame_CalcFileName",
-		"resolves a save name this suite has no file for");
-	context.SkipCall("ISource2Server::GetRequiredAddonsFromSaveFile",
-		"reads a save file this suite has none of");
+	// Everything not listed here is called, with inert arguments, in
+	// ExerciseLookups / ExerciseServerState. What remains needs a type the SDK
+	// only forward-declares, an object from the engine's heap, a live player, or
+	// would change state the later suites read.
+	context.SkipCall("ISource2Server::GetNavMeshData",
+		"CNavData is only forward-declared, so there is nothing to size an out-struct with");
+	context.SkipCall("ISource2Server::GetTaggedConVarList",
+		"needs a KeyValues from the engine's allocator; this module's heap is not "
+		"the engine's (CS2SDKTEST_USE_MEMOVERRIDE is off)");
 	context.SkipCall("ISource2Server::GetLevelsFromSaveFile",
-		"reads a save file and fills a CCreateGameServerLoadInfo list; there "
-		"is no save to point it at");
+		"CCreateGameServerLoadInfo is only forward-declared, so the out-vector "
+		"cannot be built");
+	context.SkipCall("ISource2Server::FormatSerializerFieldValue",
+		"FlattenedSerializerSpewField_t is only forward-declared");
+	context.SkipCall("ISource2Server::WriteStatusJson",
+		"needs a live KeyValues3 from the engine's allocator");
 	context.SkipCall("ISource2Server::ClearSaveDirectory",
 		"deletes the save directory's contents");
 	context.SkipCall("ISource2Server::PreSaveGameLoaded",
@@ -432,73 +644,42 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2Server::AppendTransitionResources",
 		"grows a live resource manifest");
 	context.SkipCall("ISource2Server::SaveGame",
-		"writes a save file; SaveGameParams_t is only forward-declared, so "
-		"there is nothing honest to pass either");
-	context.SkipCall("ISource2Server::IsAsyncSaveInProgress / "
-		"ProcessPendingSaveRequest / HasPendingSaveRequest",
-		"query and drive a save pipeline this suite never started");
+		"writes a save file; SaveGameParams_t is only forward-declared");
 	context.SkipCall("ISource2Server::FinishAsyncSave",
 		"completes a save this suite never started");
-	context.SkipCall("ISource2Server::GetEntityUniqueHammerID",
-		"needs a valid entity index to mean anything");
-
-	// ---- the VData/GC tail, named in the same SDK update --------------------
-	// Another fifteen slots past GetEntityUniqueHammerID: VData scope lookups,
-	// GC notifications and the user-command capture path. Mostly queries, but
-	// each either needs an argument this suite has no honest value for (a
-	// scope file, a designer name, an account id) or touches GC state.
-	context.SkipCall("ISource2Server::GetVDataClassName / "
-		"GetVDataClassNameByDataType / GetSubclassNamesInScope / "
-		"GetSubclassNamesInScopeByDataType / GetAllSubclassNames",
-		"VData scope lookups; the empty-scope form would enumerate the whole "
-		"dictionary, which belongs to SchemaSystemSuite's side of the fence");
-	context.SkipCall("ISource2Server::GetSubclassDesignerName / "
-		"GetDesignerNamesForClass",
-		"need a designer name / class name to look up");
 	context.SkipCall("ISource2Server::UpdateGCInformation",
 		"pushes GC state updates");
-	context.SkipCall("ISource2Server::unk_101",
-		"unidentified in the SDK; AMNOTE says it does nothing in CS2");
 	context.SkipCall("ISource2Server::ReportGCQueuedMatchStart",
 		"feeds a GC match-start reservation with account ids");
+	context.SkipCall("ISource2Server::unk_101",
+		"unidentified; two void* arguments the game may dereference");
 	context.SkipCall("ISource2Server::unk_201",
-		"unidentified in the SDK; AMNOTE says it forwards main-loop timing to "
-		"the game rules, which ignore it in CS2");
-	context.SkipCall("ISource2Server::GetNativeClassForScriptClass / "
-		"GetScriptClassForDesignerName / IsScriptClassDerivedFrom",
-		"script-class lookups needing a class name this suite has none of");
-	context.SkipCall("ISource2Server::ShouldHoldGameServerReservation",
-		"an idle-reservation policy question the engine asks on its own "
-		"schedule; asking it out of band with 0s elapsed is a factoid, not a "
-		"probe");
-	context.SkipCall("ISource2Server::OnBroadcastRelayRequestSucceeded / "
-		"OnClientHltvReplayStart / OnClientHltvReplayStop",
-		"engine-to-game notifications; calling them would announce events "
-		"that did not happen");
+		"unidentified; a void* argument the game may dereference");
+	context.SkipCall("ISource2Server::OnBroadcastRelayRequestSucceeded",
+		"engine-to-game notification taking an unidentified pointer");
+	context.SkipCall("ISource2Server::OnClientHltvReplayStart",
+		"engine-to-game notification that indexes a client by slot; this suite has "
+		"no proven-empty slot (Source2GameClientsSuite does)");
+	context.SkipCall("ISource2Server::OnClientHltvReplayStop",
+		"engine-to-game notification that indexes a client by slot; this suite has "
+		"no proven-empty slot (Source2GameClientsSuite does)");
 	context.SkipCall("ISource2Server::SendServerFrameTime",
 		"feeds the game's frame-time tracking out of band");
-	context.SkipCall("ISource2Server::FormatSerializerFieldValue",
-		"needs a FlattenedSerializerSpewField_t to fill");
-	context.SkipCall("ISource2Server::CaptureUserCommands / "
-		"CreateUserCommandsMessage",
-		"the user-command capture path the engine drives at frame time");
-	context.SkipCall("ISource2Server::ProcessClientStringCommand / "
-		"OnPreMatchInterfaceCommand / SetPlayerTeammatePreferredColor / "
-		"UpdateCompTeammateColors",
-		"execute or answer client command / GC color state");
-	context.SkipCall("ISource2Server::GetClientConnectRejectReason / "
-		"ClientConnectionValidatePreNetChan",
-		"need a real connecting SteamID to mean anything");
-	context.SkipCall("ISource2Server::LogForHTTPListeners",
-		"would inject a line into the game's HTTP log listeners");
-	context.SkipCall("ISource2Server::unk_301 / unk_302 / unk_303 / unk_304",
-		"unidentified in the SDK; AMNOTE says all four do nothing in CS2");
+	context.SkipCall("ISource2Server::CaptureUserCommands",
+		"the capture path the engine drives at frame time");
+	context.SkipCall("ISource2Server::CreateUserCommandsMessage",
+		"returns an engine allocation that would need freeing, and belongs to the "
+		"capture path the engine drives at frame time");
+	context.SkipCall("ISource2Server::ProcessClientStringCommand",
+		"executes a client command; needs a slot this suite has not proven empty");
+	context.SkipCall("ISource2Server::OnPreMatchInterfaceCommand",
+		"executes a pre-match command for a GC account id");
+	context.SkipCall("ISource2Server::SetPlayerTeammatePreferredColor",
+		"changes GC color state for an account id");
+	context.SkipCall("ISource2Server::UpdateCompTeammateColors",
+		"recomputes GC teammate colors");
 	context.SkipCall("ISource2Server::RegisterClientNetMessageHandlers",
 		"mutates a live net channel's handler table");
-	context.SkipCall("ISource2Server::GetAddonForMap",
-		"needs a map name this suite does not own");
-	context.SkipCall("ISource2Server::OnSteamAuthWarning",
-		"an engine-to-game warning callback");
 	context.SkipCall("ISource2Server::OnNetworkGameServerActivated",
 		"an engine-to-game activation callback");
 }

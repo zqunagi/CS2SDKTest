@@ -117,6 +117,7 @@ private:
 	void ExerciseAppSystem(TestContext& context);
 	void ExerciseServerState(TestContext& context);
 	void ExerciseEnumerations(TestContext& context);
+	void ExerciseLookups(TestContext& context);
 	void NoteSideEffectingCalls(TestContext& context);
 
 	ISource2Server* server_ = nullptr;
