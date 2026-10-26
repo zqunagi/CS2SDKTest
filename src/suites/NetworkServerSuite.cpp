@@ -177,6 +177,233 @@ ICvar* Cvar(TestContext& context)
 	return cvar;
 }
 
+// ---- local netadr_t copies --------------------------------------------------
+
+/** Slots in the scratch storage the local netadr_t rows share. */
+constexpr int kAddrBase      = 0; // 10.20.30.40:27015
+constexpr int kAddrSiblingC  = 1; // 10.20.30.99:27015 - same class C as the base
+constexpr int kAddrSiblingB  = 2; // 10.20.99.40:27015 - same class B, other class C
+constexpr int kAddrStranger  = 3; // 10.99.30.40:27015 - other class B
+constexpr int kAddrOtherPort = 4; // 10.20.30.40:27016 - the base with another port
+constexpr int kAddrAltBuild  = 5; // the base again, built through SetIPAndPort
+constexpr int kAddrParsed    = 6; // the base again, built through SetFromString
+constexpr int kAddrCleared   = 7; // a copy of the base, then Clear()ed
+constexpr int kAddrCount     = 8;
+
+constexpr unsigned short kProbePort = 27015;
+
+/**
+ * One scratch slot as a netadr_t, zeroed and put through Clear + SetType(NA_IP).
+ *
+ * Raw storage and not netadr_t locals for the reason InspectNetworkAddress
+ * gives: the default constructor calls three tier0 functions, and a local would
+ * run them outside the fault guard. This helper is only ever called from inside
+ * a CS2ST_CALL body.
+ */
+netadr_t* FreshAddress(unsigned char* storage, int index)
+{
+	unsigned char* slot = storage + static_cast<std::size_t>(index) * sizeof(netadr_t);
+	std::memset(slot, 0, sizeof(netadr_t));
+	netadr_t* address = reinterpret_cast<netadr_t*>(slot);
+	address->Clear();
+	address->SetType(NA_IP);
+	return address;
+}
+
+netadr_t* AddressAt(unsigned char* storage, int index)
+{
+	return reinterpret_cast<netadr_t*>(storage + static_cast<std::size_t>(index) * sizeof(netadr_t));
+}
+
+netadr_t* BuildAddress(unsigned char* storage, int index,
+	uint8 b1, uint8 b2, uint8 b3, uint8 b4, unsigned short port)
+{
+	netadr_t* address = FreshAddress(storage, index);
+	address->SetIP(b1, b2, b3, b4);
+	address->SetPort(port);
+	return address;
+}
+
+/**
+ * The netadr_t mutators and class comparisons, run against addresses this suite
+ * builds itself. InspectNetworkAddress only reads the one the engine hands out,
+ * which is why none of these could be called there; nothing below touches the
+ * engine's copy, so there is no state to disturb. SetFromString is given a
+ * literal address and the default bUseDNS = false, so it never leaves the
+ * process.
+ */
+void ExerciseLocalNetworkAddress(TestContext& context)
+{
+	context.Note("[netadr_t] mutators and class comparisons on local copies; "
+	             "the engine's address is not touched");
+
+	alignas(netadr_t) unsigned char storage[kAddrCount * sizeof(netadr_t)] = {};
+	bool built = false;
+
+	CS2ST_CALL(context, "netadr_t::Clear / SetType / SetIP(b1..b4) / SetPort (build the local set)", {
+		netadr_t* base = BuildAddress(storage, kAddrBase, 10, 20, 30, 40, kProbePort);
+		BuildAddress(storage, kAddrSiblingC, 10, 20, 30, 99, kProbePort);
+		BuildAddress(storage, kAddrSiblingB, 10, 20, 99, 40, kProbePort);
+		BuildAddress(storage, kAddrStranger, 10, 99, 30, 40, kProbePort);
+		BuildAddress(storage, kAddrOtherPort, 10, 20, 30, 40,
+			static_cast<unsigned short>(kProbePort + 1));
+		built = true;
+
+		const unsigned char* ip_bytes = reinterpret_cast<const unsigned char*>(base)
+			+ offsetof(netadr_t, ip);
+		const char* rendered = base->ToString(false);
+		context.Detail("base -> type %d, port %u, bytes %u.%u.%u.%u, \"%s\"",
+			static_cast<int>(base->GetType()), static_cast<unsigned>(base->GetPort()),
+			ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3],
+			rendered != nullptr ? rendered : "(null)");
+
+		if (base->GetType() != NA_IP)
+		{
+			context.Fail("SetType(NA_IP) did not read back as NA_IP");
+		}
+		if (base->GetPort() != kProbePort)
+		{
+			context.Fail("SetPort(%u) did not read back through GetPort",
+				static_cast<unsigned>(kProbePort));
+		}
+		if (ip_bytes[0] != 10 || ip_bytes[1] != 20 || ip_bytes[2] != 30 || ip_bytes[3] != 40)
+		{
+			// Suspect and not Fail: the SDK does not say SetIP's b1 lands in ip[0].
+			context.Suspect("SetIP(10,20,30,40) did not leave 10.20.30.40 in ip[]");
+		}
+		// The header documents the rendering as xxx.xxx.xxx.xxx:ppppp.
+		if (rendered == nullptr || std::strcmp(rendered, "10.20.30.40:27015") != 0)
+		{
+			context.Fail("ToString did not render the address as xxx.xxx.xxx.xxx:ppppp");
+		}
+	});
+
+	if (!built)
+	{
+		context.SkipCall("netadr_t (local copies)", "the build row did not complete");
+		return;
+	}
+
+	CS2ST_CALL(context, "netadr_t::SetIP(uint) / SetIPAndPort", {
+		// The header says the uint is host order, so GetIPHostByteOrder has to
+		// give it back whatever the byte placement is.
+		constexpr unsigned int kHostValue = 0x0A141E28u; // 10.20.30.40
+		netadr_t* alt = FreshAddress(storage, kAddrAltBuild);
+		alt->SetIPAndPort(kHostValue, kProbePort);
+		const unsigned int host = alt->GetIPHostByteOrder();
+		context.Detail("-> host order 0x%08lx, port %u", static_cast<unsigned long>(host),
+			static_cast<unsigned>(alt->GetPort()));
+
+		if (host != kHostValue)
+		{
+			context.Fail("SetIP(uint) is documented as host order, but GetIPHostByteOrder "
+			             "did not return what was set");
+		}
+		if (alt->GetPort() != kProbePort)
+		{
+			context.Fail("SetIPAndPort did not set the port");
+		}
+		if (!alt->CompareAdr(*AddressAt(storage, kAddrBase)))
+		{
+			context.Suspect("SetIPAndPort(0x0A141E28) and SetIP(10,20,30,40) built "
+			                "different addresses");
+		}
+	});
+
+	CS2ST_CALL(context, "netadr_t::SetFromString (literal address, no DNS)", {
+		netadr_t* parsed = FreshAddress(storage, kAddrParsed);
+		const bool ok = parsed->SetFromString("10.20.30.40:27015");
+		const char* rendered = parsed->ToString(false);
+		context.Detail("-> %s, \"%s\"", ok ? "true" : "false",
+			rendered != nullptr ? rendered : "(null)");
+
+		if (!ok)
+		{
+			context.Suspect("SetFromString rejected a dotted-quad literal");
+		}
+		else if (!parsed->CompareAdr(*AddressAt(storage, kAddrBase)))
+		{
+			context.Suspect("the parsed address differs from the one built by setters");
+		}
+	});
+
+	CS2ST_CALL(context, "netadr_t::Clear (on a copy)", {
+		netadr_t* cleared = AddressAt(storage, kAddrCleared);
+		std::memcpy(cleared, AddressAt(storage, kAddrBase), sizeof(netadr_t));
+		cleared->Clear();
+		context.Detail("-> type %d, port %u, IsValid %s",
+			static_cast<int>(cleared->GetType()), static_cast<unsigned>(cleared->GetPort()),
+			cleared->IsValid() ? "true" : "false");
+
+		// ip & port != 0 is the stated rule for IsValid, and Clear is "invalids
+		// Address" in the same header.
+		if (cleared->IsValid())
+		{
+			context.Fail("a cleared address is still valid");
+		}
+		if (cleared->GetType() != NA_NULL)
+		{
+			context.Suspect("a cleared address does not have type NA_NULL");
+		}
+	});
+
+	CS2ST_CALL(context, "netadr_t::CompareAdr (onlyBase against a port-only difference)", {
+		const netadr_t* base = AddressAt(storage, kAddrBase);
+		const netadr_t* other_port = AddressAt(storage, kAddrOtherPort);
+		const bool full = base->CompareAdr(*other_port, false);
+		const bool base_only = base->CompareAdr(*other_port, true);
+		context.Detail("full -> %s, base only -> %s",
+			full ? "true" : "false", base_only ? "true" : "false");
+
+		if (full)
+		{
+			context.Suspect("two addresses that differ only by port compare equal in full");
+		}
+		if (!base_only)
+		{
+			context.Suspect("onlyBase = true still compares the port");
+		}
+	});
+
+	CS2ST_CALL(context, "netadr_t::CompareClassBAdr / CompareClassCAdr", {
+		const netadr_t* base = AddressAt(storage, kAddrBase);
+		const netadr_t* sibling_c = AddressAt(storage, kAddrSiblingC);
+		const netadr_t* sibling_b = AddressAt(storage, kAddrSiblingB);
+		const netadr_t* stranger = AddressAt(storage, kAddrStranger);
+
+		const bool b_c = base->CompareClassBAdr(*sibling_c);
+		const bool c_c = base->CompareClassCAdr(*sibling_c);
+		const bool b_b = base->CompareClassBAdr(*sibling_b);
+		const bool c_b = base->CompareClassCAdr(*sibling_b);
+		const bool b_s = base->CompareClassBAdr(*stranger);
+		const bool c_s = base->CompareClassCAdr(*stranger);
+		context.Detail("same /24: B %s C %s; same /16 only: B %s C %s; other /16: B %s C %s",
+			b_c ? "y" : "n", c_c ? "y" : "n", b_b ? "y" : "n", c_b ? "y" : "n",
+			b_s ? "y" : "n", c_s ? "y" : "n");
+
+		// The classful reading of the names: B is the first two bytes, C the
+		// first three. Not stated in the header, hence Suspect.
+		if (!b_c || !c_c || !b_b || c_b || b_s || c_s)
+		{
+			context.Suspect("the class B / class C comparisons do not follow the "
+			                "/16 and /24 reading of their names");
+		}
+	});
+
+	CS2ST_CALL(context, "netadr_t::operator< (two distinct addresses)", {
+		const netadr_t* base = AddressAt(storage, kAddrBase);
+		const netadr_t* stranger = AddressAt(storage, kAddrStranger);
+		const bool forward = (*base < *stranger);
+		const bool backward = (*stranger < *base);
+		context.Detail("base<stranger %s, stranger<base %s",
+			forward ? "true" : "false", backward ? "true" : "false");
+		if (forward == backward)
+		{
+			context.Suspect("two different addresses are not strictly ordered by operator<");
+		}
+	});
+}
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -227,6 +454,7 @@ void NetworkServerSuite::ExerciseCalls(TestContext& context)
 	ExerciseGameServer(context);
 	ExerciseGameServerBase(context);
 	InspectNetworkAddress(context);
+	ExerciseLocalNetworkAddress(context);
 	NoteInheritanceShape(context);
 	NoteSideEffectingCalls(context);
 }
@@ -375,9 +603,21 @@ void NetworkServerSuite::ExerciseEngineService(TestContext& context)
 		}
 	});
 
-	context.SkipCall("IEngineService::ShouldActivate",
-		"a policy query whose argument space the SDK does not describe; there is "
-		"no string that would make the answer mean anything");
+	CS2ST_CALL(context, "IEngineService::ShouldActivate", {
+		// A pure policy query. The argument is unnamed in the SDK, so an empty
+		// string is the probe: the answer is not judged, only that it is one of
+		// the three enumerators.
+		const EngineServiceActivateType_t type = service_->ShouldActivate("");
+		const int type_value = static_cast<int>(type);
+		context.Detail("-> %d for an empty argument", type_value);
+		if (type_value < static_cast<int>(ENGINE_SERVICE_ACTIVATE_NEVER)
+			|| type_value > static_cast<int>(ENGINE_SERVICE_ACTIVATE_IF_ADDED_BY_LOOP_MODE))
+		{
+			context.Fail("%d is outside EngineServiceActivateType_t; the slot is "
+			             "probably not ShouldActivate", type_value);
+		}
+	});
+
 	context.SkipCall("IEngineService::SetActive", "would activate or deactivate the service");
 	context.SkipCall("IEngineService::SetName", "would rename a registered service");
 	context.SkipCall("IEngineService::SetServiceIndex", "would renumber it in the registry");
@@ -492,6 +732,42 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 		context.Detail("-> %s", service_->IsChangelevelPending() ? "true" : "false");
 	});
 
+	CS2ST_CALL(context, "INetworkServerService::IsEntityReportActive", {
+		context.Detail("-> %s", service_->IsEntityReportActive() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "INetworkServerService::GetEntityReport", {
+		// The header: nullptr unless the report is active and targets the slot
+		// (or every slot). So an inactive report has to answer null.
+		const bool active = service_->IsEntityReportActive();
+		void* report = static_cast<void*>(service_->GetEntityReport(kProbeSlot));
+		context.Detail("-> %p for slot %d (report %s)", report, kProbeSlot,
+			active ? "active" : "inactive");
+		if (!active && report != nullptr)
+		{
+			context.Fail("no entity report is active, but one was returned");
+		}
+	});
+
+	CS2ST_CALL(context, "INetworkServerService::ThreadInPrimaryOrSecondaryMainThread", {
+		// Reported, not judged: which thread a sweep runs on is the engine's
+		// business, and the SDK does not name the expected answer.
+		context.Detail("-> %s",
+			service_->ThreadInPrimaryOrSecondaryMainThread() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "INetworkServerService::unk101", {
+		// "AMNOTE: Does nothing" - the call surviving is the slot check.
+		service_->unk101();
+		context.Detail("-> returned");
+	});
+
+	CS2ST_CALL(context, "INetworkServerService::unk102", {
+		// Declared void( void ) now, and also documented as doing nothing.
+		service_->unk102();
+		context.Detail("-> returned");
+	});
+
 	context.SkipCall("INetworkServerService::~INetworkServerService",
 		"would destroy an engine service the manager still holds");
 	context.SkipCall("INetworkServerService::StartupServer",
@@ -522,12 +798,6 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 		"the rework-typed overload takes a CUtlString* reason out-parameter; "
 		"the INetworkGameServer row below records why even a null one is not "
 		"probed");
-	context.SkipCall("INetworkServerService::unk101",
-		"unidentified in the SDK (bool-returning)");
-	context.SkipCall("INetworkServerService::unk102",
-		"unidentified in the SDK and takes an int");
-	context.SkipCall("INetworkServerService::ThreadInPrimaryOrSecondaryMainThread",
-		"a thread-affinity query; named in the 2026-10 SDK, previously unk103");
 	context.SkipCall("INetworkServerService::EnterSyncInterval",
 		"begins a serializer sync window; previously unk104");
 	context.SkipCall("INetworkServerService::ExitSyncInterval",
@@ -806,6 +1076,88 @@ void NetworkServerSuite::ExerciseGameServer(TestContext& context)
 		}
 		const uint8 type = game_server_->GetClientConnectionType(CPlayerSlot(kProbeSlot));
 		context.Detail("-> %u for slot %d", static_cast<unsigned>(type), kProbeSlot);
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::GetClientSignonState", {
+		if (globals_ == nullptr || globals_->maxClients <= kProbeSlot)
+		{
+			context.Detail("-> slot %d is not known to be in range; not asked", kProbeSlot);
+			return;
+		}
+		// A read on a slot that may be empty; the state enum is opaque in the
+		// SDK, so it goes through int. Compared against the engine's own getter.
+		const int here = static_cast<int>(game_server_->GetClientSignonState(CPlayerSlot(kProbeSlot)));
+		IVEngineServer2* engine = Engine(context);
+		if (engine == nullptr)
+		{
+			context.Detail("-> %d for slot %d (no engine interface to compare against)",
+				here, kProbeSlot);
+			return;
+		}
+		const int there = static_cast<int>(engine->GetClientSignonState(CPlayerSlot(kProbeSlot)));
+		context.Detail("-> %d (IVEngineServer2 gave %d) for slot %d", here, there, kProbeSlot);
+		if (here != there)
+		{
+			context.Suspect("two interfaces disagree about the signon state of slot %d",
+				kProbeSlot);
+		}
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::IsMultiplayer", {
+		// The header: is_multiplayer of the session the server started with -
+		// the same fact INetworkServerService::IsMultiplayer reports.
+		const bool here = game_server_->IsMultiplayer();
+		const bool there = service_->IsMultiplayer();
+		context.Detail("-> %s (INetworkServerService gave %s)",
+			here ? "true" : "false", there ? "true" : "false");
+		if (here != there)
+		{
+			context.Suspect("the game server and the service disagree about multiplayer");
+		}
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::IsReserved", {
+		context.Detail("-> %s", game_server_->IsReserved() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::IsPlayingSoloAgainstBots", {
+		context.Detail("-> %s", game_server_->IsPlayingSoloAgainstBots() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::HasPendingServerGameFrameJob", {
+		// Where in the frame a sweep runs decides this answer, so it is recorded
+		// and never judged.
+		context.Detail("-> %s", game_server_->HasPendingServerGameFrameJob() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::GetAverageFrameTime", {
+		const float frame_time = game_server_->GetAverageFrameTime();
+		context.Detail("-> %.6f", static_cast<double>(frame_time));
+		if (!std::isfinite(frame_time) || frame_time < 0.0f)
+		{
+			context.Fail("a frame time is a finite, non-negative duration");
+		}
+	});
+
+	CS2ST_CALL(context, "INetworkGameServer::GetGameServerSteamID", {
+		// Compared with the engine's own getter and never printed: the id is a
+		// stable identifier and logs get pasted into bug reports.
+		const CSteamID steam_id = game_server_->GetGameServerSteamID();
+		IVEngineServer2* engine = Engine(context);
+		if (engine == nullptr)
+		{
+			context.Detail("-> valid=%s (no engine interface to compare against)",
+				steam_id.IsValid() ? "true" : "false");
+			return;
+		}
+		const CSteamID engine_id = engine->GetGameServerSteamID();
+		const bool same = steam_id.ConvertToUint64() == engine_id.ConvertToUint64();
+		context.Detail("-> valid=%s, %s IVEngineServer2's (id not logged)",
+			steam_id.IsValid() ? "true" : "false", same ? "equals" : "differs from");
+		if (!same)
+		{
+			context.Suspect("the game server and the engine report different server steam ids");
+		}
 	});
 }
 
@@ -1300,19 +1652,12 @@ void NetworkServerSuite::InspectNetworkAddress(TestContext& context)
 		}
 	});
 
-	context.SkipCall("netadr_t::Clear", "would blank the address the engine handed us");
-	context.SkipCall("netadr_t::SetType", "mutates our copy; nothing would be learned");
-	context.SkipCall("netadr_t::SetPort", "mutates our copy");
-	context.SkipCall("netadr_t::SetIP", "mutates our copy (both overloads)");
-	context.SkipCall("netadr_t::SetIPAndPort", "mutates our copy");
-	context.SkipCall("netadr_t::SetFromString",
-		"may perform a DNS lookup, which is a network round trip inside a sweep");
+	// Clear, SetType, SetPort, both SetIP overloads, SetIPAndPort, SetFromString
+	// (literal, no DNS), CompareClassBAdr and CompareClassCAdr are called on
+	// local copies by ExerciseLocalNetworkAddress.
 	context.SkipCall("netadr_t::SetFromSockadr", "needs a sockaddr we do not have");
 	context.SkipCall("netadr_t::SetFromSocket", "needs a live socket handle");
 	context.SkipCall("netadr_t::ToSockadr", "writes into a sockaddr we would have to build");
-	context.SkipCall("netadr_t::CompareClassBAdr",
-		"a subnet comparison against a second address this suite has no source for");
-	context.SkipCall("netadr_t::CompareClassCAdr", "the same, one class narrower");
 	context.SkipCall("netadr_t::GetIP", "an inline alias for GetIPNetworkByteOrder, covered above");
 	context.SkipCall("netadr_t::Serialize",
 		"needs a bf_write; tier1/bitbuf.cpp is not in this build "
@@ -1431,21 +1776,14 @@ void NetworkServerSuite::NoteSideEffectingCalls(TestContext& context)
 	// old log shows renames rather than methods vanishing.
 	context.SkipCall("INetworkGameServer::SetRecyclePlayerSlot",
 		"changes slot recycling for a player slot");
-	context.SkipCall("INetworkGameServer::GetClientSignonState",
-		"named in the SDK now; reading it is safe but the slot it reads for is "
-		"only meaningful mid-connection, so the row stays off the quiet path");
+	context.SkipCall("INetworkGameServer::ServerBeginSimulate",
+		"runs a simulation step and queues the ServerGameFrame job on another thread");
 	context.SkipCall("INetworkGameServer::SetBroadcastDebugOverlays",
 		"installs a broadcast overlay object");
-	context.SkipCall("INetworkGameServer::HasPendingServerGameFrameJob",
-		"a query on the threaded ServerGameFrame job, whose answer depends on "
-		"where in the frame this suite happens to run; named in the s2sdk that "
-		"replaced HasReplayDirector");
-	context.SkipCall("INetworkGameServer::GetAverageFrameTime", "a timing query");
 	context.SkipCall("INetworkGameServer::PrepareSendClientUpdatesMainThread",
 		"drives the client update pass");
 	context.SkipCall("INetworkGameServer::PrepareSendClientUpdatesAsync",
 		"drives the client update pass");
-	context.SkipCall("INetworkGameServer::GetGameServerSteamID", "a steam id query");
 }
 
 // -----------------------------------------------------------------------------
