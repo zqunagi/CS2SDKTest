@@ -4890,22 +4890,15 @@ void ConVarSuite::ExerciseScratchCalls(TestContext& context)
 			data->SetDefaultValue(&replacement);
 			const int32 changed = g_scratch_int.GetDefault();
 
-			// Put back through UpdateDefaultValueString, not SetDefaultValue:
-			// the SDK's SetDefaultValue passes its CVValue_t* to
-			// CVTypeTraits::Copy, whose parameter is a const CVValue_t&, so the
-			// pointer is converted through CVValue_t(bool) into a temporary
-			// with uninitialised bytes and that is what gets copied. Using it to
-			// restore would leave the default corrupted for every later row.
+			// Put back through UpdateDefaultValueString so the restore does not
+			// depend on the call under test.
 			const bool restored_ok = data->UpdateDefaultValueString("50");
 			const int32 restored = g_scratch_int.GetDefault();
 
 			context.Detail("default 50 -> %d -> %d", changed, restored);
 			if (changed != 60)
 			{
-				context.Suspect("SetDefaultValue(&60) left the default at %d; the SDK "
-				                "hands Copy a pointer where it wants a reference, so "
-				                "the value copied is a temporary built from the "
-				                "pointer as a bool", changed);
+				context.Fail("SetDefaultValue(&60) left the default at %d", changed);
 			}
 			if (!restored_ok || restored != 50)
 			{

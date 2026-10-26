@@ -1112,20 +1112,30 @@ void NetworkMessagesSuite::ExerciseMiscReadonly(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "INetworkMessages::GetNetworkSerializationContextData", {
-		// A context name nothing set: zero is the only answer that keeps this
-		// read-only, so a handle back means the slot is no longer the lookup.
-		// The SDK typed this uint16 (it used to be void*) in the Oct 2026
-		// rework; unk101 below is what turns the handle back into the pointer.
-		const uint16 data = messages_->GetNetworkSerializationContextData(
+		// A context name nothing set: 0xFFFF is the documented answer, and the
+		// lookup keeps this read-only. The SDK split the old lookup in two:
+		// LookupNetworkSerializationContextDataId turns the name into the
+		// handle, GetNetworkSerializationContextData turns the handle back
+		// into the pointer SetNetworkSerializationContextData stored.
+		const uint16 data = messages_->LookupNetworkSerializationContextDataId(
 			"Cs2SdkTestNoSuchContext");
 		context.Detail("-> %u for a context name nothing set",
 			static_cast<unsigned>(data));
-		// 65535 is the invalid-handle value of a uint16 handle, and it is what
-		// this build answers for an unset context, so it counts as "nothing
-		// set" alongside zero.
-		if (data != 0 && data != 0xFFFF)
+		if (data != 0xFFFF)
 		{
-			context.Suspect("an unset serialization context answered with a handle");
+			context.Fail("an unset serialization context answered with handle %u, "
+			             "the SDK says 0xFFFF", static_cast<unsigned>(data));
+		}
+	});
+
+	CS2ST_CALL(context, "INetworkMessages::GetNetworkSerializationContextData", {
+		// The SDK documents nullptr for the 0xFFFF handle, whatever the mode.
+		void* const data = messages_->GetNetworkSerializationContextData(
+			0xFFFF, NET_SERIALIZATION_MODE_DEFAULT);
+		context.Detail("-> %p for the invalid handle", data);
+		if (data != nullptr)
+		{
+			context.Fail("the invalid handle 0xFFFF resolved to %p, the SDK says nullptr", data);
 		}
 	});
 
@@ -1135,6 +1145,33 @@ void NetworkMessagesSuite::ExerciseMiscReadonly(TestContext& context)
 		// the mapping is engine policy.
 		const int order = messages_->ComputeOrderForPriority(0);
 		context.Detail("-> %d for priority 0", order);
+	});
+
+	CS2ST_CALL(context, "INetworkMessages::GetCoordSizeParams", {
+		// Read-only: the encoding sizes networked coordinates, normals and
+		// angles are serialised with. Every bit count is positive on a live
+		// server, and the denominators are derived from them.
+		const CoordSizeParams_t* params = messages_->GetCoordSizeParams();
+		context.Detail("-> %p", static_cast<const void*>(params));
+		if (params == nullptr)
+		{
+			context.Suspect("no coordinate size parameters are set");
+			return;
+		}
+		context.Detail("coord %d.%d bits (denominator %d), normal %d bits, angle %d bits",
+			params->m_nCoordIntegerBits, params->m_nCoordFractionalBits,
+			params->m_nCoordDenominator, params->m_nNormalFractionalBits,
+			params->m_nAngleBits);
+		if (params->m_nCoordDenominator != (1 << params->m_nCoordFractionalBits))
+		{
+			context.Fail("m_nCoordDenominator %d is not 1 << m_nCoordFractionalBits (%d)",
+				params->m_nCoordDenominator, params->m_nCoordFractionalBits);
+		}
+		if (params->m_nAngleDenominator != (1 << params->m_nAngleBits))
+		{
+			context.Fail("m_nAngleDenominator %d is not 1 << m_nAngleBits (%d)",
+				params->m_nAngleDenominator, params->m_nAngleBits);
+		}
 	});
 }
 
@@ -1305,14 +1342,12 @@ void NetworkMessagesSuite::NoteSkippedWrites(TestContext& context)
 		"covered above");
 	context.SkipCall("INetworkMessages::RegisterSchemaTypeOverride",
 		"rewrites schema-type resolution for named fields");
-	context.SkipCall("INetworkMessages::unk101",
-		"resolves a serialization-context handle back to the pointer "
-		"SetNetworkSerializationContextData stored; the handle half is covered "
-		"above, but calling this on the zero handle nothing set is not a probe "
-		"this suite can interpret");
-	context.SkipCall("INetworkMessages::unk102", "unidentified in the SDK");
-	context.SkipCall("INetworkMessages::unk201", "unidentified in the SDK");
-	context.SkipCall("INetworkMessages::unk202", "unidentified in the SDK");
+	context.SkipCall("INetworkMessages::RegisterNetworkChangeTagCallback",
+		"registers a delegate into the engine's change-tag list, which would "
+		"keep pointing at this module after unload");
+	context.SkipCall("INetworkMessages::SetCoordSizeParams",
+		"changes the coordinate precision every networked position uses; the "
+		"getter is exercised above");
 	context.SkipCall("INetworkMessages::~INetworkMessages",
 		"would destroy the registry every message on the server depends on");
 	context.SkipCall("INetworkMessageInternal::SetMessageId",

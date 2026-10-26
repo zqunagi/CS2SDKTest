@@ -401,10 +401,9 @@ void Source2GameClientsSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2GameClients::ClientReplayEvent",
 		"ClientReplayEventParams_t is only forward-declared, so its second "
 		"argument is a block this suite cannot size");
-	context.SkipCall("ISource2GameClients::unk101",
-		"unidentified in the SDK and takes a player slot plus a void* out "
-		"block; calling it blind on a live player is not worth the one line "
-		"it would produce");
+	context.SkipCall("ISource2GameClients::GetPlayerCommandStatus",
+		"fills a PlayerCommandStatus_t from a live player's controller; there is "
+		"no player to ask about on a quiet server");
 
 	// The interface's tail, unk201-205 until the 2026-10 SDK named them:
 	// HLTV password/auth plumbing and config-command validation. None of it
@@ -588,21 +587,22 @@ KHook::Return<bool> Source2GameClientsSuite::Post_ClientConnect(ISource2GameClie
 }
 
 KHook::Return<void> Source2GameClientsSuite::Pre_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name,
-                                                                   int type, uint64 xuid)
+                                                                   ClientPutInServerType_t type, uint64 xuid)
 {
 	char name_scratch[48];
-	// The SDK documents type as 0 player / 1 bot / 2 unknown, which makes
-	// anything else a signal that the parameter is not this parameter.
+	// The SDK's ClientPutInServerType_t is player / fake player / HLTV, which
+	// makes anything else a signal that the parameter is not this parameter.
 	CS2ST_HOOK_ENTER_ARGS(kClientPutInServer,
 		"slot=%d name=\"%.63s\" type=%d%s xuid=%llu",
 		slot.Get(),
 		SafeStringArg(name, name_scratch),
-		type, (type < 0 || type > 2) ? " OUT-OF-RANGE" : "",
+		static_cast<int>(type),
+		(type < CLIENT_PUT_IN_SERVER_PLAYER || type > CLIENT_PUT_IN_SERVER_HLTV) ? " OUT-OF-RANGE" : "",
 		static_cast<unsigned long long>(xuid));
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> Source2GameClientsSuite::Post_ClientPutInServer(ISource2GameClients*, CPlayerSlot, const char*, int, uint64)
+KHook::Return<void> Source2GameClientsSuite::Post_ClientPutInServer(ISource2GameClients*, CPlayerSlot, const char*, ClientPutInServerType_t, uint64)
 {
 	CS2ST_HOOK_LEAVE(kClientPutInServer);
 	return { KHook::Action::Ignore };

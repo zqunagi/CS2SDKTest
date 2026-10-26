@@ -86,8 +86,8 @@ public:
 	KHook::Return<bool> Post_ClientConnect(ISource2GameClients*, CPlayerSlot slot, const char* name, uint64 xuid,
 	                                       const char* network_id, bool unk1, CBufferString* reject_reason);
 
-	KHook::Return<void> Pre_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name, int type, uint64 xuid);
-	KHook::Return<void> Post_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name, int type, uint64 xuid);
+	KHook::Return<void> Pre_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name, ClientPutInServerType_t type, uint64 xuid);
+	KHook::Return<void> Post_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name, ClientPutInServerType_t type, uint64 xuid);
 
 	KHook::Return<void> Pre_ClientActive(ISource2GameClients*, CPlayerSlot slot, bool load_game, const char* name, uint64 xuid);
 	KHook::Return<void> Post_ClientActive(ISource2GameClients*, CPlayerSlot slot, bool load_game, const char* name, uint64 xuid);
@@ -123,7 +123,7 @@ public:
 	// KHook::Return<bool>.
 	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, const char*, uint64, const char*, const char*, bool> hook_OnClientConnected_;
 	KHook::Virtual<ISource2GameClients, bool, CPlayerSlot, const char*, uint64, const char*, bool, CBufferString*> hook_ClientConnect_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, const char*, int, uint64> hook_ClientPutInServer_;
+	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, const char*, ClientPutInServerType_t, uint64> hook_ClientPutInServer_;
 	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, bool, const char*, uint64> hook_ClientActive_;
 	KHook::Virtual<ISource2GameClients, void, CPlayerSlot> hook_ClientFullyConnect_;
 	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, ENetworkDisconnectionReason, const char*, uint64, const char*> hook_ClientDisconnect_;

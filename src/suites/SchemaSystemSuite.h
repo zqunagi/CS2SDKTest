@@ -41,12 +41,12 @@
  *       FindDeclaredEnum(n)        vs  FindRawEnumBinding(n)
  *       FindTypeScopeForModule(n)  vs  FindOrCreateTypeScopeForModule(n)
  *       FindTypeScopeForModule(n)  vs  m_TypeScopes[n]
- *       FindType_DeclaredClass(n)  vs  the class binding's m_pDeclaredClass
- *       the name looked up         vs  the binding's m_pszName
- *       the scope searched         vs  the binding's m_pTypeScope
- *       a field type's size        vs  its class binding's m_nSize
- *       m_nMin/MaxEnumeratorValue  vs  every enumerator's m_nValue
- *       m_nFieldCount              vs  m_pFields being null or not
+ *       FindType_DeclaredClass(n)  vs  the class binding's m_pTypeOf
+ *       the name looked up         vs  the binding's m_pName
+ *       the scope searched         vs  the binding's m_pOuterTypeScope
+ *       a field type's size        vs  its class binding's m_nSizeOf
+ *       m_nMin/MaxValue  vs  every enumerator's m_nValue
+ *       m_nNumFields               vs  m_pFields being null or not
  *
  *     The Type_Builtin/offsetof pair is the strongest single check in this
  *     project: it compares a virtual call's return value against an address

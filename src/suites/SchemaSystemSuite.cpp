@@ -1098,7 +1098,7 @@ void SchemaSystemSuite::ExerciseClassLookups(TestContext& context)
 
 			++resolved;
 			context.Detail("-> %p, %d bytes, %u field(s)", static_cast<void*>(info),
-				info->m_nSize, static_cast<unsigned>(info->m_nFieldCount));
+				info->m_nSizeOf, static_cast<unsigned>(info->m_nNumFields));
 
 			if (probe_class_ == nullptr)
 			{
@@ -1126,10 +1126,10 @@ void SchemaSystemSuite::ExerciseClassLookups(TestContext& context)
 			schema_->FindClassByScopedName("CBaseEntity");
 		CSchemaClassInfo* info = handle.Get();
 		context.Detail("-> %p for \"CBaseEntity\"", static_cast<void*>(info));
-		if (info != nullptr && info->m_pszName != nullptr
-			&& std::strcmp(info->m_pszName, "CBaseEntity") != 0)
+		if (info != nullptr && info->m_pName != nullptr
+			&& std::strcmp(info->m_pName, "CBaseEntity") != 0)
 		{
-			context.Fail("the binding returned is named \"%.60s\"", info->m_pszName);
+			context.Fail("the binding returned is named \"%.60s\"", info->m_pName);
 		}
 	});
 
@@ -1152,19 +1152,19 @@ void SchemaSystemSuite::ExerciseClassLookups(TestContext& context)
 	});
 
 	// FindType_DeclaredClass is the pure-find half of the Type_ family, and the
-	// class binding already carries the answer in m_pDeclaredClass - so this is
+	// class binding already carries the answer in m_pTypeOf - so this is
 	// a lookup with a built-in oracle.
 	CS2ST_CALL(context, "CSchemaSystemTypeScope::FindType_DeclaredClass(name)", {
 		CSchemaType_DeclaredClass* type =
 			probe_scope_->FindType_DeclaredClass(probe_class_name_);
-		context.Detail("-> %p (the binding's m_pDeclaredClass is %p)",
-			static_cast<void*>(type), static_cast<void*>(probe_class_->m_pDeclaredClass));
+		context.Detail("-> %p (the binding's m_pTypeOf is %p)",
+			static_cast<void*>(type), static_cast<void*>(probe_class_->m_pTypeOf));
 		if (type == nullptr)
 		{
 			context.Fail("a declared class always has a declared-class type");
 			return;
 		}
-		if (type != probe_class_->m_pDeclaredClass)
+		if (type != probe_class_->m_pTypeOf)
 		{
 			context.Fail("the interned type is not the one the binding points at");
 		}
@@ -1273,8 +1273,8 @@ void SchemaSystemSuite::ExerciseEnumLookups(TestContext& context)
 				return;
 			}
 			context.Detail("-> %p, %u byte(s), %u enumerator(s)", static_cast<void*>(info),
-				static_cast<unsigned>(info->m_nSize),
-				static_cast<unsigned>(info->m_nEnumeratorCount));
+				static_cast<unsigned>(info->m_nSizeOf),
+				static_cast<unsigned>(info->m_nNumEnumerators));
 			if (probe_enum_ == nullptr)
 			{
 				probe_enum_ = info;
@@ -1292,7 +1292,7 @@ void SchemaSystemSuite::ExerciseEnumLookups(TestContext& context)
 			CSchemaType_DeclaredEnum* declared =
 				static_cast<CSchemaType_DeclaredEnum*>(probe_enum_type_);
 			probe_enum_ = declared->m_pEnumInfo;
-			probe_enum_name_ = (probe_enum_ != nullptr) ? probe_enum_->m_pszName : nullptr;
+			probe_enum_name_ = (probe_enum_ != nullptr) ? probe_enum_->m_pName : nullptr;
 			context.Detail("-> %p \"%.60s\" via %s",
 				static_cast<void*>(probe_enum_), SafeName(probe_enum_name_),
 				SafeName(declared->m_sTypeName.Get()));
@@ -1558,8 +1558,8 @@ void SchemaSystemSuite::ExerciseClassGraph(TestContext& context)
 		{
 			const CSchemaClassInfo* info = descendents[i];
 			context.Note("    [%d] %.70s (%d bytes)", i,
-				info != nullptr ? SafeName(info->m_pszName) : "(null)",
-				info != nullptr ? info->m_nSize : -1);
+				info != nullptr ? SafeName(info->m_pName) : "(null)",
+				info != nullptr ? info->m_nSizeOf : -1);
 		}
 		if (count > shown)
 		{
@@ -1591,7 +1591,7 @@ void SchemaSystemSuite::ExerciseClassGraph(TestContext& context)
 			{
 				const CSchemaClassInfo* info = classes[i];
 				context.Note("    [%d] %.70s", i,
-					info != nullptr ? SafeName(info->m_pszName) : "(null)");
+					info != nullptr ? SafeName(info->m_pName) : "(null)");
 			}
 			if (count > shown)
 			{
@@ -1881,7 +1881,7 @@ void SchemaSystemSuite::ProbeSchemaType(TestContext& context, const char* label,
 			CSchemaType_DeclaredClass* declared =
 				static_cast<CSchemaType_DeclaredClass*>(type);
 			const char* name = (declared->m_pClassInfo != nullptr)
-				? declared->m_pClassInfo->m_pszName : nullptr;
+				? declared->m_pClassInfo->m_pName : nullptr;
 			if (name == nullptr)
 			{
 				context.Detail("-> no class name to test with");
@@ -1913,7 +1913,7 @@ void SchemaSystemSuite::ProbeSchemaType(TestContext& context, const char* label,
 			CSchemaType_DeclaredEnum* declared =
 				static_cast<CSchemaType_DeclaredEnum*>(type);
 			const char* name = (declared->m_pEnumInfo != nullptr)
-				? declared->m_pEnumInfo->m_pszName : nullptr;
+				? declared->m_pEnumInfo->m_pName : nullptr;
 			if (name == nullptr)
 			{
 				context.Detail("-> no enum name to test with");
@@ -2268,7 +2268,7 @@ void SchemaSystemSuite::InspectTypeScopeLayout(TestContext& context)
 		{
 			CSchemaClassInfo* info = probe_scope_->m_ClassBindings.Element(handles[i]);
 			context.Note("    [%d] %p %.70s", i, static_cast<void*>(info),
-				info != nullptr ? SafeName(info->m_pszName) : "(null)");
+				info != nullptr ? SafeName(info->m_pName) : "(null)");
 			if (info == nullptr)
 			{
 				context.Fail("entry %d resolves to a null binding", i);
@@ -2353,7 +2353,7 @@ void SchemaSystemSuite::InspectInternedTypeMaps(TestContext& context)
 			CSchemaClassInfo* info = (type != nullptr) ? type->m_pClassInfo : nullptr;
 
 			context.Note("    id=%u type=%p %.60s", class_id, static_cast<void*>(type),
-				info != nullptr ? SafeName(info->m_pszName) : "(no class info)");
+				info != nullptr ? SafeName(info->m_pName) : "(no class info)");
 
 			// The key is a class ID, so the by-ID binding lookup must resolve
 			// it to the same class the interned type points at. That closes the
@@ -2399,7 +2399,7 @@ void SchemaSystemSuite::InspectInternedTypeMaps(TestContext& context)
 			CSchemaEnumInfo* info = (type != nullptr) ? type->m_pEnumInfo : nullptr;
 
 			context.Note("    id=%u type=%p %.60s", enum_id, static_cast<void*>(type),
-				info != nullptr ? SafeName(info->m_pszName) : "(no enum info)");
+				info != nullptr ? SafeName(info->m_pName) : "(no enum info)");
 
 			if (info != nullptr)
 			{
@@ -2436,8 +2436,8 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 
 	// Oracle checks first: fields whose correct value is known from outside the
 	// struct, because we know what was asked for and where.
-	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pszName vs the name looked up", {
-		const char* name = probe_class_->m_pszName;
+	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pName vs the name looked up", {
+		const char* name = probe_class_->m_pName;
 		context.Detail("-> \"%.100s\" (asked for \"%s\")", SafeName(name), probe_class_name_);
 		if (name == nullptr)
 		{
@@ -2449,11 +2449,11 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pTypeScope vs the scope searched", {
+	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pOuterTypeScope vs the scope searched", {
 		context.Detail("-> %p (searched %p, the %s scope)",
-			static_cast<void*>(probe_class_->m_pTypeScope),
+			static_cast<void*>(probe_class_->m_pOuterTypeScope),
 			static_cast<void*>(probe_scope_), probe_scope_name_);
-		if (probe_class_->m_pTypeScope != probe_scope_)
+		if (probe_class_->m_pOuterTypeScope != probe_scope_)
 		{
 			// Not necessarily wrong: a class promoted to the global scope is
 			// findable through a module scope while belonging to the global
@@ -2464,25 +2464,25 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pSchemaBinding vs itself", {
+	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pPrimaryBinding vs itself", {
 		context.Detail("-> %p (this is %p)",
-			static_cast<void*>(probe_class_->m_pSchemaBinding),
+			static_cast<void*>(probe_class_->m_pPrimaryBinding),
 			static_cast<void*>(probe_class_));
-		if (probe_class_->m_pSchemaBinding != nullptr
-			&& probe_class_->m_pSchemaBinding != probe_class_)
+		if (probe_class_->m_pPrimaryBinding != nullptr
+			&& probe_class_->m_pPrimaryBinding != probe_class_)
 		{
-			context.Suspect("m_pSchemaBinding points somewhere other than this binding");
+			context.Suspect("m_pPrimaryBinding points somewhere other than this binding");
 		}
 	});
 
 	CS2ST_CALL(context, "SchemaClassInfoData_t (size / alignment / counts)", {
-		const int size = probe_class_->m_nSize;
-		const unsigned alignment = probe_class_->m_nAlignment;
+		const int size = probe_class_->m_nSizeOf;
+		const unsigned alignment = probe_class_->m_nAlignOf;
 		context.Detail("size=%d alignment=%u fields=%u bases=%u meta=%u depth=%u/%u",
 			size, alignment,
-			static_cast<unsigned>(probe_class_->m_nFieldCount),
-			static_cast<unsigned>(probe_class_->m_nBaseClassCount),
-			static_cast<unsigned>(probe_class_->m_nStaticMetadataCount),
+			static_cast<unsigned>(probe_class_->m_nNumFields),
+			static_cast<unsigned>(probe_class_->m_nNumBaseClasses),
+			static_cast<unsigned>(probe_class_->m_nNumMetadata),
 			static_cast<unsigned>(probe_class_->m_nSingleInheritanceDepth),
 			static_cast<unsigned>(probe_class_->m_nMultipleInheritanceDepth));
 
@@ -2513,39 +2513,39 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 		}
 		// A count and the array it counts have to agree about emptiness. This
 		// is the check that catches a field inserted between them.
-		if ((probe_class_->m_nFieldCount > 0) != (probe_class_->m_pFields != nullptr))
+		if ((probe_class_->m_nNumFields > 0) != (probe_class_->m_pFields != nullptr))
 		{
-			context.Fail("m_nFieldCount is %u but m_pFields is %p",
-				static_cast<unsigned>(probe_class_->m_nFieldCount),
+			context.Fail("m_nNumFields is %u but m_pFields is %p",
+				static_cast<unsigned>(probe_class_->m_nNumFields),
 				static_cast<void*>(probe_class_->m_pFields));
 		}
-		if ((probe_class_->m_nBaseClassCount > 0) != (probe_class_->m_pBaseClasses != nullptr))
+		if ((probe_class_->m_nNumBaseClasses > 0) != (probe_class_->m_pBaseClasses != nullptr))
 		{
-			context.Fail("m_nBaseClassCount is %u but m_pBaseClasses is %p",
-				static_cast<unsigned>(probe_class_->m_nBaseClassCount),
+			context.Fail("m_nNumBaseClasses is %u but m_pBaseClasses is %p",
+				static_cast<unsigned>(probe_class_->m_nNumBaseClasses),
 				static_cast<void*>(probe_class_->m_pBaseClasses));
 		}
-		if ((probe_class_->m_nStaticMetadataCount > 0)
-			!= (probe_class_->m_pStaticMetadata != nullptr))
+		if ((probe_class_->m_nNumMetadata > 0)
+			!= (probe_class_->m_pMetadata != nullptr))
 		{
-			context.Fail("m_nStaticMetadataCount is %u but m_pStaticMetadata is %p",
-				static_cast<unsigned>(probe_class_->m_nStaticMetadataCount),
-				static_cast<void*>(probe_class_->m_pStaticMetadata));
+			context.Fail("m_nNumMetadata is %u but m_pMetadata is %p",
+				static_cast<unsigned>(probe_class_->m_nNumMetadata),
+				static_cast<void*>(probe_class_->m_pMetadata));
 		}
 	});
 
-	CS2ST_CALL(context, "SchemaClassInfoData_t::m_nFlags1 (declared bits only)", {
+	CS2ST_CALL(context, "SchemaClassInfoData_t::m_nClassFlags1 (declared bits only)", {
 		// std::uint32_t rather than the SDK's uint32: this is our own local, so
 		// it should not depend on which SDK header happened to be included.
 		// SDK integer typedefs are used below only where an API signature
 		// demands the exact type (GetSizeAndAlignment's uint8& out parameter).
-		const std::uint32_t flags = probe_class_->m_nFlags1;
+		const std::uint32_t flags = probe_class_->m_nClassFlags1;
 		// Every bit SchemaClassFlags1_t declares, so anything left over is a
 		// bit Valve added - which is a finding, not a failure.
 		const std::uint32_t known =
 			SCHEMA_CF1_HAS_VIRTUAL_MEMBERS | SCHEMA_CF1_IS_ABSTRACT
 			| SCHEMA_CF1_HAS_TRIVIAL_CONSTRUCTOR | SCHEMA_CF1_HAS_TRIVIAL_DESTRUCTOR
-			| SCHEMA_CF1_LIMITED_METADATA | SCHEMA_CF1_INHERITANCE_DEPTH_CALCULATED
+			| SCHEMA_CF1_LIMITED_METADATA | SCHEMA_CF1_INFO_IS_INITIALIZED
 			| SCHEMA_CF1_MODULE_LOCAL_TYPE_SCOPE | SCHEMA_CF1_GLOBAL_TYPE_SCOPE
 			| SCHEMA_CF1_CONSTRUCT_ALLOWED | SCHEMA_CF1_CONSTRUCT_DISALLOWED
 			| SCHEMA_CF1_INFO_TAG_MNetworkAssumeNotNetworkable
@@ -2579,28 +2579,28 @@ void SchemaSystemSuite::InspectClassInfoLayout(TestContext& context)
 	StructInspector inspect(context, "SchemaClassInfoData_t",
 		probe_class_, sizeof(SchemaClassInfoData_t));
 
-	inspect.Pointer("m_pSchemaBinding",   offsetof(SchemaClassInfoData_t, m_pSchemaBinding));
-	inspect.String ("m_pszName",          offsetof(SchemaClassInfoData_t, m_pszName));
-	inspect.String ("m_pszProjectName",   offsetof(SchemaClassInfoData_t, m_pszProjectName));
+	inspect.Pointer("m_pPrimaryBinding",   offsetof(SchemaClassInfoData_t, m_pPrimaryBinding));
+	inspect.String ("m_pName",          offsetof(SchemaClassInfoData_t, m_pName));
+	inspect.String ("m_pProjectName",   offsetof(SchemaClassInfoData_t, m_pProjectName));
 	inspect.String ("m_pszCPPName",       offsetof(SchemaClassInfoData_t, m_pszCPPName));
-	inspect.Int32  ("m_nSize",            offsetof(SchemaClassInfoData_t, m_nSize), 1, INT32_MAX);
+	inspect.Int32  ("m_nSizeOf",            offsetof(SchemaClassInfoData_t, m_nSizeOf), 1, INT32_MAX);
 	inspect.Pointer("m_pFields",          offsetof(SchemaClassInfoData_t, m_pFields));
 	inspect.Pointer("m_pBaseClasses",     offsetof(SchemaClassInfoData_t, m_pBaseClasses));
-	inspect.Pointer("m_pDataDescMap",     offsetof(SchemaClassInfoData_t, m_pDataDescMap));
-	inspect.Pointer("m_pStaticMetadata",  offsetof(SchemaClassInfoData_t, m_pStaticMetadata));
-	inspect.Pointer("m_pTypeScope",       offsetof(SchemaClassInfoData_t, m_pTypeScope));
-	inspect.Pointer("m_pDeclaredClass",   offsetof(SchemaClassInfoData_t, m_pDeclaredClass));
-	inspect.UInt32 ("m_nFlags1",          offsetof(SchemaClassInfoData_t, m_nFlags1));
-	inspect.UInt32 ("m_nFlags2",          offsetof(SchemaClassInfoData_t, m_nFlags2));
-	inspect.Pointer("m_pfnManipulator",   offsetof(SchemaClassInfoData_t, m_pfnManipulator));
+	inspect.Pointer("m_pDataDesc",     offsetof(SchemaClassInfoData_t, m_pDataDesc));
+	inspect.Pointer("m_pMetadata",  offsetof(SchemaClassInfoData_t, m_pMetadata));
+	inspect.Pointer("m_pOuterTypeScope",       offsetof(SchemaClassInfoData_t, m_pOuterTypeScope));
+	inspect.Pointer("m_pTypeOf",   offsetof(SchemaClassInfoData_t, m_pTypeOf));
+	inspect.UInt32 ("m_nClassFlags1",          offsetof(SchemaClassInfoData_t, m_nClassFlags1));
+	inspect.UInt32 ("m_nClassFlags2",          offsetof(SchemaClassInfoData_t, m_nClassFlags2));
+	inspect.Pointer("m_pClassOpsFn",   offsetof(SchemaClassInfoData_t, m_pClassOpsFn));
 	inspect.Summarize();
 	inspect.HexDump();
 
-	context.SkipCall("SchemaClassInfoData_t::m_pfnManipulator (call)",
+	context.SkipCall("SchemaClassInfoData_t::m_pClassOpsFn (call)",
 		"every action the manipulator takes - register, allocate, deallocate, "
 		"construct or destruct in place - mutates something; the pointer is "
 		"checked, never invoked");
-	context.SkipCall("SchemaClassInfoData_t::m_pDataDescMap (walk)",
+	context.SkipCall("SchemaClassInfoData_t::m_pDataDesc (walk)",
 		"datamap_t is now fully defined on this branch, but walking it safely "
 		"means trusting m_pDataDescForCompare and its dataDesc count from a "
 		"third-party binary; the pointer itself is checked above");
@@ -2629,12 +2629,12 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 		return;
 	}
 
-	// Everything below indexes m_pFields with m_nFieldCount, both read out of a
+	// Everything below indexes m_pFields with m_nNumFields, both read out of a
 	// struct whose layout is what is under test. They are captured and vetted
 	// once here rather than re-read inside each guarded call.
 	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pFields (bounds)", {
 		probe_fields_ = probe_class_->m_pFields;
-		probe_field_count_ = static_cast<int>(probe_class_->m_nFieldCount);
+		probe_field_count_ = static_cast<int>(probe_class_->m_nNumFields);
 		context.Detail("-> %p, %d field(s)",
 			static_cast<void*>(probe_fields_), probe_field_count_);
 		if (probe_fields_ == nullptr || probe_field_count_ <= 0)
@@ -2671,14 +2671,14 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 			CSchemaType* type = field.m_pType;
 
 			context.Detail("%.60s @ +%d, type %p (%s, \"%.40s\") meta=%u",
-				SafeName(field.m_pszName),
+				SafeName(field.m_pName),
 				field.m_nSingleInheritanceOffset,
 				static_cast<void*>(type),
 				type != nullptr ? TypeCategoryName(type->m_eTypeCategory) : "no type",
 				type != nullptr ? SafeName(type->m_sTypeName.Get()) : "",
-				static_cast<unsigned>(field.m_nStaticMetadataCount));
+				static_cast<unsigned>(field.m_nNumMetadata));
 
-			if (field.m_pszName == nullptr)
+			if (field.m_pName == nullptr)
 			{
 				context.Fail("a schema field always has a name");
 			}
@@ -2686,14 +2686,14 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 			{
 				context.Fail("a schema field always has a type");
 			}
-			// m_nStaticMetadataCount is uint16 since the s2sdk rework, so the
+			// m_nNumMetadata is uint16 since the s2sdk rework, so the
 			// negative-count Fail from its int days dropped off: the type now
 			// guarantees what the check used to.
-			if ((field.m_nStaticMetadataCount > 0) != (field.m_pStaticMetadata != nullptr))
+			if ((field.m_nNumMetadata > 0) != (field.m_pMetadata != nullptr))
 			{
 				context.Fail("metadata count %u but array %p",
-					static_cast<unsigned>(field.m_nStaticMetadataCount),
-					static_cast<void*>(field.m_pStaticMetadata));
+					static_cast<unsigned>(field.m_nNumMetadata),
+					static_cast<void*>(field.m_pMetadata));
 			}
 
 			// The offset has to land inside the class it belongs to. This is
@@ -2701,10 +2701,10 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 			// class is one a plugin would read straight through into whatever
 			// follows the object.
 			if (field.m_nSingleInheritanceOffset < 0
-				|| field.m_nSingleInheritanceOffset >= probe_class_->m_nSize)
+				|| field.m_nSingleInheritanceOffset >= probe_class_->m_nSizeOf)
 			{
 				context.Fail("offset %d is outside a %d-byte class",
-					field.m_nSingleInheritanceOffset, probe_class_->m_nSize);
+					field.m_nSingleInheritanceOffset, probe_class_->m_nSizeOf);
 			}
 
 			// And the field plus its own width has to fit. This is a strictly
@@ -2721,10 +2721,10 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 				if (type->GetSizeAndAlignment(type_size, type_alignment)
 					&& type_size > 0
 					&& field.m_nSingleInheritanceOffset >= 0
-					&& field.m_nSingleInheritanceOffset + type_size > probe_class_->m_nSize)
+					&& field.m_nSingleInheritanceOffset + type_size > probe_class_->m_nSizeOf)
 				{
 					context.Fail("a %d-byte field at +%d does not fit in a %d-byte class",
-						type_size, field.m_nSingleInheritanceOffset, probe_class_->m_nSize);
+						type_size, field.m_nSingleInheritanceOffset, probe_class_->m_nSizeOf);
 				}
 			}
 		});
@@ -2739,7 +2739,7 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 	// of this scan is in the outlier, and one bad offset out of two hundred is
 	// exactly what an inserted field looks like.
 	CS2ST_CALL(context, "SchemaClassFieldData_t (all offsets in range)", {
-		const int class_size = probe_class_->m_nSize;
+		const int class_size = probe_class_->m_nSizeOf;
 		int out_of_range = 0;
 		int first_bad = -1;
 		int nameless = 0;
@@ -2756,7 +2756,7 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 				}
 				++out_of_range;
 			}
-			if (probe_fields_[i].m_pszName == nullptr)
+			if (probe_fields_[i].m_pName == nullptr)
 			{
 				++nameless;
 			}
@@ -2833,13 +2833,13 @@ void SchemaSystemSuite::InspectClassFields(TestContext& context)
 	StructInspector inspect(context, "SchemaClassFieldData_t[0]",
 		&probe_fields_[0], sizeof(SchemaClassFieldData_t));
 
-	inspect.String ("m_pszName",              offsetof(SchemaClassFieldData_t, m_pszName));
+	inspect.String ("m_pName",              offsetof(SchemaClassFieldData_t, m_pName));
 	inspect.Pointer("m_pType",                offsetof(SchemaClassFieldData_t, m_pType));
 	inspect.Int32  ("m_nSingleInheritanceOffset",
 	                                          offsetof(SchemaClassFieldData_t, m_nSingleInheritanceOffset),
 	                                          0, INT32_MAX);
-	inspect.UInt16 ("m_nStaticMetadataCount", offsetof(SchemaClassFieldData_t, m_nStaticMetadataCount));
-	inspect.Pointer("m_pStaticMetadata",      offsetof(SchemaClassFieldData_t, m_pStaticMetadata));
+	inspect.UInt16 ("m_nNumMetadata", offsetof(SchemaClassFieldData_t, m_nNumMetadata));
+	inspect.Pointer("m_pMetadata",      offsetof(SchemaClassFieldData_t, m_pMetadata));
 	inspect.Summarize();
 	inspect.HexDump();
 }
@@ -2868,7 +2868,7 @@ void SchemaSystemSuite::InspectBaseClasses(TestContext& context)
 
 	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pBaseClasses (bounds)", {
 		bases = probe_class_->m_pBaseClasses;
-		base_count = static_cast<int>(probe_class_->m_nBaseClassCount);
+		base_count = static_cast<int>(probe_class_->m_nNumBaseClasses);
 		context.Detail("-> %p, %d base class(es)", static_cast<void*>(bases), base_count);
 		if (bases == nullptr || base_count <= 0)
 		{
@@ -2900,8 +2900,8 @@ void SchemaSystemSuite::InspectBaseClasses(TestContext& context)
 			CSchemaClassInfo* info = base.m_pClass;
 			context.Detail("+%u -> %p %.70s (%d bytes)", base.m_nOffset,
 				static_cast<void*>(info),
-				info != nullptr ? SafeName(info->m_pszName) : "(null)",
-				info != nullptr ? info->m_nSize : -1);
+				info != nullptr ? SafeName(info->m_pName) : "(null)",
+				info != nullptr ? info->m_nSizeOf : -1);
 
 			if (info == nullptr)
 			{
@@ -2918,18 +2918,18 @@ void SchemaSystemSuite::InspectBaseClasses(TestContext& context)
 			}
 			// A base has to fit inside the derived class, and cannot be larger
 			// than it.
-			// m_nSize is signed and m_nOffset unsigned; compared as int64 so
+			// m_nSizeOf is signed and m_nOffset unsigned; compared as int64 so
 			// the promotion cannot turn a negative size into a huge unsigned.
 			if (static_cast<std::int64_t>(base.m_nOffset)
-				>= static_cast<std::int64_t>(probe_class_->m_nSize))
+				>= static_cast<std::int64_t>(probe_class_->m_nSizeOf))
 			{
 				context.Fail("base at +%u is outside a %d-byte class",
-					base.m_nOffset, probe_class_->m_nSize);
+					base.m_nOffset, probe_class_->m_nSizeOf);
 			}
-			if (info->m_nSize > probe_class_->m_nSize)
+			if (info->m_nSizeOf > probe_class_->m_nSizeOf)
 			{
 				context.Fail("a %d-byte base does not fit in a %d-byte derived class",
-					info->m_nSize, probe_class_->m_nSize);
+					info->m_nSizeOf, probe_class_->m_nSizeOf);
 			}
 		});
 	}
@@ -2970,9 +2970,9 @@ void SchemaSystemSuite::InspectClassMetadata(TestContext& context)
 	SchemaMetadataEntryData_t* metadata = nullptr;
 	int metadata_count = 0;
 
-	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pStaticMetadata (bounds)", {
-		metadata = probe_class_->m_pStaticMetadata;
-		metadata_count = static_cast<int>(probe_class_->m_nStaticMetadataCount);
+	CS2ST_CALL(context, "SchemaClassInfoData_t::m_pMetadata (bounds)", {
+		metadata = probe_class_->m_pMetadata;
+		metadata_count = static_cast<int>(probe_class_->m_nNumMetadata);
 		context.Detail("-> %p, %d entr%s", static_cast<void*>(metadata),
 			metadata_count, metadata_count == 1 ? "y" : "ies");
 		if (metadata == nullptr || metadata_count <= 0)
@@ -3001,8 +3001,8 @@ void SchemaSystemSuite::InspectClassMetadata(TestContext& context)
 
 		CS2ST_CALL(context, target, {
 			const SchemaMetadataEntryData_t& entry = metadata[i];
-			context.Detail("\"%.70s\" -> %p", SafeName(entry.m_pszName), entry.m_pData);
-			if (entry.m_pszName == nullptr)
+			context.Detail("\"%.70s\" -> %p", SafeName(entry.m_pName), entry.m_pData);
+			if (entry.m_pName == nullptr)
 			{
 				context.Fail("a metadata entry always has a name");
 			}
@@ -3027,22 +3027,22 @@ void SchemaSystemSuite::InspectClassMetadata(TestContext& context)
 			for (int i = 0; i < probe_field_count_; ++i)
 			{
 				const SchemaClassFieldData_t& field = probe_fields_[i];
-				if (field.m_pStaticMetadata == nullptr || field.m_nStaticMetadataCount <= 0)
+				if (field.m_pMetadata == nullptr || field.m_nNumMetadata <= 0)
 				{
 					continue;
 				}
 
-				const int count = (field.m_nStaticMetadataCount < kMaxEntriesPrinted)
-					? field.m_nStaticMetadataCount : kMaxEntriesPrinted;
-				context.Detail("%.60s carries %d entr%s", SafeName(field.m_pszName),
-					field.m_nStaticMetadataCount,
-					field.m_nStaticMetadataCount == 1 ? "y" : "ies");
+				const int count = (field.m_nNumMetadata < kMaxEntriesPrinted)
+					? field.m_nNumMetadata : kMaxEntriesPrinted;
+				context.Detail("%.60s carries %d entr%s", SafeName(field.m_pName),
+					field.m_nNumMetadata,
+					field.m_nNumMetadata == 1 ? "y" : "ies");
 				for (int j = 0; j < count; ++j)
 				{
 					context.Note("    [%d] \"%.70s\" -> %p", j,
-						SafeName(field.m_pStaticMetadata[j].m_pszName),
-						field.m_pStaticMetadata[j].m_pData);
-					if (field.m_pStaticMetadata[j].m_pszName == nullptr)
+						SafeName(field.m_pMetadata[j].m_pName),
+						field.m_pMetadata[j].m_pData);
+					if (field.m_pMetadata[j].m_pName == nullptr)
 					{
 						context.Fail("a metadata entry always has a name");
 					}
@@ -3055,7 +3055,7 @@ void SchemaSystemSuite::InspectClassMetadata(TestContext& context)
 
 	StructInspector inspect(context, "SchemaMetadataEntryData_t[0]",
 		&metadata[0], sizeof(SchemaMetadataEntryData_t));
-	inspect.String ("m_pszName", offsetof(SchemaMetadataEntryData_t, m_pszName));
+	inspect.String ("m_pName", offsetof(SchemaMetadataEntryData_t, m_pName));
 	inspect.Pointer("m_pData",   offsetof(SchemaMetadataEntryData_t, m_pData));
 	inspect.Summarize();
 }
@@ -3076,18 +3076,18 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 	}
 
 	CS2ST_CALL(context, "SchemaEnumInfoData_t (name / size / range)", {
-		const unsigned size = probe_enum_->m_nSize;
-		const unsigned alignment = probe_enum_->m_nAlignment;
+		const unsigned size = probe_enum_->m_nSizeOf;
+		const unsigned alignment = probe_enum_->m_nAlignOf;
 		context.Detail("\"%.60s\" size=%u alignment=%u enumerators=%u meta=%u "
 		               "range=[%lld, %lld] flags=0x%04x",
-			SafeName(probe_enum_->m_pszName), size, alignment,
-			static_cast<unsigned>(probe_enum_->m_nEnumeratorCount),
-			static_cast<unsigned>(probe_enum_->m_nStaticMetadataCount),
-			static_cast<long long>(probe_enum_->m_nMinEnumeratorValue),
-			static_cast<long long>(probe_enum_->m_nMaxEnumeratorValue),
-			static_cast<unsigned>(probe_enum_->m_nFlags));
+			SafeName(probe_enum_->m_pName), size, alignment,
+			static_cast<unsigned>(probe_enum_->m_nNumEnumerators),
+			static_cast<unsigned>(probe_enum_->m_nNumMetadata),
+			static_cast<long long>(probe_enum_->m_nMinValue),
+			static_cast<long long>(probe_enum_->m_nMaxValue),
+			static_cast<unsigned>(probe_enum_->m_nEnumFlags1));
 
-		if (probe_enum_->m_pszName == nullptr)
+		if (probe_enum_->m_pName == nullptr)
 		{
 			context.Fail("a registered enum always carries its name");
 		}
@@ -3106,35 +3106,35 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 		{
 			context.Suspect("a %u-byte enum with %u-byte alignment", size, alignment);
 		}
-		if (probe_enum_->m_nMinEnumeratorValue > probe_enum_->m_nMaxEnumeratorValue)
+		if (probe_enum_->m_nMinValue > probe_enum_->m_nMaxValue)
 		{
 			context.Fail("the minimum enumerator exceeds the maximum");
 		}
-		if ((probe_enum_->m_nEnumeratorCount > 0) != (probe_enum_->m_pEnumerators != nullptr))
+		if ((probe_enum_->m_nNumEnumerators > 0) != (probe_enum_->m_pEnumerators != nullptr))
 		{
-			context.Fail("m_nEnumeratorCount is %u but m_pEnumerators is %p",
-				static_cast<unsigned>(probe_enum_->m_nEnumeratorCount),
+			context.Fail("m_nNumEnumerators is %u but m_pEnumerators is %p",
+				static_cast<unsigned>(probe_enum_->m_nNumEnumerators),
 				static_cast<void*>(probe_enum_->m_pEnumerators));
 		}
-		if ((probe_enum_->m_nStaticMetadataCount > 0)
-			!= (probe_enum_->m_pStaticMetadata != nullptr))
+		if ((probe_enum_->m_nNumMetadata > 0)
+			!= (probe_enum_->m_pMetadata != nullptr))
 		{
-			context.Fail("m_nStaticMetadataCount is %u but m_pStaticMetadata is %p",
-				static_cast<unsigned>(probe_enum_->m_nStaticMetadataCount),
-				static_cast<void*>(probe_enum_->m_pStaticMetadata));
+			context.Fail("m_nNumMetadata is %u but m_pMetadata is %p",
+				static_cast<unsigned>(probe_enum_->m_nNumMetadata),
+				static_cast<void*>(probe_enum_->m_pMetadata));
 		}
 
-		// SCHEMA_EF_IS_REGISTERED must be set on a binding we just looked up
+		// SCHEMA_EF1_INFO_IS_INITIALIZED must be set on a binding we just looked up (the engine initialised it)
 		// successfully, and the two scope bits are mutually exclusive.
-		// m_nFlags is uint16 since the s2sdk rework (the enumerators still name
+		// m_nEnumFlags1 is uint16 since the s2sdk rework (the enumerators still name
 		// bits 0-5), so the reads and the mask below are 16-bit now.
-		const std::uint16_t flags = probe_enum_->m_nFlags;
-		if ((flags & SCHEMA_EF_IS_REGISTERED) == 0)
+		const std::uint16_t flags = probe_enum_->m_nEnumFlags1;
+		if ((flags & SCHEMA_EF1_INFO_IS_INITIALIZED) == 0)
 		{
 			context.Fail("the lookup succeeded but the enum is not marked registered");
 		}
-		if ((flags & SCHEMA_EF_GLOBAL_TYPE_SCOPE) != 0
-			&& (flags & SCHEMA_EF_MODULE_LOCAL_TYPE_SCOPE) != 0)
+		if ((flags & SCHEMA_EF1_GLOBAL_TYPE_SCOPE) != 0
+			&& (flags & SCHEMA_EF1_MODULE_LOCAL_TYPE_SCOPE) != 0)
 		{
 			context.Fail("the enum claims both global and module-local type scope");
 		}
@@ -3142,47 +3142,47 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 		// bits stop at bit 5, but relying on an implicit narrowing here would be
 		// one more thing for a future -Wconversion build to trip over.
 		const std::uint16_t known_flags = static_cast<std::uint16_t>(
-			SCHEMA_EF_IS_REGISTERED
-			| SCHEMA_EF_MODULE_LOCAL_TYPE_SCOPE
-			| SCHEMA_EF_GLOBAL_TYPE_SCOPE
-			| SCHEMA_EF_UNK003
-			| SCHEMA_EF_UNK004
-			| SCHEMA_EF_UNK005);
+			SCHEMA_EF1_INFO_IS_INITIALIZED
+			| SCHEMA_EF1_MODULE_LOCAL_TYPE_SCOPE
+			| SCHEMA_EF1_GLOBAL_TYPE_SCOPE
+			| SCHEMA_EF1_UNSIGNED_STORAGE_TYPE
+			| SCHEMA_EF1_IS_FLAGS_ENUM
+			| SCHEMA_EF1_IS_SCOPED_ENUM);
 		// Masked back down to 16 bits: ~ promotes to int, so without the cast
 		// the complement would carry 16 set bits that are not part of the field.
 		const std::uint16_t unknown_flags =
 			static_cast<std::uint16_t>(flags & static_cast<std::uint16_t>(~known_flags));
 		if (unknown_flags != 0)
 		{
-			context.Suspect("bits outside SchemaEnumFlags_t are set (0x%04x)",
+			context.Suspect("bits outside SchemaEnumFlags1_t are set (0x%04x)",
 				static_cast<unsigned>(unknown_flags));
 		}
 	});
 
-	CS2ST_CALL(context, "SchemaEnumInfoData_t::m_pSchemaBinding vs itself", {
+	CS2ST_CALL(context, "SchemaEnumInfoData_t::m_pPrimaryBinding vs itself", {
 		context.Detail("-> %p (this is %p)",
-			static_cast<void*>(probe_enum_->m_pSchemaBinding),
+			static_cast<void*>(probe_enum_->m_pPrimaryBinding),
 			static_cast<void*>(probe_enum_));
-		if (probe_enum_->m_pSchemaBinding != nullptr
-			&& probe_enum_->m_pSchemaBinding != probe_enum_)
+		if (probe_enum_->m_pPrimaryBinding != nullptr
+			&& probe_enum_->m_pPrimaryBinding != probe_enum_)
 		{
-			context.Suspect("m_pSchemaBinding points somewhere other than this binding");
+			context.Suspect("m_pPrimaryBinding points somewhere other than this binding");
 		}
 	});
 
 	StructInspector inspect(context, "SchemaEnumInfoData_t",
 		probe_enum_, sizeof(SchemaEnumInfoData_t));
 
-	inspect.Pointer("m_pSchemaBinding",    offsetof(SchemaEnumInfoData_t, m_pSchemaBinding));
-	inspect.String ("m_pszName",           offsetof(SchemaEnumInfoData_t, m_pszName));
-	inspect.String ("m_pszProjectName",    offsetof(SchemaEnumInfoData_t, m_pszProjectName));
+	inspect.Pointer("m_pPrimaryBinding",    offsetof(SchemaEnumInfoData_t, m_pPrimaryBinding));
+	inspect.String ("m_pName",           offsetof(SchemaEnumInfoData_t, m_pName));
+	inspect.String ("m_pProjectName",    offsetof(SchemaEnumInfoData_t, m_pProjectName));
 	inspect.Pointer("m_pEnumerators",      offsetof(SchemaEnumInfoData_t, m_pEnumerators));
-	inspect.Pointer("m_pStaticMetadata",   offsetof(SchemaEnumInfoData_t, m_pStaticMetadata));
-	inspect.Pointer("m_pTypeScope",        offsetof(SchemaEnumInfoData_t, m_pTypeScope));
-	inspect.Int64  ("m_nMinEnumeratorValue",
-	                                       offsetof(SchemaEnumInfoData_t, m_nMinEnumeratorValue));
-	inspect.Int64  ("m_nMaxEnumeratorValue",
-	                                       offsetof(SchemaEnumInfoData_t, m_nMaxEnumeratorValue));
+	inspect.Pointer("m_pMetadata",   offsetof(SchemaEnumInfoData_t, m_pMetadata));
+	inspect.Pointer("m_pOuterTypeScope",        offsetof(SchemaEnumInfoData_t, m_pOuterTypeScope));
+	inspect.Int64  ("m_nMinValue",
+	                                       offsetof(SchemaEnumInfoData_t, m_nMinValue));
+	inspect.Int64  ("m_nMaxValue",
+	                                       offsetof(SchemaEnumInfoData_t, m_nMaxValue));
 	inspect.Summarize();
 	inspect.HexDump();
 }
@@ -3191,7 +3191,7 @@ void SchemaSystemSuite::InspectEnumInfoLayout(TestContext& context)
 //  SchemaEnumeratorInfoData_t
 //
 //  The enumerator list, and with it the best-shaped oracle in the suite:
-//  m_nMinEnumeratorValue and m_nMaxEnumeratorValue are cached summaries of the
+//  m_nMinValue and m_nMaxValue are cached summaries of the
 //  array that follows them, so every entry must fall inside that range and the
 //  extremes must actually be attained. Two independent descriptions of the same
 //  data, one of which is derivable from the other - which is what makes a
@@ -3214,7 +3214,7 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 
 	CS2ST_CALL(context, "SchemaEnumInfoData_t::m_pEnumerators (bounds)", {
 		enumerators = probe_enum_->m_pEnumerators;
-		enumerator_count = static_cast<int>(probe_enum_->m_nEnumeratorCount);
+		enumerator_count = static_cast<int>(probe_enum_->m_nNumEnumerators);
 		context.Detail("-> %p, %d enumerator(s)",
 			static_cast<void*>(enumerators), enumerator_count);
 		if (enumerators == nullptr || enumerator_count <= 0)
@@ -3244,21 +3244,21 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 
 		CS2ST_CALL(context, target, {
 			const SchemaEnumeratorInfoData_t& entry = enumerators[i];
-			context.Detail("%.60s = %lld, meta=%u", SafeName(entry.m_pszName),
+			context.Detail("%.60s = %lld, meta=%u", SafeName(entry.m_pName),
 				static_cast<long long>(entry.m_nValue),
-				static_cast<unsigned>(entry.m_nStaticMetadataCount));
+				static_cast<unsigned>(entry.m_nNumMetadata));
 
-			if (entry.m_pszName == nullptr)
+			if (entry.m_pName == nullptr)
 			{
 				context.Fail("an enumerator always has a name");
 			}
 			// uint16 since the s2sdk rework; the negative-count Fail dropped off
 			// with the signedness.
-			if ((entry.m_nStaticMetadataCount > 0) != (entry.m_pStaticMetadata != nullptr))
+			if ((entry.m_nNumMetadata > 0) != (entry.m_pMetadata != nullptr))
 			{
 				context.Fail("metadata count %u but array %p",
-					static_cast<unsigned>(entry.m_nStaticMetadataCount),
-					static_cast<void*>(entry.m_pStaticMetadata));
+					static_cast<unsigned>(entry.m_nNumMetadata),
+					static_cast<void*>(entry.m_pMetadata));
 			}
 		});
 	}
@@ -3270,8 +3270,8 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 	}
 
 	CS2ST_CALL(context, "SchemaEnumeratorInfoData_t vs m_nMin/MaxEnumeratorValue", {
-		const std::int64_t declared_min = probe_enum_->m_nMinEnumeratorValue;
-		const std::int64_t declared_max = probe_enum_->m_nMaxEnumeratorValue;
+		const std::int64_t declared_min = probe_enum_->m_nMinValue;
+		const std::int64_t declared_max = probe_enum_->m_nMaxValue;
 
 		std::int64_t observed_min = enumerators[0].m_nValue;
 		std::int64_t observed_max = enumerators[0].m_nValue;
@@ -3305,7 +3305,7 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 		// The declared extremes are summaries, so they must be attained rather
 		// than merely bracket the values - unless the walk was truncated, in
 		// which case the unscanned tail could hold them.
-		else if (enumerator_count == static_cast<int>(probe_enum_->m_nEnumeratorCount))
+		else if (enumerator_count == static_cast<int>(probe_enum_->m_nNumEnumerators))
 		{
 			if (observed_min != declared_min || observed_max != declared_max)
 			{
@@ -3315,7 +3315,7 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 
 		// Every enumerator has to be representable in the enum's own width.
 		// A one-byte enum holding 70000 is not a wide enum, it is a bad read.
-		const unsigned width = probe_enum_->m_nSize;
+		const unsigned width = probe_enum_->m_nSizeOf;
 		if (width >= 1 && width <= 8)
 		{
 			const std::int64_t limit = (width == 8)
@@ -3332,10 +3332,10 @@ void SchemaSystemSuite::InspectEnumerators(TestContext& context)
 
 	StructInspector inspect(context, "SchemaEnumeratorInfoData_t[0]",
 		&enumerators[0], sizeof(SchemaEnumeratorInfoData_t));
-	inspect.String ("m_pszName",              offsetof(SchemaEnumeratorInfoData_t, m_pszName));
+	inspect.String ("m_pName",              offsetof(SchemaEnumeratorInfoData_t, m_pName));
 	inspect.Int64  ("m_nValue",               offsetof(SchemaEnumeratorInfoData_t, m_nValue));
-	inspect.UInt16 ("m_nStaticMetadataCount", offsetof(SchemaEnumeratorInfoData_t, m_nStaticMetadataCount));
-	inspect.Pointer("m_pStaticMetadata",      offsetof(SchemaEnumeratorInfoData_t, m_pStaticMetadata));
+	inspect.UInt16 ("m_nNumMetadata", offsetof(SchemaEnumeratorInfoData_t, m_nNumMetadata));
+	inspect.Pointer("m_pMetadata",      offsetof(SchemaEnumeratorInfoData_t, m_pMetadata));
 	inspect.Summarize();
 	inspect.HexDump();
 }

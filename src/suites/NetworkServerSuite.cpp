@@ -1436,8 +1436,10 @@ void NetworkServerSuite::NoteSideEffectingCalls(TestContext& context)
 		"only meaningful mid-connection, so the row stays off the quiet path");
 	context.SkipCall("INetworkGameServer::SetBroadcastDebugOverlays",
 		"installs a broadcast overlay object");
-	context.SkipCall("INetworkGameServer::HasReplayDirector",
-		"a query, but paired with the replay path this suite never drives");
+	context.SkipCall("INetworkGameServer::HasPendingServerGameFrameJob",
+		"a query on the threaded ServerGameFrame job, whose answer depends on "
+		"where in the frame this suite happens to run; named in the s2sdk that "
+		"replaced HasReplayDirector");
 	context.SkipCall("INetworkGameServer::GetAverageFrameTime", "a timing query");
 	context.SkipCall("INetworkGameServer::PrepareSendClientUpdatesMainThread",
 		"drives the client update pass");

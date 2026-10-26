@@ -492,6 +492,17 @@ void Source2EngineSuite::ExerciseSpawnGroups(TestContext& context)
 		context.Detail("-> %p", engine_->GetPVSForSpawnGroup(kUnknownSpawnGroup));
 	});
 
+	CS2ST_CALL(context, "IVEngineServer2::IsSpawnGroupLoadedForClient", {
+		// An invalid slot has no client, so the engine answers false before it
+		// looks at the handle.
+		const bool loaded = engine_->IsSpawnGroupLoadedForClient(CPlayerSlot(-1), kUnknownSpawnGroup);
+		context.Detail("-> %s for slot -1", loaded ? "true" : "false");
+		if (loaded)
+		{
+			context.Fail("an invalid slot has no client to have loaded anything");
+		}
+	});
+
 	context.SkipCall("IVEngineServer2::UnloadSpawnGroup", "unloads level content");
 	context.SkipCall("IVEngineServer2::LoadSpawnGroup",
 		"loads level content into a live spawn group; the Oct 2026 rework "

@@ -1723,8 +1723,9 @@ void GameEntitySystemSuite::ExerciseEntityInstanceVirtuals(TestContext& context)
 		});
 
 		// Documented in the SDK as returning false in every entity class.
-		CS2ST_CALL(context, "CEntityInstance::unk201", {
-			const bool result = probe_instance_->unk201();
+		CS2ST_CALL(context, "CEntityInstance::GetAlternateBaselineName", {
+			const char* name = nullptr;
+			const bool result = probe_instance_->GetAlternateBaselineName(&name);
 			context.Detail("-> %s", result ? "true" : "false");
 			if (result)
 			{

@@ -2014,10 +2014,10 @@ bool GamedataSuite::SchemaOffset(const char* class_name, const char* field_name,
 	{
 		return false;
 	}
-	for (int i = 0; i < static_cast<int>(info->m_nFieldCount); ++i)
+	for (int i = 0; i < static_cast<int>(info->m_nNumFields); ++i)
 	{
 		const SchemaClassFieldData_t& field = info->m_pFields[i];
-		if (field.m_pszName != nullptr && std::strcmp(field.m_pszName, field_name) == 0)
+		if (field.m_pName != nullptr && std::strcmp(field.m_pName, field_name) == 0)
 		{
 			offset = static_cast<std::size_t>(field.m_nSingleInheritanceOffset);
 			return true;

@@ -655,9 +655,9 @@ void FileSystemSuite::ExercisePaths(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "IFileSystem::GetWritePath", {
+	CS2ST_CALL(context, "IFileSystem::RelativePathToFullWritePath", {
 		CBufferString path;
-		const bool ok = fs_->GetWritePath(kProbeFile, kProbePathId, path);
+		const bool ok = fs_->RelativePathToFullWritePath(kProbeFile, kProbePathId, path);
 		context.Detail("-> %s, \"%s\"", YesNo(ok), path.Get());
 	});
 
@@ -1015,23 +1015,32 @@ void FileSystemSuite::ExerciseScratchCalls(TestContext& context)
 	std::string scratch_dir_full;
 
 	CS2ST_CALL(context, "IFileSystem::CreateDirHierarchy", {
-		fs_->CreateDirHierarchy(kScratchDir, kProbePathId);
+		const bool ok = fs_->CreateDirHierarchy(kScratchDir, kProbePathId);
 		const bool made = fs_->IsDirectory(kScratchDir, kProbePathId);
-		context.Detail("-> IsDirectory(%s) %s", kScratchDir, YesNo(made));
+		context.Detail("-> %s, IsDirectory(%s) %s", YesNo(ok), kScratchDir, YesNo(made));
 		if (!made)
 		{
 			context.Fail("%s is not a directory after CreateDirHierarchy", kScratchDir);
 		}
+		else if (!ok)
+		{
+			context.Suspect("CreateDirHierarchy returned false although %s exists", kScratchDir);
+		}
 	});
 
 	CS2ST_CALL(context, "IFileSystem::CreateDirHierarchyForFile", {
-		fs_->CreateDirHierarchyForFile(kScratchTreeFile, kProbePathId);
+		const bool ok = fs_->CreateDirHierarchyForFile(kScratchTreeFile, kProbePathId);
 		const bool made = fs_->IsDirectory(kScratchTreeInner, kProbePathId);
-		context.Detail("-> IsDirectory(%s) %s", kScratchTreeInner, YesNo(made));
+		context.Detail("-> %s, IsDirectory(%s) %s", YesNo(ok), kScratchTreeInner, YesNo(made));
 		if (!made)
 		{
 			context.Fail("%s is not a directory after CreateDirHierarchyForFile of %s",
 				kScratchTreeInner, kScratchTreeFile);
+		}
+		else if (!ok)
+		{
+			context.Suspect("CreateDirHierarchyForFile returned false although %s exists",
+				kScratchTreeInner);
 		}
 	});
 
@@ -1350,10 +1359,14 @@ void FileSystemSuite::ExerciseScratchCalls(TestContext& context)
 			{
 				continue;
 			}
-			fs_->RemoveFile(file, kProbePathId);
+			const bool removed = fs_->RemoveFile(file, kProbePathId);
 			if (fs_->FileExists(file, kProbePathId))
 			{
 				AppendF(left, " %s", file);
+			}
+			else if (!removed)
+			{
+				context.Suspect("RemoveFile returned false although %s is gone", file);
 			}
 		}
 		context.Detail("-> %s", left.empty() ? "every scratch file removed" : "some files remain");
