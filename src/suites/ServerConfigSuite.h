@@ -7,18 +7,19 @@
  * Small, cheap, and load-bearing in a way its size does not suggest:
  * AllowDedicatedServers() is what the Metamod loader consults when it
  * intercepts this very interface's Connect() - the single most plugin-
- * adjacent method on the surface. GetTickInterval() is the other pillar:
- * a finite positive subsecond float is a type-level contract, and the
- * interval is cross-checked against the tick-rate convar below.
+ * adjacent method on the surface. (CS2 has no GetTickInterval; the tick
+ * interval is a fixed 1/64, see Uses64TickInterval.)
  *
- * Two oracles are specific to this suite:
+ * Oracles specific to this suite:
  *
- *   - the tick-rate cross-check: two routes to one interval (the getter and
- *     the convar the command line and the engine both know). Which name a
- *     deployment answers to ("sv_tickrate" or the legacy "tickrate") is
- *     policy, not declaration, so a mismatch is Suspect and never Fail -
- *     the same reasoning as GetHostName vs the hostname convar in
- *     NetworkServerSuite.
+ *   - the command-queue convar cross-check: IsCommandQueueEnabled and
+ *     GetCommandQueueDilationPercentage against cq_enable and
+ *     cq_dilation_percentage, the convars their implementations read. The
+ *     link comes from reversing, not from the SDK, so a mismatch is Suspect
+ *     and never Fail - the same reasoning as GetHostName vs the hostname
+ *     convar in NetworkServerSuite.
+ *   - GetMaxHumanPlayers against GetPlayerLimits' maxplayers (Suspect), and
+ *     GetPlayerLimits against itself on a second call.
  *   - GetPlayerLimits() writes four out-parameters the SDK constrains only
  *     as "player limits". The type-level shape - every slot written, and
  *     written into [1, ABSOLUTE_PLAYER_LIMIT] where the value is a count -

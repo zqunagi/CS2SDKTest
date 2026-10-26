@@ -15,6 +15,7 @@
 #include <interfaces/interfaces.h>
 #include <steam/steamuniverse.h>
 #include <tier0/buffer_string.h>
+#include <tier0/convar.h>
 #include <tier0/utlstring.h>
 #include <tier0/utlvector.h>
 
@@ -104,6 +105,26 @@ ICvar* Cvar(TestContext& context)
 		cvar = static_cast<ICvar*>(context.QueryInterfaceAnywhere(CVAR_INTERFACE_VERSION));
 	}
 	return cvar;
+}
+
+/**
+ * Reads a convar's value as text into `out`. False when ICvar, the convar or
+ * its data is unavailable - the caller then records the row without an oracle.
+ */
+bool ReadConVarString(TestContext& context, const char* name, CBufferStringN<256>& out)
+{
+	ICvar* cvar = Cvar(context);
+	if (cvar == nullptr)
+	{
+		return false;
+	}
+	ConVarRefAbstract ref(cvar->FindConVar(name, true));
+	if (!ref.IsConVarDataAvailable())
+	{
+		return false;
+	}
+	ref.GetValueAsString(out);
+	return true;
 }
 
 } // namespace
@@ -203,12 +224,30 @@ void ServerConfigSuite::ExerciseAppSystem(TestContext& context)
 		}
 		context.Detail("-> %p, %d entr%s%s", static_cast<const void*>(deps),
 			count, count == 1 ? "y" : "ies", count == 64 ? " (capped)" : "");
+		for (int i = 0; i < count && i < 16; ++i)
+		{
+			context.Detail("   [%d] module \"%s\", interface \"%s\"", i,
+				deps[i].m_pModuleName,
+				deps[i].m_pInterfaceName != nullptr ? deps[i].m_pInterfaceName : "(null)");
+		}
 	});
 
 	CS2ST_CALL(context, "IAppSystem::QueryInterface", {
 		void* self = config_->QueryInterface(INTERFACEVERSION_SERVERCONFIG);
 		context.Detail("-> %p%s", self,
 			(self == static_cast<void*>(config_)) ? " (itself)" : "");
+		// Recorded, not judged: this slot is the AppSystem-internal lookup, not
+		// the CreateInterface one. Observed to return null for its own version
+		// string on the server config, and the SDK promises nothing either way.
+	});
+
+	CS2ST_CALL(context, "IAppSystem::QueryInterface (unknown name)", {
+		void* none = config_->QueryInterface("CS2SDKTestNoSuchInterface001");
+		context.Detail("-> %p", none);
+		if (none != nullptr)
+		{
+			context.Suspect("an interface name nobody registered resolved to a pointer");
+		}
 	});
 
 	context.SkipCall("IAppSystem::Connect", "would re-run game DLL startup");
@@ -283,6 +322,37 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 			context.Fail("a player limit above ABSOLUTE_PLAYER_LIMIT (%d) exceeds the "
 			             "engine-wide slot budget", ABSOLUTE_PLAYER_LIMIT);
 		}
+		else
+		{
+			// The SDK calls min "lower bound for same", so min <= max is part of
+			// the declaration; where the default sits is the game's policy.
+			if (min_players > max_players)
+			{
+				context.Fail("minplayers %d is above maxplayers %d; it is declared as "
+				             "the lower bound", min_players, max_players);
+			}
+			if (default_max < min_players || default_max > max_players)
+			{
+				context.Suspect("defaultMaxPlayers %d is outside [%d, %d]",
+					default_max, min_players, max_players);
+			}
+		}
+
+		// Second call, same answer: a getter of static configuration has no
+		// reason to differ between calls, and a changed value means an
+		// out-parameter was read from uninitialised stack.
+		int min2 = -31337;
+		int max2 = -31337;
+		int def2 = -31337;
+		bool multi2 = false;
+		config_->GetPlayerLimits(min2, max2, def2, multi2);
+		if (min2 != min_players || max2 != max_players || def2 != default_max
+			|| multi2 != is_multiplayer)
+		{
+			context.Suspect("a second GetPlayerLimits call answered differently "
+			                "(min %d, max %d, default %d, multiplayer %s)",
+				min2, max2, def2, multi2 ? "yes" : "no");
+		}
 	});
 
 	CS2ST_CALL(context, "ISource2ServerConfig::GetMaxSplitscreenPlayers", {
@@ -307,6 +377,22 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 		{
 			context.Fail("a human-slot count outside {-1} ∪ [1, %d] is not a count "
 			             "this SDK describes", ABSOLUTE_PLAYER_LIMIT);
+		}
+		else if (humans != -1)
+		{
+			// Second path: GetPlayerLimits' maxplayers. Human slots beyond the
+			// total slot count would be a contradiction, but the SDK does not
+			// say the two come from one source, so this is Suspect.
+			int min_players = 0;
+			int max_players = 0;
+			int default_max = 0;
+			bool is_multiplayer = false;
+			config_->GetPlayerLimits(min_players, max_players, default_max, is_multiplayer);
+			if (humans > max_players)
+			{
+				context.Suspect("%d human slots exceeds GetPlayerLimits maxplayers %d",
+					humans, max_players);
+			}
 		}
 	});
 
@@ -376,6 +462,19 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 		}
 	});
 
+	// Pure queries, so each universe gets a row: which universes a build
+	// accepts is policy and recorded, not judged. A row that disagrees with a
+	// previous log is the signal after an update.
+	CS2ST_CALL(context, "ISource2ServerConfig::AllowDedicatedServers [k_EUniverseBeta]", {
+		context.Detail("-> %s", config_->AllowDedicatedServers(k_EUniverseBeta) ? "true" : "false");
+	});
+	CS2ST_CALL(context, "ISource2ServerConfig::AllowDedicatedServers [k_EUniverseInternal]", {
+		context.Detail("-> %s", config_->AllowDedicatedServers(k_EUniverseInternal) ? "true" : "false");
+	});
+	CS2ST_CALL(context, "ISource2ServerConfig::AllowDedicatedServers [k_EUniverseDev]", {
+		context.Detail("-> %s", config_->AllowDedicatedServers(k_EUniverseDev) ? "true" : "false");
+	});
+
 	CS2ST_CALL(context, "ISource2ServerConfig::AllowSaveRestore", {
 		context.Detail("-> %s", config_->AllowSaveRestore() ? "true" : "false");
 	});
@@ -398,10 +497,9 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 //  caller's factory on first call (cached in a libserver.so global, ~200
 //  readers), then register this DLL's game events (the sub_1779D60 tail).
 //  The interface pointer never leaves the DLL - the runtime probe got 0x1
-//  back, a bool success code - so the SDK's void* era is over; the current
-//  declaration passes no factory at all. Calling it re-runs the registration
-//  walk only (idempotent, observed harmless with a warm cache), but it is
-//  engine-init territory, so the row records a SkipCall rather than a probe.
+//  back, a bool success code. The declaration takes the caller's
+//  CreateInterfaceFn; calling it re-runs the registration walk only
+//  (idempotent, observed harmless with a warm cache), so it is probed for real.
 // -----------------------------------------------------------------------------
 
 void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
@@ -411,7 +509,26 @@ void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "ISource2ServerConfig::IsCommandQueueEnabled [slot 23, bool]", {
-		context.Detail("-> %s", config_->IsCommandQueueEnabled() ? "true" : "false");
+		const bool enabled = config_->IsCommandQueueEnabled();
+		context.Detail("-> %s", enabled ? "true" : "false");
+
+		// Second path: the cq_enable convar the implementation reads. The SDK
+		// does not state the link (it came from reversing), so Suspect.
+		CBufferStringN<256> value(false);
+		if (ReadConVarString(context, "cq_enable", value))
+		{
+			const bool convar_on = std::atoi(value.Get()) != 0
+				|| std::strcmp(value.Get(), "true") == 0;
+			context.Detail("   cq_enable \"%s\"", value.Get());
+			if (convar_on != enabled)
+			{
+				context.Suspect("IsCommandQueueEnabled and cq_enable disagree");
+			}
+		}
+		else
+		{
+			context.Detail("   cq_enable is not readable; no second path");
+		}
 	});
 
 	// The one float in the tail. A wrong slot mapping here reads a stale XMM0
@@ -423,6 +540,23 @@ void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
 		unsigned int bits = 0;
 		std::memcpy(&bits, &value, sizeof(bits));
 		context.Detail("-> %f (bits 0x%08X)", value, bits);
+
+		CBufferStringN<256> text(false);
+		if (ReadConVarString(context, "cq_dilation_percentage", text))
+		{
+			const double convar_value = std::atof(text.Get());
+			context.Detail("   cq_dilation_percentage \"%s\"", text.Get());
+			if (std::fabs(convar_value - static_cast<double>(value)) > 0.001)
+			{
+				context.Suspect("GetCommandQueueDilationPercentage %f and "
+				                "cq_dilation_percentage %f disagree",
+					static_cast<double>(value), convar_value);
+			}
+		}
+		else
+		{
+			context.Detail("   cq_dilation_percentage is not readable; no second path");
+		}
 	});
 
 	// Slots 25-27 were unk201-203 until the 2026-10 SDK named them. The row
@@ -439,12 +573,31 @@ void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
 		context.Detail("-> %s", config_->Uses64TickInterval() ? "true" : "false");
 	});
 
-	context.SkipCall("ISource2ServerConfig::InitGameEvents [slot 28]",
-		"the game-event ensure-and-register hook; the probe era established it "
-		"caches GameEventSystemServerV001 in a server-DLL global and returns a "
-		"bool, but its body also walks the event dictionary, which is engine "
-		"init - not something a probe should re-run for a value it already "
-		"knows how to interpret");
+	// Real call with the engine2 module's own factory - the one the engine
+	// passes the game DLL at startup. Observed idempotent with a warm cache
+	// (re-registers the game events only), so the cost is a repeated
+	// registration walk, which later suites do not depend on.
+	const Module& engine_module = context.GetModule("engine2");
+	if (!engine_module.IsValid() || engine_module.factory() == nullptr)
+	{
+		context.UnavailableCall("ISource2ServerConfig::InitGameEvents [slot 28]",
+			"the engine2 module or its CreateInterface factory is not available");
+	}
+	else
+	{
+		const CreateInterfaceFn factory =
+			reinterpret_cast<CreateInterfaceFn>(engine_module.factory());
+		CS2ST_CALL(context, "ISource2ServerConfig::InitGameEvents [slot 28, bool]", {
+			const bool ok = config_->InitGameEvents(factory);
+			context.Detail("-> %s (engine2 factory %p)", ok ? "true" : "false",
+				reinterpret_cast<void*>(factory));
+			if (!ok)
+			{
+				context.Suspect("the registration hook reported failure with the "
+				                "engine's own factory");
+			}
+		});
+	}
 }
 
 // -----------------------------------------------------------------------------
