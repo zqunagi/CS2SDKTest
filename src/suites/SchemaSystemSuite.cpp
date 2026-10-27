@@ -1535,8 +1535,9 @@ void SchemaSystemSuite::ExerciseAtomicLookups(TestContext& context)
 //  be skipped. Called with the key of an entry already sitting in the scope's
 //  own map, it is a hit instead: nothing is created, and the answer has to be
 //  the very object the map holds. The keys are read straight out of the
-//  interned maps, which also supplies the (atomic ID, template type, manipulator)
-//  tuples the FindType_Atomic_* family needs and no class field could.
+//  interned maps, which also supplies the (atomic ID, template type, fixed
+//  buffer count, manipulator) tuples the FindType_Atomic_* family needs and no
+//  class field could.
 // -----------------------------------------------------------------------------
 
 namespace
@@ -1694,7 +1695,8 @@ void SchemaSystemSuite::ExerciseInternLookups(TestContext& context)
 		}
 		ReportInternHit(context,
 			probe_scope_->FindType_Atomic_CollectionOfT(entry->m_nAtomicID,
-				entry->m_pTemplateType, entry->m_pfnManipulator).Get(), entry);
+				entry->m_pTemplateType, entry->m_nFixedBufferCount,
+				entry->m_pfnManipulator).Get(), entry);
 	});
 
 	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic_TT (existing key)", {
