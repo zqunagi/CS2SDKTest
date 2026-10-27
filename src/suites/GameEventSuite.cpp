@@ -177,7 +177,7 @@ const char* const kGameEventMethods[] = {
 	"IGameEvent::SetPlayer [CPlayerSlot]",
 	"IGameEvent::SetPlayerRaw",
 	"IGameEvent::HasKey",
-	"IGameEvent::unk001",
+	"IGameEvent::CreateVMTable",
 	"IGameEvent::GetDataKeys",
 };
 
