@@ -17,6 +17,10 @@
 #include <interfaces/interfaces.h>
 #include <tier0/buffer_string.h>
 #include <tier0/convar.h>
+#if defined(CS2SDKTEST_WITH_KEYVALUES3)
+#include <new>
+#include <tier0/keyvalues3.h>
+#endif
 #include <tier0/netadr.h>
 #include <tier0/utlvector.h>
 
@@ -1373,9 +1377,57 @@ void NetworkServerSuite::ExerciseGameServerBase(TestContext& context)
 		"was never created");
 	context.SkipCall("CNetworkGameServerBase::OnConCommandCreated",
 		"the same for console commands");
+#if defined(CS2SDKTEST_WITH_KEYVALUES3)
+	CS2ST_CALL(context, "CNetworkGameServerBase::FillKV3ServerInfo", {
+		// Never destructed, like every KeyValues3 KeyValues3Suite builds: the
+		// engine allocates the table inside this root, and the Windows
+		// allocator split in testkit/UtlVectorGuard.h applies.
+		KeyValues3* info = new (::operator new(sizeof(KeyValues3))) KeyValues3();
+		game_server_->FillKV3ServerInfo(info);
+
+		const int members = info->IsTable() ? info->GetMemberCount() : -1;
+		context.Detail("-> %s, %d member(s)", info->GetTypeAsString(), members);
+
+		if (!info->IsTable())
+		{
+			context.Suspect("the engine left a %s, not a table", info->GetTypeAsString());
+		}
+		else
+		{
+			// Member names only: values can carry the host name or an address.
+			bool has_ticks = false;
+			bool has_frametime = false;
+			int named = 0;
+			for (KV3MemberId_t id = 0; id < members && id < 4096; ++id)
+			{
+				const char* name = info->GetMemberName(id);
+				if (name != nullptr && name[0] != '\0')
+				{
+					++named;
+					has_ticks = has_ticks || std::strcmp(name, "ticks_per_interval") == 0;
+					has_frametime = has_frametime
+						|| std::strcmp(name, "framecomputetime_ms_per_interval") == 0;
+				}
+			}
+			context.Detail("%d named; ticks_per_interval=%d framecomputetime_ms_per_interval=%d",
+				named, has_ticks, has_frametime);
+
+			if (members < 0 || members > 4096 || named != members)
+			{
+				context.Fail("member count %d and %d named members disagree", members, named);
+			}
+			if (!has_ticks || !has_frametime)
+			{
+				// Both names come from a comment in networkgameserverbase.h.
+				context.Suspect("a histogram the SDK comment names is not among the members");
+			}
+		}
+	});
+#else
 	context.SkipCall("CNetworkGameServerBase::FillKV3ServerInfo",
 		"needs a KeyValues3 to fill, and tier0_perproject/keyvalues3.cpp is not in this "
 		"build (CS2SDKTEST_TIER1_KEYVALUES3 is off)");
+#endif
 	context.SkipCall("CNetworkGameServerBase::FillServerInfo",
 		"needs a CSVCMsg_ServerInfo_t, and the netmessages protobufs are not "
 		"among CS2SDKTEST_PROTO_FILES");
