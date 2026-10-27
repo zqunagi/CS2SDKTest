@@ -16,11 +16,11 @@
   --shadow:none;
 }}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
-main{max-width:1040px;margin:0 auto;padding:28px 16px 64px}
-header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
-h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
-.sub{color:var(--mut);margin-top:2px}
+body{margin:0;-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:36px 16px 64px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--line)}
+h1{font-size:24px;font-weight:700;margin:0;letter-spacing:-.02em}
+.sub{color:var(--mut);margin-top:4px}
 .hd{display:inline-flex;align-items:stretch;height:32px;border:1px solid var(--line);border-radius:999px;background:var(--surface);box-shadow:var(--shadow);color:var(--mut);font-size:12.5px;line-height:1;white-space:nowrap;overflow:hidden}
 .hd>*+*{border-left:1px solid var(--line)}
 .it{display:inline-flex;align-items:center;gap:6px;padding:0 12px;font-variant-numeric:tabular-nums}
@@ -32,9 +32,9 @@ h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
 .gh:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .gh svg{width:16px;height:16px;fill:currentColor}
 @media(max-width:520px){.it .lb{display:none}}
-h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:28px 0 10px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
-.pad{padding:18px 20px}
+h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:32px 0 12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.pad{padding:22px 24px}
 .mono,code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--soft);color:var(--mut)}
 .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
@@ -44,10 +44,10 @@ h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;lett
 @media(max-width:720px){.hero{grid-template-columns:1fr}}
 .meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--mut);margin-top:10px}
 .meta b{color:var(--fg);font-weight:600}
-.big{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.big{font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .big small{font-size:14px;color:var(--mut);font-weight:500;margin-left:6px}
-.bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--soft);margin:14px 0 10px}
-.bar i{display:block;min-width:2px}
+.bar{display:flex;gap:2px;height:10px;border-radius:999px;overflow:hidden;background:var(--soft);margin:16px 0 12px}
+.bar i{display:block;min-width:3px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mut)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend em{font-style:normal;color:var(--fg);font-weight:600}
@@ -55,12 +55,13 @@ h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;lett
 .OK{--c:var(--ok)}.FAIL{--c:var(--fail)}.CRASHED{--c:var(--crash)}.SUSPECT{--c:var(--sus)}.SKIP{--c:var(--skip)}.NA{--c:var(--na)}
 .bar i,.dot{background:var(--c)}
 table{width:100%;border-collapse:collapse}
-th{font-weight:500;color:var(--mut);text-align:left;font-size:12.5px;padding:10px 16px;border-bottom:1px solid var(--line)}
-td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:500;color:var(--mut);text-align:left;font-size:12.5px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--soft);white-space:nowrap}
+td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
 tbody tr.run{cursor:pointer}
 tbody tr.run:hover td{background:var(--soft)}
 tbody tr.sel td{background:color-mix(in srgb,var(--acc) 8%,transparent)}
+tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
 .hfilter{margin:0;padding:12px 16px 4px}
 .hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
@@ -80,12 +81,15 @@ tbody tr.sel td{background:color-mix(in srgb,var(--acc) 8%,transparent)}
 .bad{color:var(--fail);font-weight:600}
 .empty{padding:36px;text-align:center;color:var(--mut)}
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
-.tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer}
+.tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background .15s,border-color .15s}
+.tab:hover:not([aria-pressed=true]){background:var(--soft)}
+.tab:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .tab[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .tab span{color:var(--mut);margin-left:4px}.tab[aria-pressed=true] span{color:inherit;opacity:.7}
 details{border-top:1px solid var(--line)}
 details:first-of-type{border-top:0}
-summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 20px}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 20px;transition:background .15s}
+summary:hover{background:var(--soft)}
 summary::-webkit-details-marker{display:none}
 summary::before{content:"›";color:var(--mut);transition:transform .12s;display:inline-block;width:10px}
 details[open]>summary::before{transform:rotate(90deg)}
@@ -93,7 +97,7 @@ summary .name{font-weight:600}
 summary .cnt{margin-left:auto;display:flex;gap:10px;color:var(--mut);font-size:12.5px}
 summary .cnt b{color:var(--c);font-weight:600}
 .rows{padding:0 20px 12px 40px}
-.row{display:grid;grid-template-columns:78px minmax(0,1.3fr) minmax(0,1.7fr);gap:12px;padding:6px 0;border-top:1px dashed var(--line)}
+.row{display:grid;grid-template-columns:78px minmax(0,1.3fr) minmax(0,1.7fr);gap:12px;padding:7px 0;border-top:1px dashed var(--line)}
 .row:first-child{border-top:0}
 .tag{font-size:11px;font-weight:700;color:var(--c);letter-spacing:.03em}
 .row code{min-width:0;overflow-wrap:anywhere}
@@ -103,11 +107,9 @@ summary .cnt b{color:var(--c);font-weight:600}
 .diff{padding:4px 20px 12px}
 .diff .row{grid-template-columns:minmax(0,1.6fr) 150px}
 .arrow{color:var(--mut)}
-footer{margin-top:36px;color:var(--mut);font-size:12px;text-align:center}
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:12px;text-align:center}
 footer a,footer a:link,footer a:visited,footer a:hover,footer a:active{color:inherit;text-decoration:none}
 footer a:hover{text-decoration:underline}
-.pv{display:none}
-.pv[style*="inline"],.pv[style*="block"]{display:inline-flex!important}
 </style>
 </head>
 <body>
@@ -116,7 +118,6 @@ footer a:hover{text-decoration:underline}
   <div><h1>CS2SDKTest</h1><div class="sub">Linux 环境测试</div></div>
   <div class="hd">
     <span class="it" id="runs" title="已记录的运行次数" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span><b id="count"></b> <span class="lb">次运行</span></span></span>
-    <span class="it pv" id="busuanzi_container_site_pv" title="累计访问"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span><b id="busuanzi_value_site_pv"></b> <span class="lb">次访问</span></span></span>
     <a class="gh" href="https://github.com/zqunagi/CS2SDKTest" target="_blank" rel="noopener" aria-label="GitHub 仓库" title="GitHub 仓库"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></div>
 </header>
 
@@ -127,7 +128,6 @@ footer a:hover{text-decoration:underline}
 
 <div id="detail"></div>
 <footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
-<script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
 </main>
 
 <script>
