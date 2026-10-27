@@ -13,7 +13,7 @@ Test suites live here — one per SDK interface being exercised.
   FileSystemSuite          IFileSystem                                   (calls: read-only handle I/O + path/find/name-dictionary oracles; mutating slots SkipCall)
   GamedataSuite            configs/gamedata.toml                         (47 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
-  Tier0ContainerSuite      CUtlVector / CUtlString / CUtlBuffer          (engine-built objects read through the SDK headers + 1 struct layout)
+  Tier0ContainerSuite      CUtlVector / CUtlString / CUtlBuffer / CBufferString (engine-built objects read through the SDK headers + 2 struct layouts)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not s2sdk, and it
 is here because LevelInit/LevelShutdown reach a Source 2 plugin only through
@@ -159,7 +159,7 @@ check).
   Source2ServerSuite       engine2/isource2server.h (ISource2Server)
   Source2GameClientsSuite  engine2/isource2server.h (ISource2GameClients), engine2/ivengineserver2.h
   ServerConfigSuite        engine2/isource2serverconfig.h, steam/steamuniverse.h
-  Tier0ContainerSuite      tier0/utlvector.h, tier0/utlvectormemory.h, tier0/utlstring.h, tier0/utlbuffer.h, schemasystem/schemasystem.h (CSchemaSystem::m_LoadedModules)
+  Tier0ContainerSuite      tier0/utlvector.h, tier0/utlvectormemory.h, tier0/utlstring.h, tier0/utlbuffer.h, tier0/buffer_string.h, schemasystem/schemasystem.h (CSchemaSystem::m_LoadedModules)
   ConVarSuite              tier0/icvar.h, tier0/convar.h
   SchemaSystemSuite        schemasystem/schemasystem.h, schemasystem/ischemasystem.h
   GameEntitySystemSuite    entity2/entitysystem.h, entity2/entityinstance.h, entity2/entityclass.h, engine2/igameresourceservice.h,

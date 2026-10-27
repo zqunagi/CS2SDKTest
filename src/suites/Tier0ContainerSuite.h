@@ -57,6 +57,7 @@ public:
 private:
 	void ExerciseUtlString(TestContext& context);
 	void ExerciseUtlBuffer(TestContext& context);
+	void ExerciseBufferString(TestContext& context);
 	void ExerciseUtlVector(TestContext& context);
 	void NoteUncoveredContainers(TestContext& context);
 
