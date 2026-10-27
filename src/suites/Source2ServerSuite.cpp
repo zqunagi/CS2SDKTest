@@ -634,7 +634,7 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISource2Server::FormatSerializerFieldValue",
 		"FlattenedSerializerSpewField_t is only forward-declared");
 	context.SkipCall("ISource2Server::WriteStatusJson",
-		"needs a live KeyValues3 from the engine's allocator");
+		"called by KeyValues3Suite when CS2SDKTEST_TIER1_KEYVALUES3 is on; needs a KeyValues3 to write into");
 	context.SkipCall("ISource2Server::ClearSaveDirectory",
 		"deletes the save directory's contents");
 	context.SkipCall("ISource2Server::PreSaveGameLoaded",

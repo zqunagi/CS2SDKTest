@@ -14,6 +14,7 @@ Test suites live here — one per SDK interface being exercised.
   GamedataSuite            configs/gamedata.toml                         (47 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
   Tier0ContainerSuite      CUtlVector / CUtlString / CUtlBuffer / CBufferString (engine-built objects read through the SDK headers + 2 struct layouts)
+  KeyValues3Suite          KeyValues3 (engine-filled via WriteStatusJson; needs CS2SDKTEST_TIER1_KEYVALUES3)
 
 MetamodListenerSuite is the odd one out: it tests Metamod, not s2sdk, and it
 is here because LevelInit/LevelShutdown reach a Source 2 plugin only through
@@ -160,6 +161,7 @@ check).
   Source2GameClientsSuite  engine2/isource2server.h (ISource2GameClients), engine2/ivengineserver2.h
   ServerConfigSuite        engine2/isource2serverconfig.h, steam/steamuniverse.h
   Tier0ContainerSuite      tier0/utlvector.h, tier0/utlvectormemory.h, tier0/utlstring.h, tier0/utlbuffer.h, tier0/buffer_string.h, schemasystem/schemasystem.h (CSchemaSystem::m_LoadedModules)
+  KeyValues3Suite          tier0/keyvalues3.h, engine2/isource2server.h (WriteStatusJson), tier0/buffer_string.h
   ConVarSuite              tier0/icvar.h, tier0/convar.h
   SchemaSystemSuite        schemasystem/schemasystem.h, schemasystem/ischemasystem.h
   GameEntitySystemSuite    entity2/entitysystem.h, entity2/entityinstance.h, entity2/entityclass.h, engine2/igameresourceservice.h,

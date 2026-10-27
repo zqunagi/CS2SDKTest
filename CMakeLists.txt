@@ -59,8 +59,12 @@ option(CS2SDKTEST_WITH_PROTOBUF
 set(CS2SDKTEST_PROTO_FILES "network_connection;netmessages"
     CACHE STRING "s2sdk/common proto files to generate (without .proto)")
 
+# ON by default since KeyValues3Suite: it reads back a KeyValues3 the engine
+# wrote (ISource2Server::WriteStatusJson), and the KeyValues3 implementation is
+# compiled into the plugin rather than exported by tier0. With this off that
+# suite reports itself unavailable.
 option(CS2SDKTEST_TIER1_KEYVALUES3
-       "Also compile tier1/keyvalues3.cpp into the plugin" OFF)
+       "Also compile tier1/keyvalues3.cpp into the plugin" ON)
 # ON by default since NetworkMessagesSuite: its serialization round trip needs
 # bf_write/bf_read, whose constructors are exported by no prebuilt library
 # (tier0 contains only netadr_t::Serialize/Unserialize). With this off that
@@ -168,6 +172,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/FileSystemSuite.cpp
   src/suites/GamedataSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
+  src/suites/KeyValues3Suite.cpp
 )
 
 set(CS2SDKTEST_HEADERS
@@ -209,6 +214,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/FileSystemSuite.h
   src/suites/GamedataSuite.h
   src/suites/Tier0ContainerSuite.h
+  src/suites/KeyValues3Suite.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:
@@ -263,6 +269,11 @@ endif()
 
 # NetworkMessagesSuite's round trip compiles in only when bitbuf is present;
 # the define is how the .cpp knows which half of itself to build.
+# KeyValues3Suite is only meaningful with the SDK implementation compiled in.
+if(CS2SDKTEST_TIER1_KEYVALUES3)
+  target_compile_definitions(cs2sdktest PRIVATE CS2SDKTEST_WITH_KEYVALUES3=1)
+endif()
+
 if(CS2SDKTEST_TIER1_BITBUF)
   target_compile_definitions(cs2sdktest PRIVATE CS2SDKTEST_WITH_BITBUF=1)
 endif()
