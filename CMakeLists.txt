@@ -167,6 +167,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/ServerConfigSuite.cpp
   src/suites/FileSystemSuite.cpp
   src/suites/GamedataSuite.cpp
+  src/suites/Tier0ContainerSuite.cpp
 )
 
 set(CS2SDKTEST_HEADERS
@@ -207,6 +208,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/ServerConfigSuite.h
   src/suites/FileSystemSuite.h
   src/suites/GamedataSuite.h
+  src/suites/Tier0ContainerSuite.h
 )
 
 # Upstream Source 2 plugins compile these SDK translation units directly:
