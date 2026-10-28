@@ -1957,14 +1957,13 @@ void SchemaSystemSuite::ExerciseClassGraph(TestContext& context)
 	}
 
 	CS2ST_CALL(context, "ISchemaSystem::FindDescendentsOfClass", {
-		// The second parameter is an unnamed int in the SDK. Both this function
-		// and FindClassesByMeta take a hierarchy-iteration argument in the same
-		// position, so SCHEMA_ITER_NONE (0) is the conservative reading; the
-		// trailing bool is likewise unnamed and passed false.
+		// The second parameter is SchemaSubclassTraversalDepth_t (an unnamed int
+		// before the 2026-10 SDK); the trailing bool is still unnamed, passed false.
+		// The other three depths are compared in the next row.
 		CUtlVector<const CSchemaClassInfo*> descendents;
 		UtlVectorGuard<decltype(descendents)> descendents_guard(descendents);
 		schema_->FindDescendentsOfClass(probe_class_,
-			static_cast<int>(SCHEMA_ITER_NONE), &descendents, false);
+			TRAVERSE_SHALLOW_NO_ABSTRACT, &descendents, false);
 
 		const int count = descendents.Count();
 		context.Detail("-> %d descendent(s) of %s", count, probe_class_name_);
@@ -1985,6 +1984,44 @@ void SchemaSystemSuite::ExerciseClassGraph(TestContext& context)
 		if (count > shown)
 		{
 			context.Note("    ... and %d more", count - shown);
+		}
+	});
+
+	CS2ST_CALL(context, "ISchemaSystem::FindDescendentsOfClass (all four traversal depths)", {
+		// A deep walk reaches at least what the shallow one does, and counting
+		// abstract classes never loses any.
+		// No braced initializers in here: their commas would split the macro arguments.
+		SchemaSubclassTraversalDepth_t kDepths[4];
+		kDepths[0] = TRAVERSE_SHALLOW_NO_ABSTRACT;
+		kDepths[1] = TRAVERSE_SHALLOW_WITH_ABSTRACT;
+		kDepths[2] = TRAVERSE_DEEP_NO_ABSTRACT;
+		kDepths[3] = TRAVERSE_DEEP_WITH_ABSTRACT;
+		int counts[4];
+		for (int& c : counts)
+		{
+			c = -1;
+		}
+		for (int d = 0; d < 4; ++d)
+		{
+			CUtlVector<const CSchemaClassInfo*> descendents;
+			UtlVectorGuard<decltype(descendents)> descendents_guard(descendents);
+			schema_->FindDescendentsOfClass(probe_class_, kDepths[d], &descendents, false);
+			counts[d] = descendents.Count();
+		}
+		context.Detail("-> shallow=%d shallow+abstract=%d deep=%d deep+abstract=%d",
+			counts[0], counts[1], counts[2], counts[3]);
+		for (int d = 0; d < 4; ++d)
+		{
+			if (counts[d] < 0 || counts[d] > kMaxPlausibleCount)
+			{
+				context.Fail("depth %d returned %d, which is not a count", d, counts[d]);
+				return;
+			}
+		}
+		if (counts[1] < counts[0] || counts[3] < counts[2]
+			|| counts[2] < counts[0] || counts[3] < counts[1])
+		{
+			context.Suspect("traversal depth / abstract counts are not monotonic");
 		}
 	});
 

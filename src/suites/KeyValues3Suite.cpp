@@ -254,6 +254,25 @@ void KeyValues3Suite::ExerciseLocal(TestContext& context)
 			context.Fail("a container did not read back what was set");
 		}
 	});
+
+	CS2ST_CALL(context, "KeyValues3 numbers from partial strings (local; PARSING_FLAG_USE_PARTIAL_RESULT)", {
+		KeyValues3* kv = MakeLeakedKv3();
+
+		// Signed integers keep the number before the first invalid character;
+		// unsigned and floating point parsing return the default.
+		kv->SetString("12abc");
+		const bool int_ok = kv->GetInt(-1) == 12 && kv->GetInt64(-1) == 12 && kv->GetShort(-1) == 12;
+		const bool uint_ok = kv->GetUInt(7) == 7;
+		const bool float_ok = kv->GetFloat(0.5f) == 0.5f;
+		kv->SetString("abc");
+		const bool none_ok = kv->GetInt(-1) == -1;
+
+		context.Detail("int=%d uint=%d float=%d none=%d", int_ok, uint_ok, float_ok, none_ok);
+		if (!int_ok || !uint_ok || !float_ok || !none_ok)
+		{
+			context.Suspect("a partially numeric string did not parse as the SDK reference expects");
+		}
+	});
 }
 
 } // namespace cs2st
