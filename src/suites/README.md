@@ -10,6 +10,7 @@ Test suites live here — one per SDK interface being exercised.
   NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t & GameSessionConfiguration_t layouts + 15 cross-checks + 5 hooks)
   NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout (incl. m_bLastLineComplete vs tier0) + protobuf round trip)
   ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
+  EngineServiceMgrSuite    IEngineServiceMgr                             (calls: active loop, 16-name service probe, addon list; registering/starting slots SkipCall)
   FileSystemSuite          IFileSystem                                   (calls: read-only handle I/O + path/find/name-dictionary oracles; mutating slots SkipCall)
   GamedataSuite            configs/gamedata.toml                         (47 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
   MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
@@ -160,6 +161,7 @@ check).
   Source2ServerSuite       engine2/isource2server.h (ISource2Server)
   Source2GameClientsSuite  engine2/isource2server.h (ISource2GameClients), engine2/ivengineserver2.h
   ServerConfigSuite        engine2/isource2serverconfig.h, steam/steamuniverse.h
+  EngineServiceMgrSuite    engine2/iengineservicemgr.h (IEngineServiceMgr; IEngineService only through FindService results)
   Tier0ContainerSuite      tier0/utlvector.h, tier0/utlvectormemory.h, tier0/utlstring.h, tier0/utlbuffer.h, tier0/buffer_string.h, schemasystem/schemasystem.h (CSchemaSystem::m_LoadedModules)
   KeyValues3Suite          tier0/keyvalues3.h, engine2/isource2server.h (WriteStatusJson), tier0/buffer_string.h
   ConVarSuite              tier0/icvar.h, tier0/convar.h

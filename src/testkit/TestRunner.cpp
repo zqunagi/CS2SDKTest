@@ -10,6 +10,7 @@
 #include "suites/NetworkMessagesSuite.h"
 #include "suites/NetworkServerSuite.h"
 #include "suites/SchemaSystemSuite.h"
+#include "suites/EngineServiceMgrSuite.h"
 #include "suites/ServerConfigSuite.h"
 #include "suites/Tier0ContainerSuite.h"
 #include "suites/KeyValues3Suite.h"
@@ -39,6 +40,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkServerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkMessagesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new EngineServiceMgrSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new KeyValues3Suite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
