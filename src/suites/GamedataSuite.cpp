@@ -87,12 +87,6 @@ using NavMeshBool_t = bool (*)();
 // registers the prologue spills (rdi..r9), with msg_name landing in strlen.
 using ClientPrintAll_t = void (*)(int, const char*, const char*, const char*,
                                   const char*, const char*);
-// ClientPrint(out, filter, origin, dest, ...): writes a vtable into out[0]
-// and an object chain into out[1]/out[2]; the pointer arguments are all read
-// (the filter's callback slot, the origin vectors), so callers pass buffers,
-// never null.
-using ClientPrint_t = void (*)(void*, const void*, const void*, int, const void*,
-                               const void*, char, const void*);
 using SwitchTeam_t = void (*)(void*, int);
 using SetPawn_t = void (*)(void*, void*, bool, bool, bool, bool);
 using PostThink_t = void (*)(void*);
@@ -110,8 +104,8 @@ using CanAcquire_t = int (*)(void*, void*, int, int*);
 // by position, and there the delay must sit second (xmm1) with the reason in
 // r8d - an (int, long long, float) order lands them in the wrong registers.
 using TerminateRound_t = void (*)(void*, float, int, long long, unsigned);
-// The Windows build's ClientPrint is the player-addressed one (CSS's own
-// declaration): its pattern opens with `test rcx,rcx; jz`, a null player is a
+// ClientPrint is the player-addressed one on both platforms (CSS's own
+// declaration): the Windows pattern opens with `test rcx,rcx; jz`, a null player is a
 // no-op, and a non-null one is walked as a controller.
 using ClientPrintPlayer_t = void (*)(void*, int, const char*, const char*, const char*,
                                      const char*, const char*);
@@ -893,55 +887,28 @@ void GamedataSuite::VerifyClientPrintAll(TestContext& context)
 
 void GamedataSuite::VerifyClientPrint(TestContext& context)
 {
-	if (CS2ST_WINDOWS != 0)
+	// ClientPrint is the player-addressed one on both platforms - CSS's own
+	// declaration (player, dest, msg, p1..p4), and the shape the Windows
+	// pattern opens with: `test rcx,rcx; jz`. The null player is the oracle
+	// that tells it from its neighbours: it must be a quiet no-op. The
+	// message-builder function a stale Linux pattern can land on writes
+	// through its first argument unconditionally, so a null there faults,
+	// and an arbitrary other function does not return cleanly with a null
+	// first argument either. The second call then needs a real controller.
+	const auto print = reinterpret_cast<ClientPrintPlayer_t>(Address("ClientPrint"));
+	print(nullptr, 4, "cs2sdktest gamedata behaviour sweep", nullptr, nullptr, nullptr,
+		nullptr);
+	if (bot_controller_ == nullptr)
 	{
-		// Not the Linux message builder below: this pattern is the function
-		// that takes the player. A buffer passed as the player is walked as a
-		// controller, and its null fields fault - so the call needs a real
-		// controller, and the observable is the call surviving.
-		if (bot_controller_ == nullptr)
-		{
-			context.SkipCall("signatures.ClientPrint", "%s | scan ok, behaviour not run: %s",
-				row_location_.c_str(), BotMissingReason());
-			return;
-		}
-		reinterpret_cast<ClientPrintPlayer_t>(Address("ClientPrint"))(
-			bot_controller_, 4, "cs2sdktest gamedata behaviour sweep", nullptr, nullptr,
-			nullptr, nullptr);
-		RowDetail(context, "HUD_PRINTTALK line sent to bot '%s' (controller %p), call returned",
-			bot_name_.c_str(), static_cast<void*>(bot_controller_));
+		context.SkipCall("signatures.ClientPrint",
+			"%s | null player was a no-op; controller call not run: %s",
+			row_location_.c_str(), BotMissingReason());
 		return;
 	}
-
-	// ClientPrint(out, ...) fills a message-builder object. Every pointer
-	// argument but the last is dereferenced before the builder is touched
-	// (build 25947352: the filter's callback at +8, two vectors out of a3,
-	// a5[0] and a5[2], sixteen bytes out of a6 plus its second qword) - so
-	// each rides its own zeroed buffer, and a zeroed buffer is the shape
-	// whose callback slot is null, which the body branches on and handles.
-	unsigned char out[384] = {0};
-	unsigned char filter_bytes[64] = {0};
-	unsigned char origin[32] = {0}; // two unaligned loads reach +27
-	unsigned char unknown12[12] = {0};
-	unsigned char unknown32[32] = {0};
-	reinterpret_cast<ClientPrint_t>(Address("ClientPrint"))(
-		out, filter_bytes, origin, 4, unknown12, unknown32, 0, nullptr);
-
-	// The binary writes a module vtable into out[0] before anything else; a
-	// null out[0] means nothing was built.
-	void* first = nullptr;
-	std::memcpy(&first, out, sizeof(first));
-	RowDetail(context, "builder out[0] = %p", first);
-	if (first == nullptr)
-	{
-		context.Fail("behaviour: the builder came back empty (out[0] null); the address is "
-		             "not ClientPrint");
-	}
-	else if (!InModule(context.GetModule("server"), first))
-	{
-		context.Fail("behaviour: out[0] does not point into the server module; the builder's "
-		             "vtable is wrong");
-	}
+	print(bot_controller_, 4, "cs2sdktest gamedata behaviour sweep", nullptr, nullptr,
+		nullptr, nullptr);
+	RowDetail(context, "null player no-op; HUD_PRINTTALK line sent to bot '%s' (controller %p), "
+	                   "call returned", bot_name_.c_str(), static_cast<void*>(bot_controller_));
 }
 
 void GamedataSuite::VerifySwitchTeam(TestContext& context)
