@@ -4,7 +4,6 @@
 
 **面向 s2sdk 的全接口测试插件。**
 
-[![Build](https://github.com/zqunagi/CS2SDKTest/actions/workflows/build.yml/badge.svg)](https://github.com/zqunagi/CS2SDKTest/actions)
 [![Release](https://img.shields.io/github/v/release/zqunagi/CS2SDKTest?sort=semver)](https://github.com/zqunagi/CS2SDKTest/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -30,6 +29,11 @@ CS2SDKTest 是一个 [Metamod:Source](https://www.sourcemm.net/) 插件，用于
 | **布局** | 读取结构体真实内存，核对字段偏移与大小 | `OK` / `FAIL` |
 
 仅检查接口版本字符串无法发现虚表槽位变化或参数变更，因此本项目采用实际调用的方式验证。该方法同样适用于游戏更新后的回归检查：结果由 `OK` 变为 `CRASHED` 或 `FAIL`，或 hook 由有计数变为 `never`，即表明对应接口需要适配。
+
+> [!WARNING]
+> **测试结果不保证完全准确。** 由于部分接口行为没有可对照的基准或者依赖运行时状态，结果可能存在误判（误报或漏报）：`FAIL` / `CRASHED` 不一定意味着 s2sdk 存在缺陷，也可能源于测试用例本身的错误、调用前置条件不满足或测试环境差异；`OK` 同样不能证明接口完全正确。出现异常结果时，应结合反汇编或引擎二进制**人工**确认根因，再作结论。
+>
+> **绝大部分测试用例由 AI 生成。** 用例未经过逐项人工审查，其中的调用方式、参数、断言条件和预期值可能有误，不应将其视为接口行为的权威依据。
 
 ## 快速开始
 
@@ -115,13 +119,6 @@ package/
 cmake --preset linux-x64-release -D CS2SDKTEST_GAME_DIR=/srv/cs2/game/csgo
 cmake --build --preset linux-x64-release --target deploy
 ```
-
-## 警告
-
-> [!WARNING]
-> **测试结果不保证完全准确。** 由于部分接口行为没有可对照的基准或者依赖运行时状态，结果可能存在误判（误报或漏报）：`FAIL` / `CRASHED` 不一定意味着 s2sdk 存在缺陷，也可能源于测试用例本身的错误、调用前置条件不满足或测试环境差异；`OK` 同样不能证明接口完全正确。出现异常结果时，应结合反汇编或引擎二进制人工确认根因，再作结论。
->
-> **绝大部分测试用例由 AI 生成。** 用例未经过逐项人工审查，其中的调用方式、参数、断言条件和预期值可能有误，不应将其视为接口行为的权威依据。
 
 ## 许可
 

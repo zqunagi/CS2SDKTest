@@ -4,7 +4,6 @@
 
 **A full-interface test plugin for s2sdk.**
 
-[![Build](https://github.com/zqunagi/CS2SDKTest/actions/workflows/build.yml/badge.svg)](https://github.com/zqunagi/CS2SDKTest/actions)
 [![Release](https://img.shields.io/github/v/release/zqunagi/CS2SDKTest?sort=semver)](https://github.com/zqunagi/CS2SDKTest/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -30,6 +29,11 @@ Tests are organized into suites, one per interface, and cover three kinds of che
 | **Layout** | Reads real struct memory and verifies field offsets and sizes | `OK` / `FAIL` |
 
 Checking interface version strings alone cannot detect changed vtable slots or changed parameters, so this project verifies interfaces by actually calling them. The same approach works as a regression check after a game update: if a result changes from `OK` to `CRASHED` or `FAIL`, or a hook goes from having a count to `never`, the corresponding interface needs to be adapted.
+
+> [!WARNING]
+> **Results are not guaranteed to be fully accurate.** Some interface behavior has no reference to compare against, or depends on runtime state, so results may contain false positives or false negatives. A `FAIL` / `CRASHED` does not necessarily mean s2sdk is defective; it may come from a bug in the test case itself, an unmet precondition, or differences in the test environment. Likewise, `OK` does not prove an interface is fully correct. When a result looks abnormal, confirm the root cause **manually** against the disassembly or the engine binary before drawing conclusions.
+>
+> **Most test cases were written by AI.** They have not been reviewed one by one, so the calls, arguments, assertions, and expected values may be wrong. Do not treat them as an authoritative description of interface behavior.
 
 ## Quick Start
 
@@ -115,13 +119,6 @@ Copy the contents of `package/` into the server's `game/csgo/`, or set `CS2SDKTE
 cmake --preset linux-x64-release -D CS2SDKTEST_GAME_DIR=/srv/cs2/game/csgo
 cmake --build --preset linux-x64-release --target deploy
 ```
-
-## Warnings
-
-> [!WARNING]
-> **Results are not guaranteed to be fully accurate.** Some interface behavior has no reference to compare against, or depends on runtime state, so results may contain false positives or false negatives. A `FAIL` / `CRASHED` does not necessarily mean s2sdk is defective; it may come from a bug in the test case itself, an unmet precondition, or differences in the test environment. Likewise, `OK` does not prove an interface is fully correct. When a result looks abnormal, confirm the root cause manually against the disassembly or the engine binary before drawing conclusions.
->
-> **Most test cases were written by AI.** They have not been reviewed one by one, so the calls, arguments, assertions, and expected values may be wrong. Do not treat them as an authoritative description of interface behavior.
 
 ## License
 
