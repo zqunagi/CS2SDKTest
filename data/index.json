@@ -1,6 +1,18 @@
 {
     "runs":  [
                  {
+                     "id":  "20261028-220234_v0.2.0_b26281801",
+                     "status":  "completed",
+                     "reason":  "gameupdate",
+                     "release":  "v0.2.0",
+                     "game_buildid":  "26281801",
+                     "game_version":  "1.41.9.3",
+                     "s2sdk":  "9a1c89a2 (2026-10-26)",
+                     "finished":  "2026-10-28T22:02:34Z",
+                     "failed":  0,
+                     "crashed":  0
+                 },
+                 {
                      "id":  "20261027-025227_v0.2.0_b26144732",
                      "status":  "completed",
                      "reason":  "release",
