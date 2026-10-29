@@ -172,6 +172,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/EngineServiceMgrSuite.cpp
   src/suites/StringTableSuite.cpp
   src/suites/GameEntitiesSuite.cpp
+  src/suites/HostStateMgrSuite.cpp
   src/suites/NetChannelSuite.cpp
   src/suites/FileSystemSuite.cpp
   src/suites/GamedataSuite.cpp
@@ -218,6 +219,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/EngineServiceMgrSuite.h
   src/suites/StringTableSuite.h
   src/suites/GameEntitiesSuite.h
+  src/suites/HostStateMgrSuite.h
   src/suites/NetChannelSuite.h
   src/suites/FileSystemSuite.h
   src/suites/GamedataSuite.h
