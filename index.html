@@ -331,8 +331,10 @@ async function show(id,quiet){
 
   const prevRun=runs.slice(idx+1).find(r=>r.status==='completed'&&inTrig(r));
   const prev=prevRun?await result(prevRun.id):null;
-  const before=new Map((prev?prev.results:[]).map(x=>[x.suite+'|'+x.call,x.outcome]));
-  const changed=prev?res.results.filter(x=>before.has(x.suite+'|'+x.call)&&before.get(x.suite+'|'+x.call)!==x.outcome):[];
+  // 同一个 suite|call 可能出现多次（如不同场景的多条记录），按出现序号配对，避免后一条覆盖前一条
+  const keyed=l=>{const n={};return l.map(x=>{const k=x.suite+'|'+x.call;return [k+'|'+(n[k]=(n[k]||0)+1),x]})};
+  const before=new Map(keyed(prev?prev.results:[]).map(([k,x])=>[k,x.outcome]));
+  const changed=prev?keyed(res.results).filter(([k,x])=>before.has(k)&&before.get(k)!==x.outcome):[];
 
   const counts={};
   res.results.forEach(x=>counts[x.outcome]=(counts[x.outcome]||0)+1);
@@ -347,7 +349,7 @@ async function show(id,quiet){
     const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
     d.innerHTML=`<h2>${t('detail')} · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
       ${prev?`<div class="card" style="margin-bottom:14px">${changed.length
-        ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(x=>{const b=before.get(x.suite+'|'+x.call);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
+        ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(([k,x])=>{const b=before.get(k);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
         :`<div class="note">${t('noChange',esc(prevRun.release),esc(ver(prevRun)))}</div>`}</div>`:''}
       <div class="tabs">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
       <div class="card">${bySuite.size?[...bySuite].map(([name,items])=>{
