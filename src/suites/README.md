@@ -11,6 +11,7 @@ header explains its oracles; this page is only the map.
 | ServerConfigSuite | ISource2ServerConfig (the tick interval other suites use) | engine2/isource2serverconfig.h, steam/steamuniverse.h |
 | EngineServiceMgrSuite | IEngineServiceMgr: active loop, service probe, addons | engine2/iengineservicemgr.h |
 | StringTableSuite | INetworkStringTableContainer / INetworkStringTable; StringUserData_t layout | networkstringtabledefs.h |
+| GameEntitiesSuite | ISource2GameEntities: IAppSystem slots, baseline-name query, empty-list transmit / pack callbacks | engine2/isource2server.h |
 | ConVarSuite | ICvar, ConVar, ConCommand; 5 layouts, 6 hooks | tier0/icvar.h, convar.h |
 | SchemaSystemSuite | ISchemaSystem, CSchemaSystemTypeScope; 9 layouts | schemasystem/ |
 | GameEntitySystemSuite | CGameEntitySystem / CEntitySystem; 8 layouts | entity2/, engine2/igameresourceservice.h; `s2sdk/game/shared/gameentitysystem.h` |
