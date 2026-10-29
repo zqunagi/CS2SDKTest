@@ -190,9 +190,9 @@ const ver=r=>r.game_version||r.game_buildid;
 const num=n=>n==null?'-':n.toLocaleString();
 
 function bar(s){
-  const t=s.total||1;
+  const tot=s.total||1;
   const seg=[['OK',s.ok,t('OK')],['SUSPECT',s.suspect,t('SUSPECT')],['FAIL',s.failed,t('FAIL')],['CRASHED',s.crashed,t('CRASHED')],['SKIP',s.skipped,t('SKIP')],['NA',s.unavailable,t('N/A')]];
-  return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n])=>`<i class="${k}" style="width:${v/t*100}%" title="${n} ${v}"></i>`).join('')}</div>
+  return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n])=>`<i class="${k}" style="width:${v/tot*100}%" title="${n} ${v}"></i>`).join('')}</div>
   <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
 }
 
