@@ -46,6 +46,18 @@ const char* Str(const char* text)
 	return text != nullptr ? text : "(null)";
 }
 
+// localtime_r is POSIX only and MSVC spells it localtime_s with the arguments
+// swapped. Kept out of the CS2ST_CALL body: a preprocessor directive inside a
+// macro argument does not compile on MSVC.
+void LocalTime(const std::time_t* seconds, std::tm* out)
+{
+#ifdef _WIN32
+	localtime_s(out, seconds);
+#else
+	localtime_r(seconds, out);
+#endif
+}
+
 // Measures a string by its length: enough for FindLongestInstance to have an
 // answer, and it touches nothing.
 class LengthQuery : public ILocalizeTextQuery
@@ -529,7 +541,7 @@ void LocalizeSuite::ExerciseFormatting(TestContext& context)
 		// Local time, not UTC: the server's own log showed the uint64 overload
 		// converts through the host time zone (09:46:40 for 1000000000 on a
 		// UTC+8 host), while the tm overload formats the fields as given.
-		localtime_r(&seconds, &broken_down);
+		LocalTime(&seconds, &broken_down);
 		CBufferStringN<128> from_tm(false);
 		const char* by_tm = localize_->ConstructDateString(&from_tm, LOC_DATE_NEUTRAL_TIMESTAMP, &broken_down, false);
 
