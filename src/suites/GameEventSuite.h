@@ -1,66 +1,9 @@
-/**
- * Exercises the game event machinery: the engine's event bus and the legacy
- * event manager.
- *
- * Two interfaces, one subsystem, and they are not equally reachable - which is
- * itself the first thing this suite reports.
- *
- *   IGameEventSystem     "GameEventSystemServerV001" @ engine2. An IAppSystem
- *                        like every other, resolved with one CreateInterface
- *                        call, and the route every net message a plugin sends
- *                        actually travels.
- *
- *   IGameEventManager2   The Source 1 interface plugins still write against
- *                        (FireEvent, CreateEvent, LookupEventId). s2sdk's cs2
- *                        branch declares the class but defines *no* interface
- *                        version constant for it - the s1 sample uses
- *                        INTERFACEVERSION_GAMEEVENTSMANAGER2, while the s2
- *                        sample declares a FireEvent hook and then never
- *                        acquires anything to hang it on. So this suite asks
- *                        every loaded module for every version string the name
- *                        has ever had, and reports what came back. Today that
- *                        is "nothing", and "nothing" is the finding: the CS2
- *                        ecosystem reaches this object through a gamedata
- *                        vtable offset on ISource2Server instead, which is a
- *                        dependency this project deliberately does not have.
- *
- * The shape of the IGameEventSystem half is unusual. Of its ten methods, nine
- * either send an event or mutate the engine's registry - there is exactly one
- * read-only call on the whole interface (GetEventSource). So the calls are thin
- * and the *hooks* are the substance: nine methods hooked pre/post, watching the
- * engine push events through an interface whose argument list has grown twice.
- *
- * Two things make the hook output more than a tick count:
- *
- *   - Each hook that carries an INetworkMessageInternal* remembers the distinct
- *     pointers it has seen (no allocation, fixed array, capped). A later call
- *     sweep resolves those to names *under the fault guard*, which is where
- *     walking an engine object belongs - not in the engine's own frame.
- *   - NetChannelBufType_t is an int8 enum with four legal values, and
- *     nClientCount is documented as -1 or a real count. Both are checked in the
- *     handler, so a shifted argument list shows up as a flagged sample rather
- *     than as a hook that keeps counting happily.
- *
- * INetworkMessages ("NetworkMessagesVersion001" @ networksystem) is used here
- * as a *tool*, the way Source2GameClientsSuite uses IVEngineServer2 for
- * maxClients: it is the only read-only way to get hold of an
- * INetworkMessageInternal for a named message, and that is what unlocks
- * NetMessageInfo_t - the descriptor struct behind every game event - plus three
- * oracles between that struct and the IProtobufBinding it points at. Its own
- * coverage is a separate target and is not attempted here.
- */
-
 #ifndef CS2SDKTEST_SUITES_GAMEEVENTSUITE_H_
 #define CS2SDKTEST_SUITES_GAMEEVENTSUITE_H_
 
 #include <cstddef>
 #include <string>
 
-// The hook handlers below have to spell out IGameEventSystem's exact parameter
-// types - CSplitScreenSlot, INetworkMessageInternal*, CNetMessage*,
-// NetChannelBufType_t, CBaseHandle, IRecipientFilter*, CUtlSlot* and
-// CUtlAbstractDelegate - and a paraphrase would compile and then hand every
-// handler garbage. This header is where the SDK assembles that set.
 #include <engine2/igameeventsystem.h>
 #include <khook.hpp>
 

@@ -18,14 +18,6 @@
 #include "testkit/NetworkMessageLookup.h"
 #include "testkit/StructInspector.h"
 
-// The SH_DECL_HOOK block used to live here; under KHook the hook templates are
-// declared as members in the header instead, bound to the SDK member pointers
-// in the constructor at the bottom of this file. PostEventAbstract is the one
-// place that needs care: the two overloads are separate vtable slots, and the
-// constructor disambiguates their member pointers with a static_cast each -
-// which is also why the overload index that SH_DECL_HOOK used to carry is gone;
-// the cast names the overload now.
-
 namespace cs2st
 {
 namespace

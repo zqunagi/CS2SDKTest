@@ -1,42 +1,6 @@
-/**
- * Exercises the player lifecycle interface.
- *
- * "Source2GameClients001" resolves to ISource2GameClients (the SDK also
- * typedefs it as IServerGameClients). It is the second thing every Metamod
- * plugin hooks, after ISource2Server, and unlike that one it is dominated by
- * *arguments* rather than by the fact of being called: ClientConnect,
- * ClientPutInServer, ClientDisconnect and ClientCommand all carry player
- * identity, and the shape of what they carry has changed more than once
- * (CPlayerSlot replacing edict_t*, ENetworkDisconnectionReason arriving as a
- * protobuf enum, CBufferString* replacing char[]).
- *
- * That makes the argument snapshots worth more here than anywhere else in this
- * plugin. A hook whose signature has drifted still fires and still counts - the
- * evidence that anything is wrong is entirely in the values, so several of the
- * handlers below do not just print an argument, they check it:
- *
- *   - the disconnect reason goes through the protobuf enum's own IsValid
- *   - CCommand's argument count is bounds-checked before any argument is read
- *   - the reject-reason CBufferString is inspected as a struct, not read as a
- *     string: it is an engine-constructed instance of a type whose layout the
- *     SDK only asserts, and this is a free look at whether that layout holds
- *
- * The call side is aimed at queries and at a slot nobody is in. Notifications
- * and writers are called on that empty slot, where the game has no player to
- * act on and only its guard clauses run; the connection-lifecycle calls that
- * would create a controller (ClientConnect, ClientPutInServer, ...) stay
- * skipped. If hooks are installed, the suite's own calls show up in the dump.
- */
-
 #ifndef CS2SDKTEST_SUITES_SOURCE2GAMECLIENTSSUITE_H_
 #define CS2SDKTEST_SUITES_SOURCE2GAMECLIENTSSUITE_H_
 
-// The other suites forward-declare their interface and keep the SDK out of the
-// header. This one cannot: the hook handlers below have to spell out the exact
-// parameter types, and those are CPlayerSlot, ENetworkDisconnectionReason (a
-// protobuf enum), CBufferString and CCommand - which is the whole point of the
-// suite. eiface.h is where that set is assembled; picking transitive headers
-// out of it one by one would just be guessing at which one supplies what.
 #include <engine2/isource2server.h>
 #include <khook.hpp>
 

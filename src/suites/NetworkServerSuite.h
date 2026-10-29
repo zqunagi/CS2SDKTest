@@ -1,54 +1,3 @@
-/**
- * Exercises the server-side networking services.
- *
- * "NetworkServerService_001" @ engine2 resolves to INetworkServerService, and
- * that one pointer opens four levels of vtable:
- *
- *     IAppSystem              11 slots, at the front, as everywhere
- *     IEngineService          11 more - this is the only suite that covers them
- *     INetworkServerService   the service itself
- *     CNetworkGameServerBase  handed out by GetIGameServer(), and the object
- *                             every plugin means when it says "the server"
- *
- * This suite has almost no layout work and an unusual amount of *cross-checking*
- * instead, because of what these interfaces are: they do not own facts, they
- * re-expose facts that other interfaces also expose. That is normally a reason
- * to skip something. Here it is the whole point - the map name, the tick, the
- * client limit, the player ids and the globals pointer are all reachable both
- * through this suite and through IVEngineServer2 or CGlobalVars, and two
- * unrelated interfaces disagreeing about the tick count is a finding that
- * neither interface could produce on its own.
- *
- * Fifteen such pairs are checked. The strongest of them do not go through this
- * plugin's own arithmetic at all:
- *
- *   - GetGlobals() against IVEngineServer2::GetServerGlobals() - the same
- *     singleton, fetched down two vtables that share no code.
- *   - GetTime() against GetServerTick() * tick_interval, which is a formula the
- *     SDK writes out in a comment rather than one this suite invented. (The
- *     interval side came from ISource2ServerConfig::GetTickInterval until the
- *     deployed binary removed that method; sv_tickrate is where the interval
- *     lives now, see ServerConfigSuite.)
- *   - IEngineService::GetName() fed back to IEngineServiceMgr::FindService(),
- *     which has to return this very pointer.
- *
- * The one struct with a layout worth checking is netadr_t, and it is a better
- * target than it looks: its fields are public and its accessors are compiled
- * into tier0. Reading `port` by offsetof and calling GetPort() are two
- * descriptions of one byte pair that share nothing, so agreement is a
- * cross-module ABI check rather than a self-consistency check. Its IsValid()
- * and IsBaseAdrValid() even come with their rule written down ("ip & port != 0"
- * and "ip != 0"), which turns two more getters into oracles.
- *
- * ⚠️ CNetworkGameServerBase is rebuilt when the level changes. Hooks are
- * therefore installed on INetworkServerService, which is a process-lifetime
- * singleton, and not on the game server - a hook on an object the engine
- * replaces stops firing silently, which reads exactly like "the engine stopped
- * calling" and is the trap GameEntitySystemSuite already walked into. The
- * replacement is measured rather than asserted: the suite remembers the pointer
- * it saw last sweep and reports when it changes.
- */
-
 #ifndef CS2SDKTEST_SUITES_NETWORKSERVERSUITE_H_
 #define CS2SDKTEST_SUITES_NETWORKSERVERSUITE_H_
 
@@ -56,11 +5,6 @@
 
 #include "testkit/ITestSuite.h"
 
-// The hooked interface has to be complete here: the KHook::Virtual
-// constructors in the .cpp resolve vtable slots from member pointers against
-// INetworkServerService, which needs the class body (and the header that
-// declares the hooks' exact signatures). The rest of the SDK types stay in
-// the .cpp.
 #include <engine2/inetworkserverservice.h>
 
 class CNetworkGameServerBase;

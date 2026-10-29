@@ -1,188 +1,40 @@
-Test suites live here — one per SDK interface being exercised.
+# Test suites
 
-  Source2EngineSuite       IVEngineServer2 / ISource2Engine / IAppSystem (calls + CGlobalVars layout)
-  Source2ServerSuite       ISource2Server (= IServerGameDLL)             (calls + 11 hooks)
-  Source2GameClientsSuite  ISource2GameClients (= IServerGameClients)    (calls + 11 hooks)
-  ConVarSuite              ICvar / ConVar / ConCommand / ConCommandRef   (calls + 5 struct layouts + 6 hooks + 2 native listeners)
-  SchemaSystemSuite        ISchemaSystem / CSchemaSystemTypeScope        (93 calls + 9 struct layouts)
-  GameEntitySystemSuite    CGameEntitySystem / CEntitySystem             (calls + 8 struct layouts + 4 listener callbacks)
-  GameEventSuite           IGameEventSystem / IGameEventManager2         (calls + 1 struct layout + 9 hooks)
-  NetworkServerSuite       INetworkServerService / INetworkGameServer    (calls + netadr_t & GameSessionConfiguration_t layouts + 15 cross-checks + 5 hooks)
-  NetworkMessagesSuite     INetworkMessages / protobuf bindings          (calls + LoggingChannel_t layout (incl. m_bLastLineComplete vs tier0) + protobuf round trip)
-  ServerConfigSuite        ISource2ServerConfig                          (calls; the tick interval NetworkServerSuite's formula consumes)
-  EngineServiceMgrSuite    IEngineServiceMgr                             (calls: active loop, 16-name service probe, addon list; registering/starting slots SkipCall)
-  FileSystemSuite          IFileSystem                                   (calls: read-only handle I/O + path/find/name-dictionary oracles; mutating slots SkipCall)
-  GamedataSuite            configs/gamedata.toml                         (47 keys: signature scans + behavioural calls + slot/offset oracles + 2 function hooks)
-  MetamodListenerSuite     ISmmAPI / IMetamodListener                    (calls + 15 listener callbacks)
-  Tier0ContainerSuite      CUtlVector / CUtlString / CUtlBuffer / CBufferString (engine-built objects read through the SDK headers + 2 struct layouts)
-  KeyValues3Suite          KeyValues3 (engine-filled via WriteStatusJson; needs CS2SDKTEST_TIER1_KEYVALUES3)
+One suite per SDK interface (or other subject) we exercise. Each suite's own
+header explains its oracles; this page is only the map.
 
-MetamodListenerSuite is the odd one out: it tests Metamod, not s2sdk, and it
-is here because LevelInit/LevelShutdown reach a Source 2 plugin only through
-IMetamodListener. It is also the only suite whose "hooks" are not KHook detours —
-ISmmAPI::AddListener has no inverse, so removing them stops the recording but
-not the callbacks.
+| Suite | Tests | Headers (under `s2sdk/public` unless noted) |
+|---|---|---|
+| Source2EngineSuite | IVEngineServer2, ISource2Engine, IAppSystem; CGlobalVars and AppSystemInfo_t layouts | engine2/isource2engine.h, ivengineserver2.h, gameshareddefs.h; appframework/iappsystem.h |
+| Source2ServerSuite | ISource2Server; 11 hooks | engine2/isource2server.h |
+| Source2GameClientsSuite | ISource2GameClients; 11 hooks | engine2/isource2server.h, ivengineserver2.h |
+| ServerConfigSuite | ISource2ServerConfig (the tick interval other suites use) | engine2/isource2serverconfig.h, steam/steamuniverse.h |
+| EngineServiceMgrSuite | IEngineServiceMgr: active loop, service probe, addons | engine2/iengineservicemgr.h |
+| StringTableSuite | INetworkStringTableContainer / INetworkStringTable; StringUserData_t layout | networkstringtabledefs.h |
+| ConVarSuite | ICvar, ConVar, ConCommand; 5 layouts, 6 hooks | tier0/icvar.h, convar.h |
+| SchemaSystemSuite | ISchemaSystem, CSchemaSystemTypeScope; 9 layouts | schemasystem/ |
+| GameEntitySystemSuite | CGameEntitySystem / CEntitySystem; 8 layouts | entity2/, engine2/igameresourceservice.h; `s2sdk/game/shared/gameentitysystem.h` |
+| GameEventSuite | IGameEventSystem, IGameEventManager2 (not reachable, reported as N/A); 9 hooks | engine2/igameeventsystem.h, igameevents.h |
+| NetworkServerSuite | INetworkServerService, INetworkGameServer; 15 cross-checks with other interfaces; 5 hooks | engine2/inetworkserverservice.h, inetworkgameserver.h, networkgameserverbase.h, tier0/netadr.h |
+| NetworkMessagesSuite | INetworkMessages, protobuf round trip | networksystem/inetworkmessages.h, inetworkserializer.h; tier0/logging.h |
+| FileSystemSuite | IFileSystem, read-only | filesystem/ifilesystem.h |
+| GamedataSuite | `configs/gamedata.toml`: signatures, slots, offsets; 2 hooks | none of its own |
+| MetamodListenerSuite | ISmmAPI / IMetamodListener (Metamod, not s2sdk) | metamod-source `ISmmPlugin.h` |
+| Tier0ContainerSuite | CUtlVector, CUtlString, CUtlBuffer, CBufferString read from engine objects | tier0/utl*.h, buffer_string.h |
+| KeyValues3Suite | KeyValues3 filled by the engine; needs `CS2SDKTEST_TIER1_KEYVALUES3` | tier0/keyvalues3.h |
 
-ConVarSuite is the only suite that registers something of its own in the game in
-order to test it: eight convars and two console commands, at load, through the
-SDK's own CConVar/ConCommand path. That is what gives it ground truth — every
-other suite has to infer what a correct answer looks like, while this one
-compares the engine against names, types, defaults, bounds and callbacks it
-chose itself. It writes only to those, never to an engine convar, and every
-probe is a POD type on purpose: CS2SDKTEST_USE_MEMOVERRIDE is off, so a
-string-typed convar would put a buffer from this module's heap into storage the
-engine frees. The string type is covered read-only instead.
+## Suites that differ from the rest
 
-GameEntitySystemSuite is another odd one. There is no interface to query:
-s2sdk gives IGameResourceService a name and nothing else, so the entity system
-is fished out of the service object at a byte offset the ecosystem agrees on —
-which the suite treats as a hypothesis and measures. It is also the only suite
-that writes into the game (AddListenerEntity), and the only one that compiles
-SDK translation units (s2sdk/entity2/*.cpp) in order to test them; it supplies
-the GameEntitySystem() definition those need.
+- **MetamodListenerSuite** tests Metamod. Its "hooks" are listeners that cannot be removed, only silenced.
+- **ConVarSuite** registers its own convars and commands to have ground truth. Only POD types are used, because `CS2SDKTEST_USE_MEMOVERRIDE` is off and a string convar would put our heap buffer into engine-freed storage.
+- **GameEntitySystemSuite** has no interface to query. It finds the entity system at a byte offset inside IGameResourceService and measures that guess. It also writes into the game (`AddListenerEntity`) and compiles `s2sdk/entity2/*.cpp`.
+- **GameEventSuite** cannot reach IGameEventManager2 (no version string answers). It records that, and lists the interface's methods as N/A so the day it starts answering is noticed.
+- **NetworkServerSuite** is mostly cross-checks: tick, client limit, map name, etc. against IVEngineServer2 and CGlobalVars. Its hooks are on INetworkServerService only, because the engine rebuilds the game server on level change.
+- **NetworkMessagesSuite** tests that name, partial name, id and no-create lookups agree. It needs `netmessages.proto` in `CS2SDKTEST_PROTO_FILES` and `CS2SDKTEST_TIER1_BITBUF` (default ON); without bitbuf, serialization rows report SKIP.
+- **GamedataSuite** is driven by a file, not an SDK interface. A signature must match exactly one address; zero matches is the headline finding on update day.
 
-GameEventSuite is the third, and the only suite that reports on an interface it
-cannot reach. IGameEventSystem is an ordinary CreateInterface away, but
-IGameEventManager2 — the interface plugins actually write against — has no
-version constant anywhere in s2sdk's cs2 branch, and no module answers any name
-it has ever had. The CS2 ecosystem gets at it by calling a virtual on
-ISource2Server at a gamedata-supplied offset and subtracting 8; this project has
-no gamedata, and blind-calling server vtable slots to find that one would hit
-PreFatalShutdown on the way past. So the suite asks for every historical version
-string, records that nothing answers, and then lists IGameEventManager2's and
-IGameEvent's methods one row each as N/A — because the day one of those probes
-starts answering is a day worth noticing, and a surface nobody listed cannot be
-noticed.
+## Working with them
 
-It is also the only suite whose hooks feed its calls. Naming a message means
-walking an engine object, which a hook — running unguarded in the engine's own
-frame — must not do. So the hooks record the distinct INetworkMessageInternal
-pointers they are handed into a fixed array, and the next call sweep resolves
-those to names under the fault guard. Install the hooks, play a round, sweep
-again.
-
-NetworkServerSuite is the one that mostly does not test its own interfaces.
-Almost nothing INetworkGameServer reports is a fact it owns - the tick, the
-client limit, the map name, the globals pointer and the per-player ids are all
-reachable through IVEngineServer2 or CGlobalVars too. That would normally be a
-reason to skip a method; here it is the point, because two unrelated interfaces
-disagreeing about the tick count is a finding neither of them could produce
-alone. Fifteen such pairs are checked, and the best of them (GetTime against the
-tick-times-interval formula the SDK writes out, GetName fed back through
-IEngineServiceMgr::FindService) do not go through this plugin's own arithmetic
-at all.
-
-It is also the only suite that reaches IEngineService, the 11 slots between
-IAppSystem and any engine service, and the only one that touches multiple
-inheritance: CNetworkGameServerBase has three bases, so a pointer to it has two
-different values depending on which one it is viewed through. That adjustment is
-reported and never judged - the compiler derives it from the SDK header, so
-there is no second source to check it against, but it is a number, and a number
-that moves after an update is a changed declaration.
-
-Its hooks are all on INetworkServerService and none on the game server, which is
-a decision rather than an omission: the engine rebuilds CNetworkGameServerBase
-on level change, so a hook there stops firing at exactly the moment the
-interesting thing happens - and a hook that stopped firing looks identical to a
-method the engine no longer calls. The replacement is measured instead: the
-suite remembers the pointer it saw last sweep and says so when it changes.
-
-NetworkMessagesSuite is the one that tests an agreement rather than an
-interface. A net message is reachable four ways - by name, by partial name, by
-id, and by the no-create form of the creating method - and the registry is
-healthy exactly when all four hand back the same entry. The deepest check is
-the protobuf round trip: an engine-allocated CNETMsg_Tick gets a known tick
-value planted through the generated accessor, goes out through
-SerializeMessageInternal, and has to come back with the same value through two
-different unserialize entry points. A protobuf descriptor change breaks that
-before it breaks anything a plugin would notice by other means - which is the
-whole reason docs/TEST_TARGETS.md #8 exists.
-
-Two build facts this suite added. netmessages.proto (and its import closure:
-networkbasetypes, source2_steam_stats, valveextensions) joined
-CS2SDKTEST_PROTO_FILES, and cs2sdktest_generate_protobuf now collects that
-closure itself rather than trusting the list to name every file - a generated
-header #includes the .pb.h of every .proto it imports, and protoc does not
-emit those on its own. And CS2SDKTEST_TIER1_BITBUF now defaults to ON: the
-round trip needs bf_write/bf_read, whose constructors are exported by no
-prebuilt library (tier0 contains exactly two bitbuf symbols, both
-netadr_t::Serialize/Unserialize). A build with it off reports every
-serialization method as SKIP rather than pretending.
-
-The write into the protobuf is guarded by a measurement. CNetMessagePB in the
-SDK is a stub over the engine's real class, so every write through ToPB<T>()
-is an ABI assumption - and the suite checks it first: AsProto() (the engine's
-own pointer to the protobuf sub-object) has to equal this build's computed
-ToPB address, or set_tick is refused and the round trip reports SKIP with
-that reason. The same comparison run as a *finding* rather than a gate is in
-the allocation section, where a mismatch is Suspect, printed, never fatal.
-
-GamedataSuite is the only suite whose subject is a file rather than an SDK
-interface: the 46 keys CounterStrikeSharp and its ecosystem resolve out of
-band — byte signatures for unexported functions, vtable slots for methods no
-header declares, byte offsets into structs nobody publishes. It is the only
-suite that reads an external config (configs/gamedata.toml, in TOML rather
-than the ecosystem's JSON because a file people hand-edit on update day
-should be readable while doing it), the only one that does signature
-scanning, and the only one whose calls go through raw function pointers
-typed from the ecosystem's own declarations rather than the SDK's.
-
-The check is three-layered, matching the three kinds of key. Signatures are
-scanned and must land on exactly one address — zero matches is the headline
-the file exists for, two is a too-short pattern reported as Suspect rather
-than guessed at. The subset with a safe call gets the behavioural check:
-an info_target is created by name, spawned with null keyvalues and removed,
-with each step proving the pointer from the step before; the weapon table
-must answer "weapon_ak47" and refuse a name no build contains; the navmesh
-stub's answer is compared against the global it reads. Slots and offsets
-with an SDK oracle — ISource2GameEntities::CheckTransmit and
-IEntityResourceManifest::AddResource through KHook::GetVtableIndex,
-CCheckTransmitInfo::m_nPlayerSlot and CGameResourceService's entity-system
-member through offsetof — are two independent sources agreeing on one
-number. Everything else resolves-and-reports, because finding that a key no
-longer resolves is the part that breaks on update day.
-
-Its hooks are the ecosystem's two most-detoured functions — Host_Say and
-CEntityInstance_AcceptInput — installed only after the sweep has matched
-their patterns, observation only. One key is deliberately skipped:
-GameEventManager (slot 93 on ISource2Server), the ecosystem's route to
-IGameEventManager2; nothing consumes that route anymore, so the row
-records the number and skips the decode.
-
-Which s2sdk headers each suite covers (paths relative to s2sdk/public unless
-noted). Derived from what the suites include and exercise; the suite name is
-the unit, the directory is not, so one suite can span several. When bumping the
-submodule, `git -C s2sdk diff --stat <old>..<new> -- public game common` lists
-the headers that moved, and this table says which suites to re-audit (use
-`.claude/skills/cs2-add-suite/scripts/audit-coverage.sh` for the method-level
-check).
-
-  Source2EngineSuite       engine2/isource2engine.h, engine2/ivengineserver2.h, engine2/gameshareddefs.h (CGlobalVars), appframework/iappsystem.h
-  Source2ServerSuite       engine2/isource2server.h (ISource2Server)
-  Source2GameClientsSuite  engine2/isource2server.h (ISource2GameClients), engine2/ivengineserver2.h
-  ServerConfigSuite        engine2/isource2serverconfig.h, steam/steamuniverse.h
-  EngineServiceMgrSuite    engine2/iengineservicemgr.h (IEngineServiceMgr; IEngineService only through FindService results)
-  Tier0ContainerSuite      tier0/utlvector.h, tier0/utlvectormemory.h, tier0/utlstring.h, tier0/utlbuffer.h, tier0/buffer_string.h, schemasystem/schemasystem.h (CSchemaSystem::m_LoadedModules)
-  KeyValues3Suite          tier0/keyvalues3.h, engine2/isource2server.h (WriteStatusJson), tier0/buffer_string.h
-  ConVarSuite              tier0/icvar.h, tier0/convar.h
-  SchemaSystemSuite        schemasystem/schemasystem.h, schemasystem/ischemasystem.h
-  GameEntitySystemSuite    entity2/entitysystem.h, entity2/entityinstance.h, entity2/entityclass.h, engine2/igameresourceservice.h,
-                           s2sdk/game/shared/gameentitysystem.h; compiles s2sdk/entity2/*.cpp
-  GameEventSuite           engine2/igameeventsystem.h, igameevents.h (IGameEventManager2), networksystem/inetworkmessages.h
-  NetworkServerSuite       engine2/inetworkserverservice.h, engine2/inetworkgameserver.h, engine2/networkgameserverbase.h,
-                           engine2/gamesessionconfiguration.h, engine2/iengineservicemgr.h, engine2/gameshareddefs.h, tier0/netadr.h
-  NetworkMessagesSuite     networksystem/inetworkmessages.h, networksystem/inetworkserializer.h, tier0/logging.h (LoggingChannel_t),
-                           protobuf messages generated from s2sdk/common (netmessages.pb.h)
-  FileSystemSuite          filesystem/ifilesystem.h, tier0/utlbuffer.h
-  GamedataSuite            no header of its own: configs/gamedata.toml; cross-checks against engine2/isource2server.h
-                           (CCheckTransmitInfo), engine2/igameresourceservice.h and the entity2/ headers
-  MetamodListenerSuite     metamod-source ISmmPlugin.h, not s2sdk; reads engine2/isource2serverconfig.h and engine2/ivengineserver2.h
-
-Vocabulary: a *module* in this codebase is always a loaded shared library
-(engine2.so, server.so — see data/GameModules.h). A *suite* is one of these
-files: our test code for one interface that lives inside such a module.
-
-See `src/testkit/ITestSuite.h` for the interface, `docs/TEST_TARGETS.md` for
-what to write next, and the repository README for a worked example. Adding one
-is: write the file, register it in `TestRunner::CreateDefault()`, add it to
-`CS2SDKTEST_SOURCES` in CMakeLists.txt.
+- Adding a suite: write it, register it in `TestRunner::CreateDefault()`, add it to `CMakeLists.txt`, add a row above. The interface is in `src/testkit/ITestSuite.h`; what to write next is in `docs/TEST_TARGETS.md`.
+- Bumping the s2sdk submodule: `git -C s2sdk diff --stat <old>..<new> -- public game common` lists the moved headers; the table says which suites to re-audit. Method-level check: `.claude/skills/cs2-add-suite/scripts/audit-coverage.sh`.
+- A *module* is a loaded shared library (`engine2.so`, `server.so`, see `data/GameModules.h`). A *suite* is one of these files.

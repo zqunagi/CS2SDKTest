@@ -1,70 +1,8 @@
-/**
- * Exercises the console variable and command system.
- *
- * "VEngineCvar007" resolves to ICvar, which lives in tier0 rather than in
- * engine2 - the only interface this plugin tests that does. It derives from
- * IAppSystem, so the first eleven slots are the usual base class and the
- * thirty-five after them are the cvar system proper.
- *
- * Two things make this suite different from the others.
- *
- * First, most of convar.h is not engine code. ConVarRefAbstract, ConVarData's
- * getters, CCommand, CVValue_t and the CVarTypeTraits table are all header or
- * tier1 code compiled *into this plugin*, so checking them against themselves
- * would prove nothing. What actually crosses into the game is a shorter list,
- * and it is what this suite aims at:
- *
- *   - the ICvar vtable itself,
- *   - ConVarData and ConCommandData, which tier0's CCvar allocates and we read
- *     back through the layout the SDK declares,
- *   - ConVarRef and ConCommandRef, 8-byte handles returned *by value* from
- *     engine functions, so their size and field order is a register-level ABI
- *     contract rather than a memory layout,
- *   - CCommand and ConVarCreation_t, which travel the other way: we build them
- *     and the game reads them.
- *
- * Second, this is the one interface where ground truth is available. Every
- * other suite has to infer what a correct answer looks like; here the suite
- * registers its own convars and its own console commands at load time, with
- * known names, types, defaults, bounds, flags and callbacks. The engine then
- * has to agree with values we chose ourselves - which turns a large part of
- * this file into two-path oracles instead of recorded return values:
- *
- *   FindConVar by name          vs the ConVarRef our own registration produced
- *   ICvar::GetConVarData        vs ConVarRefAbstract::GetConVarData
- *   CCommand::DefaultBreakSet   vs ICvar::GetCharacterSet
- *   ConVarData::GetMaxSplit...  vs ICvar::GetMaxSplitScreenSlots
- *   a dispatched command        vs our own callback invocation counter
- *   FindConVar(name, false)     vs FindConVar(name, true) on an FCVAR_DEFENSIVE
- *                                  cvar registered for exactly that purpose
- *
- * Writes are confined to convars this plugin owns. Nothing here sets an engine
- * cvar: the value path has to be exercised to mean anything, and doing it on
- * our own registrations tests the same code without changing how the server
- * plays.
- *
- * Calls that would rewrite a probe's declared shape or registration - the
- * ConVarData default/min/max mutators, constructing and destroying a CConVar,
- * ConCommand or member accessor - are made against a second set of
- * registrations named cstmp_*, which nothing else reads, and are restored or
- * torn down in the same row. ResetConVarsToDefaultValuesByFlag,
- * ResetConVarsToSnapshot, SetMaxSplitScreenSlots and CallGlobalChangeCallbacks
- * are called with arguments that make them no-ops for everything but those
- * scratch objects. What cannot be undone or has no safe target -
- * StripDevelopmentFlags, SetConVarsFromGameInfo, the IAppSystem lifecycle,
- * ConVarData::Construct/Destruct/Invalidate - is listed and skipped, one line
- * each.
- */
-
 #ifndef CS2SDKTEST_SUITES_CONVARSUITE_H_
 #define CS2SDKTEST_SUITES_CONVARSUITE_H_
 
 #include <string>
 
-// Unlike the suites that forward-declare their interface, this one needs the
-// SDK in the header: IConVarListener is a base class below, and the hook
-// handlers have to spell out ConCommandRef, ConVarRef, ConVarCreation_t and
-// CCommandContext by name. icvar.h is where that whole set is declared.
 #include <tier0/icvar.h>
 #include <khook.hpp>
 

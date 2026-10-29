@@ -20,14 +20,6 @@
 #include "hook/HookRecorder.h"
 #include "testkit/StructInspector.h"
 
-/**
- * s2sdk declares `extern CGameEntitySystem* GameEntitySystem();` and defines it
- * in entity2/entitysystem.cpp - which is why that file compiles into this
- * plugin - by walking g_pGameResourceServiceServer's declared members, not a
- * hard-coded byte offset. ResolveEntitySystem cross-checks that accessor
- * against this suite's own independent slot scan.
- */
-
 namespace cs2st
 {
 namespace

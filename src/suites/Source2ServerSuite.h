@@ -1,18 +1,3 @@
-/**
- * Exercises the game DLL's main interface, and installs this project's first
- * hooks.
- *
- * "Source2Server001" resolves to ISource2Server - which the SDK also typedefs
- * as IServerGameDLL, the name most Metamod plugins use. It is the interface the
- * engine calls *into* the game through, which makes it the natural place to
- * hook rather than to call: the interesting question is not what GameFrame
- * returns when we invoke it (we must never invoke it) but whether the engine
- * still calls it, and with what.
- *
- * Note that LevelInit/LevelShutdown are NOT here. On Source 2 those come to a
- * plugin through IMetamodListener, not through this interface.
- */
-
 #ifndef CS2SDKTEST_SUITES_SOURCE2SERVERSUITE_H_
 #define CS2SDKTEST_SUITES_SOURCE2SERVERSUITE_H_
 

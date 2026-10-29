@@ -153,7 +153,33 @@ void Source2EngineSuite::ExerciseCalls(TestContext& context)
 	ExercisePlayerQueries(context);
 	ExerciseSpawnGroups(context);
 	InspectGlobalVars(context);
+	InspectAppSystemInfo(context);
 	NoteSideEffectingCalls(context);
+}
+
+// -----------------------------------------------------------------------------
+//  AppSystemInfo_t - what IAppSystem::GetDependencies returns
+//
+//  The one registration for this type: every other suite's AppSystem walks the
+//  same array and only reads its two strings.
+// -----------------------------------------------------------------------------
+
+void Source2EngineSuite::InspectAppSystemInfo(TestContext& context)
+{
+	context.Note("[AppSystemInfo_t] struct layout - first entry of GetDependencies");
+
+	if (dependencies_ == nullptr)
+	{
+		context.SkipCall("AppSystemInfo_t",
+			"no reachable instance: GetDependencies returned no entries");
+		return;
+	}
+
+	StructInspector inspect(context, "AppSystemInfo_t", dependencies_, sizeof(AppSystemInfo_t));
+	inspect.String("m_pModuleName",    offsetof(AppSystemInfo_t, m_pModuleName));
+	inspect.String("m_pInterfaceName", offsetof(AppSystemInfo_t, m_pInterfaceName));
+	inspect.Summarize();
+	inspect.HexDump();
 }
 
 // -----------------------------------------------------------------------------
@@ -221,6 +247,10 @@ void Source2EngineSuite::ExerciseAppSystem(TestContext& context)
 		}
 		context.Detail("-> %p, %d entr%s%s", static_cast<const void*>(deps),
 			count, count == 1 ? "y" : "ies", count == 64 ? " (capped)" : "");
+		if (count > 0)
+		{
+			dependencies_ = deps;
+		}
 	});
 
 	CS2ST_CALL(context, "IAppSystem::QueryInterface", {
