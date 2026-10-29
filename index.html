@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CS2SDKTest 测试结果</title>
+<title>CS2SDKTest Results</title>
 <style>
 :root{
   --bg:#f7f8fa;--surface:#fff;--fg:#14181f;--mut:#667085;--line:#e4e7ec;--soft:#f2f4f7;
@@ -31,7 +31,13 @@ h1{font-size:24px;font-weight:700;margin:0;letter-spacing:-.02em}
 .gh:hover{background:var(--soft)}
 .gh:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .gh svg{width:16px;height:16px;fill:currentColor}
-@media(max-width:520px){.it .lb{display:none}}
+.lang{display:inline-flex;align-items:center;gap:2px;padding:3px 3px 3px 10px;color:var(--mut)}
+.lang>svg{width:14px;height:14px;flex:none;margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.lang button{height:24px;padding:0 10px;border:0;border-radius:999px;background:transparent;color:var(--mut);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.lang button:hover:not([aria-pressed=true]){color:var(--fg);background:var(--soft)}
+.lang button[aria-pressed=true]{background:var(--fg);color:var(--bg);cursor:default}
+.lang button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+@media(max-width:520px){.it .lb{display:none}.lang>svg{display:none}.lang{padding-left:3px}}
 h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:32px 0 12px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
 .pad{padding:22px 24px}
@@ -115,15 +121,16 @@ footer a:hover{text-decoration:underline}
 <body>
 <main>
 <header>
-  <div><h1>CS2SDKTest</h1><div class="sub">Linux 环境测试</div></div>
+  <div><h1>CS2SDKTest</h1><div class="sub" data-i="sub"></div></div>
   <div class="hd">
-    <span class="it" id="runs" title="已记录的运行次数" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span><b id="count"></b> <span class="lb">次运行</span></span></span>
-    <a class="gh" href="https://github.com/zqunagi/CS2SDKTest" target="_blank" rel="noopener" aria-label="GitHub 仓库" title="GitHub 仓库"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></div>
+    <div class="lang" role="group" data-al="langGroup"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><button type="button" data-l="en" lang="en">EN</button><button type="button" data-l="zh" lang="zh-CN">中文</button></div>
+    <span class="it" id="runs" data-ti="runsTip" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span><b id="count"></b> <span class="lb" data-i="runsLb"></span></span></span>
+    <a class="gh" href="https://github.com/zqunagi/CS2SDKTest" target="_blank" rel="noopener" data-al="ghRepo" data-ti="ghRepo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></div>
 </header>
 
 <div id="latest"></div>
 
-<h2>历史</h2>
+<h2 data-i="hist"></h2>
 <div class="card" id="history"></div>
 
 <div id="detail"></div>
@@ -134,11 +141,41 @@ footer a:hover{text-decoration:underline}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const get=(u,n=2)=>fetch(u,{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error(u+' '+r.status);return r.json()}).catch(e=>{if(n>0)return get(u,n-1);throw e});
-const REASON={release:'新版本',gameupdate:'游戏更新',manual:'手动'};
-const STATUS={completed:'已完成',crashed:'崩溃',timeout:'超时'};
-const OUT=[['FAIL','失败'],['CRASHED','崩溃'],['SUSPECT','可疑'],['OK','通过'],['SKIP','跳过'],['N/A','不可用']];
+const L={
+en:{
+  title:'CS2SDKTest Results',sub:'Linux environment tests',runsTip:'Recorded runs',runsLb:'runs',ghRepo:'GitHub repository',langGroup:'Language',hist:'History',
+  release:'New release',gameupdate:'Game update',manual:'Manual',
+  completed:'Completed',crashed:'Crashed',timeout:'Timed out',
+  FAIL:'Failed',CRASHED:'Crashed',SUSPECT:'Suspect',OK:'Passed',SKIP:'Skipped','N/A':'N/A',
+  plugin:'Plugin',cs2ver:'CS2 version',lastCall:'Last call that did not return: ',noFull:'No complete results were produced for this run.',
+  passedOf:'passed',nFailed:n=>`${n} failed`,loadFail:'Failed to load: ',noRuns:'No runs recorded yet',
+  pageN:n=>`Page ${n}`,range:(a,b,n)=>`${a}–${b} of ${n}`,prev:'Previous page',next:'Next page',histNav:'History pagination',
+  all:'All',thTime:'Time',thStatus:'Status',thTrigger:'Trigger',thFailed:'Failed',thCrashed:'Crashed',
+  detail:'Details',resFail:'Failed to load the results file (slow or interrupted network). ',retry:'Retry',noResFile:'No complete results.json for this run; it did not finish.',
+  attention:'Needs attention',changedVs:(r,v,n)=>`vs ${r} / ${v}: <b style="color:var(--fg)">${n}</b> result${n===1?'':'s'} changed`,noChange:(r,v)=>`No changes vs ${r} / ${v}`,more:n=>`… and ${n} more`,
+  none:'No matching items',vtable:'vtable slot ',offset:'offset '},
+zh:{
+  title:'CS2SDKTest 测试结果',sub:'Linux 环境测试',runsTip:'已记录的运行次数',runsLb:'次运行',ghRepo:'GitHub 仓库',langGroup:'语言',hist:'历史',
+  release:'新版本',gameupdate:'游戏更新',manual:'手动',
+  completed:'已完成',crashed:'崩溃',timeout:'超时',
+  FAIL:'失败',CRASHED:'崩溃',SUSPECT:'可疑',OK:'通过',SKIP:'跳过','N/A':'不可用',
+  plugin:'插件',cs2ver:'CS2 版本',lastCall:'最后一个未返回的调用：',noFull:'这次没有生成完整结果。',
+  passedOf:'通过',nFailed:n=>`${n} 项失败`,loadFail:'加载失败：',noRuns:'还没有运行记录',
+  pageN:n=>`第 ${n} 页`,range:(a,b,n)=>`第 ${a}–${b} 条，共 ${n} 条`,prev:'上一页',next:'下一页',histNav:'历史分页',
+  all:'全部',thTime:'时间',thStatus:'状态',thTrigger:'触发',thFailed:'失败',thCrashed:'崩溃',
+  detail:'详情',resFail:'结果文件加载失败（网络较慢或中断）。',retry:'点此重试',noResFile:'这次没有完整的 results.json，运行未完成。',
+  attention:'需关注',changedVs:(r,v,n)=>`相比 ${r} / ${v}，<b style="color:var(--fg)">${n}</b> 项结果有变化`,noChange:(r,v)=>`相比 ${r} / ${v}，没有变化`,more:n=>`… 另有 ${n} 项`,
+  none:'没有符合条件的项目',vtable:'虚表槽位 ',offset:'偏移 '}
+};
+let lang='en';
+try{const v=localStorage.getItem('lang');if(v in L)lang=v}catch(e){}
+const t=(k,...a)=>{const v=(L[lang][k]??L.en[k]??k);return typeof v==='function'?v(...a):v};
+// REASON/STATUS 的键（release、completed…）与词典同名，未知值返回 undefined 让调用处回退到原文
+const tr=new Proxy({},{get:(_,k)=>typeof k==='string'&&k in L.en?t(k):undefined});
+const REASON=tr,STATUS=tr;
+const OUT=['FAIL','CRASHED','SUSPECT','OK','SKIP','N/A'];
 const key=o=>o==='N/A'?'NA':o;
-const label=Object.fromEntries(OUT);
+const label=new Proxy({},{get:(_,k)=>typeof k==='string'&&OUT.includes(k)?t(k):undefined});
 const cache={};
 let runs=[];
 
@@ -154,7 +191,7 @@ const num=n=>n==null?'-':n.toLocaleString();
 
 function bar(s){
   const t=s.total||1;
-  const seg=[['OK',s.ok,'通过'],['SUSPECT',s.suspect,'可疑'],['FAIL',s.failed,'失败'],['CRASHED',s.crashed,'崩溃'],['SKIP',s.skipped,'跳过'],['NA',s.unavailable,'不可用']];
+  const seg=[['OK',s.ok,t('OK')],['SUSPECT',s.suspect,t('SUSPECT')],['FAIL',s.failed,t('FAIL')],['CRASHED',s.crashed,t('CRASHED')],['SKIP',s.skipped,t('SKIP')],['NA',s.unavailable,t('N/A')]];
   return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n])=>`<i class="${k}" style="width:${v/t*100}%" title="${n} ${v}"></i>`).join('')}</div>
   <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
 }
@@ -168,7 +205,7 @@ async function gamedata(id){
 function gdCell(x,gd){
   if(x.suite!=='gamedata'||!gd||!(x.call in gd))return esc(x.detail);
   const v=gd[x.call], kind=x.call.split('.')[0];
-  const lab=kind==='vtables'?'虚表槽位 ':kind==='offsets'?'偏移 ':'';
+  const lab=kind==='vtables'?t('vtable'):kind==='offsets'?t('offset'):'';
   return `${lab}<code>${esc(v)}</code>`;
 }
 
@@ -184,29 +221,53 @@ function hero(r,res){
     <div>
       <span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span>
       <div class="meta" style="margin-top:12px">
-        <span>插件 <b>${esc(r.release)}</b></span>
-        <span>CS2 版本 <b>${esc(ver(r))}</b></span>
+        <span>${t('plugin')} <b>${esc(r.release)}</b></span>
+        <span>${t('cs2ver')} <b>${esc(ver(r))}</b></span>
         ${r.s2sdk?`<span>s2sdk <b>${esc(r.s2sdk)}</b></span>`:''}
         <span>${esc(REASON[r.reason]||r.reason)}</span>
         <span>${esc(when(r.finished))} ${esc(zone(r.finished))}</span>
       </div>
-      ${r.suspect?`<div class="meta">最后一个未返回的调用：<code>${esc(r.suspect)}</code></div>`:''}
+      ${r.suspect?`<div class="meta">${t('lastCall')}<code>${esc(r.suspect)}</code></div>`:''}
     </div>
-    <div>${s?`<div class="big">${num(s.ok)}<small>/ ${num(s.total)} 通过${bad?` · <span class="bad">${bad} 项失败</span>`:''}</small></div>${bar(s)}`
-            :`<div class="sub">这次没有生成完整结果。</div>`}</div>
+    <div>${s?`<div class="big">${num(s.ok)}<small>/ ${num(s.total)} ${t('passedOf')}${bad?` · <span class="bad">${t('nFailed',bad)}</span>`:''}</small></div>${bar(s)}`
+            :`<div class="sub">${t('noFull')}</div>`}</div>
   </div></div>`;
 }
+
+let loadErr=null,latestRes=null;
+const paintErr=()=>{$('#latest').innerHTML=`<div class="card empty">${t('loadFail')}${esc(loadErr)}</div>`};
+const paintEmpty=()=>{$('#latest').innerHTML=`<div class="card empty">${t('noRuns')}</div>`;$('#history').innerHTML=''};
+
+// 静态文案 + 语言切换按钮
+function applyStatic(){
+  document.documentElement.lang=lang==='zh'?'zh-CN':'en';
+  document.title=t('title');
+  document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
+  document.querySelectorAll('[data-ti]').forEach(e=>e.title=t(e.dataset.ti));
+  document.querySelectorAll('[data-al]').forEach(e=>e.setAttribute('aria-label',t(e.dataset.al)));
+  document.querySelectorAll('.lang button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.l===lang));
+}
+function setLang(l){
+  if(l===lang||!(l in L))return;
+  lang=l;try{localStorage.setItem('lang',l)}catch(e){}
+  applyStatic();
+  if(loadErr)return paintErr();
+  if(!runs.length)return paintEmpty();
+  $('#latest').innerHTML=hero(runs[0],latestRes);
+  renderHistory();
+  if(curId)show(curId,true);
+}
+document.querySelectorAll('.lang button').forEach(b=>b.onclick=()=>setLang(b.dataset.l));
+applyStatic();
 
 async function init(){
   try{
     ({runs}=await get('data/index.json'));
-  }catch(e){$('#latest').innerHTML=`<div class="card empty">加载失败：${esc(e.message)}</div>`;return}
+  }catch(e){loadErr=e.message;paintErr();return}
   $('#count').textContent=runs.length||'';$('#runs').hidden=!runs.length;
-  if(!runs.length){
-    $('#latest').innerHTML='<div class="card empty">还没有运行记录</div>';
-    $('#history').innerHTML='';return;
-  }
-  $('#latest').innerHTML=hero(runs[0],await result(runs[0].id));
+  if(!runs.length){paintEmpty();return}
+  latestRes=await result(runs[0].id);
+  $('#latest').innerHTML=hero(runs[0],latestRes);
   const hid=location.hash.length>1?decodeURIComponent(location.hash.slice(1)):'';
   const hi=runs.findIndex(r=>r.id===hid);
   if(hi>=0)pg=Math.floor(hi/PAGE_SIZE);
@@ -225,23 +286,23 @@ function pager(total,pages){
   let btn='',last=-1;
   for(const i of nums){
     if(last>=0&&i-last>1)btn+='<span class="gap">…</span>';
-    btn+=`<button data-p="${i}"${i===pg?' aria-current="page"':''} aria-label="第 ${i+1} 页">${i+1}</button>`;
+    btn+=`<button data-p="${i}"${i===pg?' aria-current="page"':''} aria-label="${esc(t('pageN',i+1))}">${i+1}</button>`;
     last=i;
   }
   const from=pg*PAGE_SIZE+1,to=Math.min(total,(pg+1)*PAGE_SIZE);
-  return `<nav class="pager" aria-label="历史分页"><span>第 ${from}–${to} 条，共 ${total} 条</span><div class="pn">`+
-    `<button data-p="${pg-1}"${pg===0?' disabled':''} aria-label="上一页">‹</button>${btn}`+
-    `<button data-p="${pg+1}"${pg===pages-1?' disabled':''} aria-label="下一页">›</button></div></nav>`;
+  return `<nav class="pager" aria-label="${esc(t('histNav'))}"><span>${t('range',from,to,total)}</span><div class="pn">`+
+    `<button data-p="${pg-1}"${pg===0?' disabled':''} aria-label="${esc(t('prev'))}">‹</button>${btn}`+
+    `<button data-p="${pg+1}"${pg===pages-1?' disabled':''} aria-label="${esc(t('next'))}">›</button></div></nav>`;
 }
 
 function renderHistory(){
   const reasons=[...new Set(runs.map(r=>r.reason))];
-  const tabs=[['ALL','全部',runs.length],...reasons.map(k=>[k,REASON[k]||k,runs.filter(r=>r.reason===k).length])];
+  const tabs=[['ALL',t('all'),runs.length],...reasons.map(k=>[k,REASON[k]||k,runs.filter(r=>r.reason===k).length])];
   const all=runs.filter(inTrig), pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));
   pg=Math.min(Math.max(pg,0),pages-1);
   const list=all.slice(pg*PAGE_SIZE,(pg+1)*PAGE_SIZE);
   $('#history').innerHTML=(reasons.length>1?`<div class="tabs hfilter">${tabs.map(t=>`<button class="tab" data-t="${esc(t[0])}" aria-pressed="${t[0]===trig}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>`:'')+
-    `<div class="hscroll"><table><thead><tr><th>时间 (${esc(zone(runs[0].finished)||'PT')})</th><th>状态</th><th>触发</th><th>插件</th><th>CS2 版本</th><th>s2sdk</th><th class="num">失败</th><th class="num">崩溃</th></tr></thead><tbody>`+
+    `<div class="hscroll"><table><thead><tr><th>${t('thTime')} (${esc(zone(runs[0].finished)||'PT')})</th><th>${t('thStatus')}</th><th>${t('thTrigger')}</th><th>${t('plugin')}</th><th>${t('cs2ver')}</th><th>s2sdk</th><th class="num">${t('thFailed')}</th><th class="num">${t('thCrashed')}</th></tr></thead><tbody>`+
     list.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(whenZ(r.finished,zone(runs[0].finished)))}</td>
     <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
     <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td><td class="mono">${esc(r.s2sdk||'-')}</td>
@@ -262,8 +323,8 @@ async function show(id,quiet){
   const gd=await gamedata(id);
   if(!res){
     d.innerHTML=run.status==='completed'
-      ?'<h2>详情</h2><div class="card note">结果文件加载失败（网络较慢或中断）。<a href="#" id="retry">点此重试</a></div>'
-      :'<h2>详情</h2><div class="card note">这次没有完整的 results.json，运行未完成。</div>';
+      ?`<h2>${t('detail')}</h2><div class="card note">${t('resFail')}<a href="#" id="retry">${t('retry')}</a></div>`
+      :`<h2>${t('detail')}</h2><div class="card note">${t('noResFile')}</div>`;
     const a=$('#retry');if(a)a.onclick=e=>{e.preventDefault();show(id,true)};
     return;
   }
@@ -282,19 +343,19 @@ async function show(id,quiet){
     const list=res.results.filter(x=>filter==='ALL'||(filter==='problems'?['FAIL','CRASHED','SUSPECT'].includes(x.outcome):x.outcome===filter));
     const bySuite=new Map();
     list.forEach(x=>{if(!bySuite.has(x.suite))bySuite.set(x.suite,[]);bySuite.get(x.suite).push(x)});
-    const tabs=[['problems','需关注',problems],['ALL','全部',res.results.length],...OUT.filter(o=>counts[o[0]]).map(o=>[o[0],o[1],counts[o[0]]])];
+    const tabs=[['problems',t('attention'),problems],['ALL',t('all'),res.results.length],...OUT.filter(o=>counts[o]).map(o=>[o,t(o),counts[o]])];
     const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
-    d.innerHTML=`<h2>详情 · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
+    d.innerHTML=`<h2>${t('detail')} · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
       ${prev?`<div class="card" style="margin-bottom:14px">${changed.length
-        ?`<div class="note" style="padding-bottom:6px">相比 ${esc(prevRun.release)} / ${esc(ver(prevRun))}，<b style="color:var(--fg)">${changed.length}</b> 项结果有变化</div><div class="diff">${changed.slice(0,60).map(x=>{const b=before.get(x.suite+'|'+x.call);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">… 另有 ${changed.length-60} 项</div>`:''}</div>`
-        :`<div class="note">相比 ${esc(prevRun.release)} / ${esc(ver(prevRun))}，没有变化</div>`}</div>`:''}
+        ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(x=>{const b=before.get(x.suite+'|'+x.call);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
+        :`<div class="note">${t('noChange',esc(prevRun.release),esc(ver(prevRun)))}</div>`}</div>`:''}
       <div class="tabs">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
       <div class="card">${bySuite.size?[...bySuite].map(([name,items])=>{
         const c={};items.forEach(x=>c[x.outcome]=(c[x.outcome]||0)+1);
         return `<details${open?' open':''}><summary><span class="name">${esc(name)}</span>
-          <span class="cnt">${OUT.filter(o=>c[o[0]]).map(o=>`<span class="${key(o[0])}"><b>${c[o[0]]}</b> ${esc(o[1])}</span>`).join('')}</span></summary>
+          <span class="cnt">${OUT.filter(o=>c[o]).map(o=>`<span class="${key(o)}"><b>${c[o]}</b> ${esc(t(o))}</span>`).join('')}</span></summary>
           <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(x.call)}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
-        :'<div class="empty">没有符合条件的项目</div>'}</div>`;
+        :`<div class="empty">${t('none')}</div>`}</div>`;
     d.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   };
   render();
