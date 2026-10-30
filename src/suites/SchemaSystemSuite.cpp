@@ -1699,6 +1699,44 @@ void SchemaSystemSuite::ExerciseInternLookups(TestContext& context)
 				entry->m_pfnManipulator).Get(), entry);
 	});
 
+	// The collection helpers forward to m_pfnManipulator. Only the read-only
+	// ones run, against a zeroed CUtlVector-shaped buffer (size 0, no memory),
+	// so no owning entity is touched and nothing is networked.
+	CS2ST_CALL(context, "CSchemaType_Atomic_CollectionOfT::GetCount (empty buffer)", {
+		auto& map = probe_scope_->m_AtomicsCollectionOfT.m_Map;
+		if (!HasFirstEntry(map))
+		{
+			context.Detail("-> m_AtomicsCollectionOfT is empty; no manipulator to call");
+			return;
+		}
+		CSchemaType_Atomic_CollectionOfT* entry = map.Element(0);
+		if (entry == nullptr || entry->m_pfnManipulator == nullptr)
+		{
+			context.Detail("-> the first entry has no manipulator");
+			return;
+		}
+		alignas(16) unsigned char empty_vector[sizeof(CUtlVector<int>)] = {};
+		const int count = entry->GetCount(empty_vector);
+		context.Detail("-> GetCount on an empty buffer = %d", count);
+		if (count != 0)
+		{
+			context.Suspect("GetCount returned %d for a zeroed buffer; the manipulator "
+			                "may expect a different collection layout", count);
+		}
+	});
+	context.SkipCall("CSchemaType_Atomic_CollectionOfT::GetElement",
+		"needs a live collection with elements");
+	context.SkipCall("CSchemaType_Atomic_CollectionOfT::GetElementForModify",
+		"reports the change to the owning entity");
+	context.SkipCall("CSchemaType_Atomic_CollectionOfT::SwapElements",
+		"mutates the collection and networks the change");
+	context.SkipCall("CSchemaType_Atomic_CollectionOfT::InsertBefore",
+		"mutates the collection and networks the change");
+	context.SkipCall("CSchemaType_Atomic_CollectionOfT::RemoveMultiple",
+		"mutates the collection and networks the change");
+	context.SkipCall("CSchemaType_Atomic_CollectionOfT::SetCount",
+		"mutates the collection and networks the change");
+
 	CS2ST_CALL(context, "CSchemaSystemTypeScope::Type_Atomic_TT (existing key)", {
 		auto& map = probe_scope_->m_AtomicsTT.m_Map;
 		if (!HasFirstEntry(map))
