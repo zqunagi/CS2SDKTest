@@ -29,14 +29,14 @@ function(cs2sdktest_resolve_sdk_revision sdk_dir out_var)
   set(${out_var} "${_revision}" PARENT_SCOPE)
 endfunction()
 
-function(cs2sdktest_resolve_git_revision out_var)
+function(cs2sdktest_resolve_git_revision source_dir out_var)
   set(_revision "unknown")
 
   find_package(Git QUIET)
-  if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+  if(GIT_FOUND AND EXISTS "${source_dir}/.git")
     execute_process(
       COMMAND "${GIT_EXECUTABLE}" describe --always --dirty --tags
-      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+      WORKING_DIRECTORY "${source_dir}"
       OUTPUT_VARIABLE _described
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_QUIET
@@ -46,15 +46,19 @@ function(cs2sdktest_resolve_git_revision out_var)
       set(_revision "${_described}")
     endif()
 
-    # Re-configure when HEAD moves, otherwise the baked revision goes stale
-    # without anything noticing.
-    foreach(_watch "${CMAKE_SOURCE_DIR}/.git/HEAD" "${CMAKE_SOURCE_DIR}/.git/index")
-      if(EXISTS "${_watch}")
-        set_property(DIRECTORY "${CMAKE_SOURCE_DIR}"
-          APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_watch}")
-      endif()
-    endforeach()
   endif()
 
   set(${out_var} "${_revision}" PARENT_SCOPE)
+endfunction()
+
+# What the plugin reports as its version. The git description already carries
+# the tag (v0.4.3, v0.4.3-2-gabc1234, ...-dirty), so showing PROJECT_VERSION next
+# to it only repeats a number that is easy to leave stale. It is the fallback
+# for a source tree without git.
+function(cs2sdktest_full_version project_version revision out_var)
+  if(revision STREQUAL "unknown")
+    set(${out_var} "${project_version}" PARENT_SCOPE)
+  else()
+    set(${out_var} "${revision}" PARENT_SCOPE)
+  endif()
 endfunction()

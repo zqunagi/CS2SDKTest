@@ -100,9 +100,9 @@ else()
   set(CS2SDKTEST_PLATFORM "linux")
 endif()
 
-cs2sdktest_resolve_git_revision(CS2SDKTEST_GIT_REVISION)
+cs2sdktest_resolve_git_revision("${CMAKE_CURRENT_SOURCE_DIR}" CS2SDKTEST_GIT_REVISION)
 cs2sdktest_resolve_sdk_revision("${CS2SDKTEST_S2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
-set(CS2SDKTEST_FULL_VERSION "${PROJECT_VERSION}-${CS2SDKTEST_GIT_REVISION}")
+cs2sdktest_full_version("${PROJECT_VERSION}" "${CS2SDKTEST_GIT_REVISION}" CS2SDKTEST_FULL_VERSION)
 
 # -----------------------------------------------------------------------------
 #  Generated sources
@@ -113,6 +113,28 @@ configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/version_gen.h.in"
   "${CS2SDKTEST_GENERATED_DIR}/version_gen.h"
   @ONLY
+)
+
+# The revision header is rewritten by a target that runs on every build, so
+# the reported version follows commits and the dirty flag without a re-configure.
+# Generated here as well so the first compile has a header before that runs.
+set(CS2SDKTEST_REVISION_HEADER "${CS2SDKTEST_GENERATED_DIR}/revision_gen.h")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/revision_gen.h.in"
+  "${CS2SDKTEST_REVISION_HEADER}"
+  @ONLY
+)
+add_custom_target(cs2sdktest_revision
+  COMMAND ${CMAKE_COMMAND}
+    -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+    -DS2SDK_DIR=${CS2SDKTEST_S2SDK_DIR}
+    -DPROJECT_VERSION=${PROJECT_VERSION}
+    -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/revision_gen.h.in
+    -DOUTPUT=${CS2SDKTEST_REVISION_HEADER}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateRevision.cmake
+  BYPRODUCTS "${CS2SDKTEST_REVISION_HEADER}"
+  COMMENT "Refreshing the version header"
+  VERBATIM
 )
 
 set(CS2SDKTEST_PROTO_SOURCES "")
@@ -300,6 +322,8 @@ endif()
 if(CS2SDKTEST_TIER1_BITBUF)
   target_compile_definitions(cs2sdktest PRIVATE CS2SDKTEST_WITH_BITBUF=1)
 endif()
+
+add_dependencies(cs2sdktest cs2sdktest_revision)
 
 target_link_libraries(cs2sdktest PRIVATE
   metamod::metamod

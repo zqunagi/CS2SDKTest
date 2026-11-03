@@ -17,17 +17,10 @@
 #define PLUGIN_LICENSE          "@CS2SDKTEST_LICENSE@"
 #define PLUGIN_LOGTAG           "@CS2SDKTEST_LOGTAG@"
 
-#define PLUGIN_VERSION_MAJOR    @PROJECT_VERSION_MAJOR@
-#define PLUGIN_VERSION_MINOR    @PROJECT_VERSION_MINOR@
-#define PLUGIN_VERSION_PATCH    @PROJECT_VERSION_PATCH@
-#define PLUGIN_VERSION          "@PROJECT_VERSION@"
-#define PLUGIN_FULL_VERSION     "@CS2SDKTEST_FULL_VERSION@"
-
-/* Git description of the tree this binary was built from, or "unknown". */
-#define PLUGIN_GIT_REVISION     "@CS2SDKTEST_GIT_REVISION@"
-
-/* The s2sdk commit (short hash and date) this binary was compiled against. */
-#define PLUGIN_SDK_REVISION     "@CS2SDKTEST_SDK_REVISION@"
+/* PLUGIN_FULL_VERSION, PLUGIN_GIT_REVISION and PLUGIN_SDK_REVISION change with
+ * every commit and every edit, so they live in a header regenerated at build
+ * time rather than at configure time. */
+#include "revision_gen.h"
 
 /* Build environment - written into every log header, so a log found later can
  * be tied back to the exact SDK and toolchain that produced it. */
