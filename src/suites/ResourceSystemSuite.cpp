@@ -1,6 +1,5 @@
 #include "suites/ResourceSystemSuite.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
@@ -32,7 +31,13 @@ const char* const kProbeManifestName = "CS2SDKTest";
 ResourceType_t MakeType(const char* extension)
 {
 	ResourceType_t type = 0;
-	std::memcpy(&type, extension, std::min(std::strlen(extension), sizeof(type)));
+	// No std::min: windows.h defines min as a macro.
+	std::size_t length = std::strlen(extension);
+	if (length > sizeof(type))
+	{
+		length = sizeof(type);
+	}
+	std::memcpy(&type, extension, length);
 	return type;
 }
 
