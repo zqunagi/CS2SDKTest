@@ -60,3 +60,6 @@ version_gen.h
 *.log
 .DS_Store
 Thumbs.db
+
+# ---- Local schema dumps (SchemaDiffSuite output; unredacted, never published) ----
+schema-dump*.json

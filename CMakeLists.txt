@@ -185,6 +185,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/Source2GameClientsSuite.cpp
   src/suites/ConVarSuite.cpp
   src/suites/SchemaSystemSuite.cpp
+  src/suites/SchemaDiffSuite.cpp
   src/suites/GameEntitySystemSuite.cpp
   src/suites/GameEventSuite.cpp
   src/suites/NetworkServerSuite.cpp
@@ -234,6 +235,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/Source2GameClientsSuite.h
   src/suites/ConVarSuite.h
   src/suites/SchemaSystemSuite.h
+  src/suites/SchemaDiffSuite.h
   src/suites/GameEntitySystemSuite.h
   src/suites/GameEventSuite.h
   src/suites/NetworkServerSuite.h
