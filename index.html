@@ -196,6 +196,9 @@ function bar(s){
   <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
 }
 
+// 展示用：去掉 SchemaDiff 结果名前面的 “SchemaDiff::”（只影响显示，配对仍用原始 call）
+const callName=c=>String(c).replace(/^SchemaDiff::/,'');
+
 async function gamedata(id){
   const k='gd:'+id;
   if(!(k in cache)) cache[k]=get('data/runs/'+encodeURIComponent(id)+'/gamedata.json').catch(()=>null);
@@ -349,14 +352,14 @@ async function show(id,quiet){
     const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
     d.innerHTML=`<h2>${t('detail')} · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
       ${prev?`<div class="card" style="margin-bottom:14px">${changed.length
-        ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(([k,x])=>{const b=before.get(k);return `<div class="row"><code>${esc(x.call)}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
+        ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(([k,x])=>{const b=before.get(k);return `<div class="row"><code>${esc(callName(x.call))}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
         :`<div class="note">${t('noChange',esc(prevRun.release),esc(ver(prevRun)))}</div>`}</div>`:''}
       <div class="tabs">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
       <div class="card">${bySuite.size?[...bySuite].map(([name,items])=>{
         const c={};items.forEach(x=>c[x.outcome]=(c[x.outcome]||0)+1);
         return `<details${open?' open':''}><summary><span class="name">${esc(name)}</span>
           <span class="cnt">${OUT.filter(o=>c[o]).map(o=>`<span class="${key(o)}"><b>${c[o]}</b> ${esc(t(o))}</span>`).join('')}</span></summary>
-          <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(x.call)}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
+          <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(callName(x.call))}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
         :`<div class="empty">${t('none')}</div>`}</div>`;
     d.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   };
