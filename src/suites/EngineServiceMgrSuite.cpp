@@ -434,18 +434,48 @@ void EngineServiceMgrSuite::ExerciseAddons(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "IEngineServiceMgr::unk202 (addon name in the unk201 list)", {
-		// Read-only: tests the name against the list unk201 appends to.
-		const bool listed = manager_->unk202("cs2sdktest_no_such_addon");
+	CS2ST_CALL(context, "IEngineServiceMgr::IsKnownAddon (before AddKnownAddon)", {
+		const bool listed = manager_->IsKnownAddon("cs2sdktest_no_such_addon");
 		context.Detail("-> %s", listed ? "true" : "false");
 		if (listed)
 		{
-			context.Suspect("a name nobody added is in the unk201 list");
+			context.Suspect("a name nobody added is in the known addon list");
 		}
 	});
 
-	CS2ST_CALL(context, "IEngineServiceMgr::unk203 (mounted addon missing from the unk201 list)", {
-		context.Detail("-> %s", manager_->unk203() ? "true" : "false");
+	CS2ST_CALL(context, "IEngineServiceMgr::HasUnknownMountedAddons", {
+		context.Detail("-> %s", manager_->HasUnknownMountedAddons() ? "true" : "false");
+	});
+
+	// AddKnownAddon appends to a list kept apart from the mounted addons, so a
+	// name that is not mounted changes nothing but the answer of IsKnownAddon.
+	// The name is unique to this plugin and nothing else it runs reads the list.
+	CS2ST_CALL(context, "IEngineServiceMgr::AddKnownAddon / IsKnownAddon", {
+		const bool unknown_before = manager_->HasUnknownMountedAddons();
+		manager_->AddKnownAddon("cs2sdktest_known_addon");
+		const bool listed = manager_->IsKnownAddon("cs2sdktest_known_addon");
+		const bool listed_upper = manager_->IsKnownAddon("CS2SDKTEST_KNOWN_ADDON");
+		const bool unrelated = manager_->IsKnownAddon("cs2sdktest_other_addon");
+		const bool unknown_after = manager_->HasUnknownMountedAddons();
+		context.Detail("-> listed %s, upper-case %s, unrelated %s; unknown mounted %s -> %s",
+			listed ? "true" : "false", listed_upper ? "true" : "false", unrelated ? "true" : "false",
+			unknown_before ? "true" : "false", unknown_after ? "true" : "false");
+		if (!listed)
+		{
+			context.Fail("a name added with AddKnownAddon is not found by IsKnownAddon");
+		}
+		if (listed != listed_upper)
+		{
+			context.Suspect("IsKnownAddon is not case-insensitive, which the SDK states");
+		}
+		if (unrelated)
+		{
+			context.Suspect("a name nobody added is in the known addon list");
+		}
+		if (unknown_before != unknown_after)
+		{
+			context.Suspect("adding an unmounted name changed HasUnknownMountedAddons");
+		}
 	});
 }
 
@@ -471,7 +501,9 @@ void EngineServiceMgrSuite::ExerciseEngineWindow(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "IEngineServiceMgr::GetEngineDeviceInfo", {
-		context.Detail("-> %p", manager_->GetEngineDeviceInfo());
+		// Returns a reference; its address is what can be recorded.
+		const RenderDeviceInfo_t& info = manager_->GetEngineDeviceInfo();
+		context.Detail("-> %p", static_cast<const void*>(&info));
 	});
 
 	CS2ST_CALL(context, "IEngineServiceMgr::GetEngineDeviceWidth / GetEngineDeviceHeight", {
@@ -506,12 +538,28 @@ void EngineServiceMgrSuite::ExerciseTailSlots(TestContext& context)
 {
 	context.Note("[IEngineServiceMgr] remaining slots");
 
-	CS2ST_CALL(context, "IEngineServiceMgr::unk101", {
-		context.Detail("-> %s", manager_->unk101() ? "true" : "false");
+	CS2ST_CALL(context, "IEngineServiceMgr::IsExitQueued", {
+		const bool exiting = manager_->IsExitQueued();
+		context.Detail("-> %s", exiting ? "true" : "false");
+		if (exiting)
+		{
+			context.Suspect("the engine reports ExitMainLoop was called while tests run");
+		}
 	});
 
-	CS2ST_CALL(context, "IEngineServiceMgr::unk301 (prerequisites the queued loop switch waits for)", {
-		const int waiting = manager_->unk301();
+	CS2ST_CALL(context, "IEngineServiceMgr::GetVideoModeChange", {
+		// Read-only: null unless a ChangeVideoMode is pending, which a
+		// dedicated server never has.
+		const VideoModeChange_t* change = manager_->GetVideoModeChange();
+		context.Detail("-> %p", static_cast<const void*>(change));
+		if (change != nullptr)
+		{
+			context.Suspect("a video mode change is pending on a server");
+		}
+	});
+
+	CS2ST_CALL(context, "IEngineServiceMgr::GetUnsatisfiedPrerequisiteCount (prerequisites the queued loop switch waits for)", {
+		const int waiting = manager_->GetUnsatisfiedPrerequisiteCount();
 		context.Detail("-> %d", waiting);
 		if (waiting < 0)
 		{
@@ -546,12 +594,8 @@ void EngineServiceMgrSuite::NoteSideEffectingCalls(TestContext& context)
 		"queues a loop switch: the server leaves its current map");
 	context.SkipCall("IEngineServiceMgr::ChangeVideoMode",
 		"client video mode; needs a RenderDeviceInfo_t");
-	context.SkipCall("IEngineServiceMgr::GetVideoModeChange",
-		"returns nothing and is client video-mode state; the effect is not observable");
 	context.SkipCall("IEngineServiceMgr::OnFrameRenderingFinished",
 		"client frame callback; needs an EventClientOutput_t");
-	context.SkipCall("IEngineServiceMgr::unk201",
-		"appends a name to the engine's own list; not observable except through unk202 / unk203");
 	context.SkipCall("IEngineServiceMgr::InstallSwitchLoopModeStatusNotify",
 		"installs a listener the engine keeps; needs an ISwitchLoopModeStatusNotify");
 	context.SkipCall("IEngineServiceMgr::UninstallSwitchLoopModeStatusNotify",

@@ -10,6 +10,7 @@
 #include <engine2/igameresourceservice.h>
 #include <engine2/ivengineserver2.h>
 #include <entity2/entityclass.h>
+#include <entity2/entitykeyvalues.h>
 #include <entity2/entityinstance.h>
 #include <gameentitysystem.h>
 #include <interfaces/interfaces.h>
@@ -297,6 +298,7 @@ void GameEntitySystemSuite::ExerciseCalls(TestContext& context)
 	InspectEntityClassInfoLayout(context);
 
 	ExerciseNameLookups(context);
+	ExerciseEntityKeyValues(context);
 	ExerciseIterators(context);
 
 	ExerciseEntityInstanceVirtuals(context);
@@ -1272,6 +1274,114 @@ void GameEntitySystemSuite::ExerciseNameLookups(TestContext& context)
 			context.Fail("a name no map contains resolved to an entity");
 		}
 	});
+}
+
+// -----------------------------------------------------------------------------
+//  Entity key values and the spawn helpers
+//
+//  CreateEntityKeyValues is the SDK's own code over the entity system's key
+//  value arena, so it is called for real and read back through the getters (two
+//  paths to the same fact). The key values are released again, which also puts
+//  the arena's reference count back. Nothing is spawned: an entity added here
+//  would stay in the world and shift the entity counts the suites after this
+//  one compare, and there is no safe way to remove it again.
+// -----------------------------------------------------------------------------
+
+void GameEntitySystemSuite::ExerciseEntityKeyValues(TestContext& context)
+{
+	context.Note("[CEntitySystem] CreateEntityKeyValues / CGameEntitySystem::SpawnEntities");
+
+	CS2ST_CALL(context, "CEntitySystem::CreateEntityKeyValues (classname, origin, angles)", {
+		const int refs_before = entity_system_->m_nEntityKeyValuesAllocatorRefCount;
+		const Vector origin(1.0f, -2.0f, 3.5f);
+		const QAngle angles(10.0f, 20.0f, 30.0f);
+
+		CEntityKeyValues* values = entity_system_->CreateEntityKeyValues("info_target", &origin, &angles);
+		if (values == nullptr)
+		{
+			context.Fail("CreateEntityKeyValues returned null");
+			return;
+		}
+		const int refs_during = entity_system_->m_nEntityKeyValuesAllocatorRefCount;
+
+		// Read back each key the way the SDK says it was stored.
+		const char* classname = values->GetString(EntityKeyId_t("classname"), "<missing>");
+		const Vector got_origin = values->GetVector(EntityKeyId_t("origin"), Vector(0.0f, 0.0f, 0.0f));
+		const QAngle got_angles = values->GetQAngle(EntityKeyId_t("angles"), QAngle(0.0f, 0.0f, 0.0f));
+		char scratch[64];
+		context.Detail("classname \"%.63s\", origin (%g %g %g), angles (%g %g %g), allocator refs %d -> %d",
+			SafeStringArg(classname, scratch),
+			got_origin.x, got_origin.y, got_origin.z, got_angles.x, got_angles.y, got_angles.z,
+			refs_before, refs_during);
+
+		if (std::strcmp(SafeStringArg(classname, scratch), "info_target") != 0)
+		{
+			context.Fail("the classname key does not read back what CreateEntityKeyValues set");
+		}
+		if (got_origin.x != origin.x || got_origin.y != origin.y || got_origin.z != origin.z)
+		{
+			context.Fail("the origin key does not read back what CreateEntityKeyValues set");
+		}
+		if (got_angles.x != angles.x || got_angles.y != angles.y || got_angles.z != angles.z)
+		{
+			context.Fail("the angles key does not read back what CreateEntityKeyValues set");
+		}
+		if (refs_during != refs_before + 1)
+		{
+			context.Suspect("building key values on the entity system's arena moved its reference count by %d, not 1",
+				refs_during - refs_before);
+		}
+
+		values->Release();
+		const int refs_after = entity_system_->m_nEntityKeyValuesAllocatorRefCount;
+		context.Detail("after Release: allocator refs %d", refs_after);
+		if (refs_after != refs_before)
+		{
+			context.Suspect("Release left the arena reference count at %d, expected %d", refs_after, refs_before);
+		}
+	});
+
+	CS2ST_CALL(context, "CEntitySystem::CreateEntityKeyValues (no arguments)", {
+		CEntityKeyValues* values = entity_system_->CreateEntityKeyValues();
+		if (values == nullptr)
+		{
+			context.Fail("CreateEntityKeyValues returned null");
+			return;
+		}
+		// A null class name, origin and angles must set nothing.
+		const char* classname = values->GetString(EntityKeyId_t("classname"), "<missing>");
+		char scratch[64];
+		context.Detail("classname \"%.63s\"", SafeStringArg(classname, scratch));
+		if (std::strcmp(SafeStringArg(classname, scratch), "<missing>") != 0)
+		{
+			context.Fail("a key was set although no class name was given");
+		}
+		values->Release();
+	});
+
+	CS2ST_CALL(context, "CGameEntitySystem::SpawnEntities (zero entities)", {
+		// nCount <= 0 returns before the engine is touched. The output array is
+		// cleared only for nCount entries, so a sentinel in it must survive.
+		CEntityInstance* sentinel = reinterpret_cast<CEntityInstance*>(static_cast<std::uintptr_t>(0x1));
+		CEntityInstance* out[1] = { sentinel };
+		const int created = entity_system_->SpawnEntities(nullptr, 0, out);
+		context.Detail("-> %d, output[0] %p", created, static_cast<const void*>(out[0]));
+		if (created != 0)
+		{
+			context.Fail("spawning zero key values reported %d created", created);
+		}
+		if (out[0] != sentinel)
+		{
+			context.Suspect("the output array was written although nCount was zero");
+		}
+	});
+
+	context.SkipCall("CGameEntitySystem::SpawnEntities (with key values)",
+		"creates entities that stay in the world and shift later entity counts; nothing here can remove them");
+	context.SkipCall("CGameEntitySystem::SpawnEntity",
+		"inline over SpawnEntities; creates a lasting entity");
+	context.SkipCall("CGameEntitySystem::SpawnEntityByClassname",
+		"inline over SpawnEntities; creates a lasting entity");
 }
 
 // -----------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 #include "suites/HostStateMgrSuite.h"
 
 #include <cstddef>
+#include <cstdio>
 
 #include <appframework/iappsystem.h>
 #include <engine2/hoststate.h>
@@ -179,12 +180,25 @@ void HostStateMgrSuite::InspectManager(TestContext& context)
 	StructInspector inspect(context, "CHostStateMgr", mgr, sizeof(CHostStateMgr));
 	inspect.Pointer("m_PendingRequest",       offsetof(CHostStateMgr, m_PendingRequest));
 	inspect.Pointer("m_CurrentRequest",       offsetof(CHostStateMgr, m_CurrentRequest));
-	inspect.String ("m_LoopModeType",         offsetof(CHostStateMgr, m_LoopModeType));
-	inspect.Pointer("m_pGameConfigurationKV", offsetof(CHostStateMgr, m_pGameConfigurationKV));
-	inspect.String ("m_LoopMode",             offsetof(CHostStateMgr, m_LoopMode));
-	inspect.Pointer("m_pConnectKV",           offsetof(CHostStateMgr, m_pConnectKV));
-	inspect.String ("m_LoopModeName",         offsetof(CHostStateMgr, m_LoopModeName));
-	inspect.Pointer("m_pSourceTVRelayKV",     offsetof(CHostStateMgr, m_pSourceTVRelayKV));
+	// One LoopModeInfo_t per HostStateLoopModeType_t (idle, game, SourceTV
+	// relay): a name and the options KeyValues. The SDK used to name the six
+	// fields separately; the offsets are the same.
+	static_assert(HOST_STATE_LOOP_MODE_COUNT == 3, "the loop mode names below cover three modes");
+	static const char* const kLoopModeNames[HOST_STATE_LOOP_MODE_COUNT] = {
+		"idle", "game", "sourcetv_relay"
+	};
+	static char loop_mode_labels[HOST_STATE_LOOP_MODE_COUNT][2][64];
+	for (int i = 0; i < HOST_STATE_LOOP_MODE_COUNT; ++i)
+	{
+		const std::size_t base = offsetof(CHostStateMgr, m_LoopModes)
+			+ sizeof(CHostStateMgr::LoopModeInfo_t) * static_cast<std::size_t>(i);
+		std::snprintf(loop_mode_labels[i][0], sizeof(loop_mode_labels[i][0]),
+			"m_LoopModes[%s].m_LoopModeName", kLoopModeNames[i]);
+		std::snprintf(loop_mode_labels[i][1], sizeof(loop_mode_labels[i][1]),
+			"m_LoopModes[%s].m_pLoopModeOptions", kLoopModeNames[i]);
+		inspect.String (loop_mode_labels[i][0], base + offsetof(CHostStateMgr::LoopModeInfo_t, m_LoopModeName));
+		inspect.Pointer(loop_mode_labels[i][1], base + offsetof(CHostStateMgr::LoopModeInfo_t, m_pLoopModeOptions));
+	}
 	inspect.String ("m_SaveGame",             offsetof(CHostStateMgr, m_SaveGame));
 	inspect.String ("m_LevelName",            offsetof(CHostStateMgr, m_LevelName));
 	inspect.String ("m_Addons",               offsetof(CHostStateMgr, m_Addons));

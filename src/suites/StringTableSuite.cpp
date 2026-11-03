@@ -287,6 +287,20 @@ void StringTableSuite::ExerciseTable(TestContext& context, INetworkStringTable* 
 		context.Detail("-> %d", tick);
 	});
 
+	TableLabel(label, "SetStringChangeTick (current tick, no change ticks)", index);
+	CS2ST_CALL(context, label, {
+		// The table's own tick and a null pChangeTicks: the SDK says the array
+		// only replaces the last two change ticks when given, so this writes
+		// the value the table already holds and leaves the rest alone.
+		table->SetStringChangeTick(tick, nullptr);
+		const int after = table->GetTick();
+		context.Detail("tick %d -> %d", tick, after);
+		if (after != tick)
+		{
+			context.Suspect("SetStringChangeTick(%d, nullptr) left GetTick at %d", tick, after);
+		}
+	});
+
 	TableLabel(label, "SetDebugLogging (false)", index);
 	CS2ST_CALL(context, label, {
 		// Logging is off unless something turned it on, so this leaves the
@@ -454,8 +468,6 @@ void StringTableSuite::NoteSideEffectingCalls(TestContext& context)
 
 	context.SkipCall("INetworkStringTable::~INetworkStringTable",
 		"destroys an engine-owned table; the destructor may take two vtable slots");
-	context.SkipCall("INetworkStringTable::SetStringChangeTick",
-		"changes the tick the table is replicated at; the second argument is unknown");
 	context.SkipCall("INetworkStringTable::AddString",
 		"adds a string that is replicated to clients");
 	context.SkipCall("INetworkStringTable::SetStringChangedCallback",

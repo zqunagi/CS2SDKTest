@@ -504,8 +504,8 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 
 void ServerConfigSuite::ExerciseTailSlots(TestContext& context)
 {
-	CS2ST_CALL(context, "ISource2ServerConfig::unk101 [slot 22, bool]", {
-		context.Detail("-> %s", config_->unk101() ? "true" : "false");
+	CS2ST_CALL(context, "ISource2ServerConfig::ShouldSendSerializedEntities [slot 22, bool]", {
+		context.Detail("-> %s", config_->ShouldSendSerializedEntities() ? "true" : "false");
 	});
 
 	CS2ST_CALL(context, "ISource2ServerConfig::IsCommandQueueEnabled [slot 23, bool]", {

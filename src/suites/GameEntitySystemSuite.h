@@ -62,6 +62,7 @@ private:
 	void ExerciseIdentityLookups(TestContext& context);
 	void ExerciseClassLookups(TestContext& context);
 	void ExerciseNameLookups(TestContext& context);
+	void ExerciseEntityKeyValues(TestContext& context);
 	void ExerciseIterators(TestContext& context);
 	void ExerciseEntityInstanceVirtuals(TestContext& context);
 

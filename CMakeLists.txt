@@ -242,6 +242,15 @@ set(CS2SDKTEST_SDK_SOURCES
   "${S2SDK_ROOT}/entity2/entitysystem.cpp"
   "${S2SDK_ROOT}/entity2/entityidentity.cpp"
 )
+# entitysystem.cpp's CreateEntityKeyValues / SpawnEntities construct and release
+# CEntityKeyValues, which entitykeyvalues.cpp defines on top of CKV3Arena from
+# tier0_perproject/keyvalues3.cpp (CS2SDKTEST_TIER1_KEYVALUES3). Without that
+# option those symbols stay undefined.
+if(CS2SDKTEST_TIER1_KEYVALUES3)
+  list(APPEND CS2SDKTEST_SDK_SOURCES "${S2SDK_ROOT}/entity2/entitykeyvalues.cpp")
+else()
+  message(WARNING "CS2SDKTEST_TIER1_KEYVALUES3 is OFF: entity2/entitysystem.cpp references CEntityKeyValues, which will be undefined")
+endif()
 if(CS2SDKTEST_USE_MEMOVERRIDE)
   list(APPEND CS2SDKTEST_SDK_SOURCES "${S2SDK_ROOT}/public/tier0/memoverride.cpp")
 endif()

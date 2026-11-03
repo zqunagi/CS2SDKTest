@@ -17,7 +17,7 @@ header explains its oracles; this page is only the map.
 | LocalizeSuite | ILocalize: token lookup by name and index, language state, Construct* formatting | localize/ilocalize.h |
 | ConVarSuite | ICvar, ConVar, ConCommand; 5 layouts, 6 hooks | tier0/icvar.h, convar.h |
 | SchemaSystemSuite | ISchemaSystem, CSchemaSystemTypeScope; 9 layouts | schemasystem/ |
-| GameEntitySystemSuite | CGameEntitySystem / CEntitySystem; 8 layouts | entity2/, engine2/igameresourceservice.h; `s2sdk/game/shared/gameentitysystem.h` |
+| GameEntitySystemSuite | CGameEntitySystem / CEntitySystem; 8 layouts; CreateEntityKeyValues called for real, spawn helpers skipped | entity2/, engine2/igameresourceservice.h; `s2sdk/game/shared/gameentitysystem.h` |
 | GameEventSuite | IGameEventSystem, IGameEventManager2 (not reachable, reported as N/A); 9 hooks | engine2/igameeventsystem.h, igameevents.h |
 | NetworkServerSuite | INetworkServerService, INetworkGameServer; 15 cross-checks with other interfaces; 5 hooks | engine2/inetworkserverservice.h, inetworkgameserver.h, networkgameserverbase.h, tier0/netadr.h |
 | NetworkMessagesSuite | INetworkMessages, protobuf round trip | networksystem/inetworkmessages.h, inetworkserializer.h; tier0/logging.h |
