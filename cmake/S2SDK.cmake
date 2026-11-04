@@ -106,6 +106,17 @@ if(MSVC)
     /wd4996           # deprecated CRT calls inside the SDK
     /wd4267 /wd4244   # size_t/int narrowing, pervasive in the SDK
     /wd4355           # 'this' used in base member initializer list
+    # public/tier0/memdbgon.h redirects malloc/free to tier0 only while
+    # _INC_CRTDBG is still undefined (Release). Whether it is depends on which
+    # header a translation unit happens to include first: <condition_variable>
+    # and friends pull in crtdbg.h and switch the redirect off, entitysystem.cpp
+    # does not. keyvalues3.h's SetVecBasedObj is an inline template, so the
+    # linker keeps one of the two instantiations - the tier0-allocating one -
+    # while KeyValues3::Free (keyvalues3.cpp) frees with this module's own CRT:
+    # a cross-heap free, c0000374 on CEntityKeyValues::Release. Including
+    # crtdbg.h first everywhere turns the redirect off in every unit, so
+    # allocation and free stay on this module's heap (USE_MEMOVERRIDE is off).
+    /FIcrtdbg.h
   )
   target_link_libraries(s2sdk_headers INTERFACE legacy_stdio_definitions.lib)
   # Valve ships the .lib files without their .pdb; LNK4099 on every one of them
