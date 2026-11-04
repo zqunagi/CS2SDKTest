@@ -15,6 +15,7 @@
 #include "suites/StringTableSuite.h"
 #include "suites/GameEntitiesSuite.h"
 #include "suites/HostStateMgrSuite.h"
+#include "suites/LoopModeSuite.h"
 #include "suites/NetChannelSuite.h"
 #include "suites/ResourceSystemSuite.h"
 #include "suites/ServerConfigSuite.h"
@@ -53,6 +54,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitiesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetChannelSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new HostStateMgrSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new LoopModeSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ResourceSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new LocalizeSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
