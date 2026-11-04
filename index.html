@@ -1,431 +1,1140 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CS2SDKTest Results</title>
+<meta name="color-scheme" content="dark light">
+<title>CS2SDKTest Dashboard</title>
+<script>
+// 首屏前确定主题，避免闪烁；默认深色
+try{var th=localStorage.getItem('theme');document.documentElement.dataset.theme=th==='light'?'light':'dark'}catch(e){}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f7f8fa;--surface:#fff;--fg:#14181f;--mut:#667085;--line:#e4e7ec;--soft:#f2f4f7;
-  --ok:#16a34a;--fail:#dc2626;--crash:#7f1d1d;--sus:#d97706;--skip:#98a2b3;--na:#cbd5e1;--acc:#2563eb;
-  --shadow:0 1px 2px rgba(16,24,40,.06);
-  --pop:0 8px 24px rgba(16,24,40,.14),0 1px 3px rgba(16,24,40,.08);
-  --ease:cubic-bezier(.22,.8,.2,1);--t1:.15s;--t2:.25s;--t3:.5s;
+  color-scheme:dark;--nav-h:52px;
+  --bg:#0d1117;--surface:#161b22;--raise:#1c2128;--line:#30363d;--line2:#21262d;
+  --fg:#e6edf3;--mut:#8b949e;--dim:#6e7681;--acc:#58a6ff;
+  --ok:#3fb950;--fail:#f85149;--crash:#db61a2;--sus:#a371f7;--skip:#e3892b;--na:#6e7681;
+  --scrim:rgba(1,4,9,.6);--pop:0 8px 24px rgba(1,4,9,.55);
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  --ease:cubic-bezier(.22,.8,.2,1);--r:8px;
 }
-@media(prefers-color-scheme:dark){:root{
-  --bg:#0c0f14;--surface:#141922;--fg:#e6eaf0;--mut:#8b95a5;--line:#252c38;--soft:#1b212c;
-  --ok:#34d399;--fail:#f87171;--crash:#fb7185;--sus:#fbbf24;--skip:#64748b;--na:#475569;--acc:#60a5fa;
-  --shadow:none;
-  --pop:0 8px 24px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04);
-}}
+:root[data-theme=light]{
+  color-scheme:light;
+  --bg:#f6f8fa;--surface:#fff;--raise:#f3f4f6;--line:#d0d7de;--line2:#e5e9ee;
+  --fg:#1f2328;--mut:#59636e;--dim:#818b98;--acc:#0969da;
+  --ok:#1a7f37;--fail:#cf222e;--crash:#bf3989;--sus:#8250df;--skip:#b35900;--na:#8c959f;
+  --scrim:rgba(31,35,40,.4);--pop:0 8px 24px rgba(31,35,40,.16);
+}
 *{box-sizing:border-box}
-body{margin:0;-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
-main{max-width:1040px;margin:0 auto;padding:36px 16px 64px}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--line)}
-h1{font-size:24px;font-weight:700;margin:0;letter-spacing:-.02em}
-.sub{color:var(--mut);margin-top:4px}
-.hd{display:inline-flex;align-items:stretch;height:32px;border:1px solid var(--line);border-radius:999px;background:var(--surface);box-shadow:var(--shadow);color:var(--mut);font-size:12.5px;line-height:1;white-space:nowrap;overflow:hidden}
-.hd>*+*{border-left:1px solid var(--line)}
-.it{display:inline-flex;align-items:center;gap:6px;padding:0 12px;font-variant-numeric:tabular-nums}
-.it[hidden]{display:none}
-.it b{color:var(--fg);font-weight:600}
-.it svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.gh{display:inline-flex;align-items:center;justify-content:center;width:36px;color:var(--fg);transition:background var(--t1) var(--ease)}
-.gh:hover{background:var(--soft)}
-.gh:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
-.gh svg{width:16px;height:16px;fill:currentColor}
-.lang{display:inline-flex;align-items:center;gap:2px;padding:3px 3px 3px 10px;color:var(--mut)}
-.lang>svg{width:14px;height:14px;flex:none;margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.lang button{height:24px;padding:0 10px;border:0;border-radius:999px;background:transparent;color:var(--mut);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--t1) var(--ease),color var(--t1) var(--ease),transform var(--t1) var(--ease)}
-.lang button:hover:not([aria-pressed=true]){color:var(--fg);background:var(--soft)}
-.lang button[aria-pressed=true]{background:var(--fg);color:var(--bg);cursor:default}
-.lang button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-@media(max-width:520px){.it .lb{display:none}.lang>svg{display:none}.lang{padding-left:3px}}
-h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:32px 0 12px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
-.pad{padding:22px 24px}
-.mono,code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--soft);color:var(--mut)}
-.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.chip.completed{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
-.chip.crashed,.chip.timeout{color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent)}
-.hero{display:grid;grid-template-columns:1.2fr 1fr;gap:20px;align-items:center}
-@media(max-width:720px){.hero{grid-template-columns:1fr}}
-.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--mut);margin-top:10px}
-.meta b{color:var(--fg);font-weight:600}
-.big{font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1}
-.big small{font-size:14px;color:var(--mut);font-weight:500;margin-left:6px}
-.bar{display:flex;gap:2px;height:10px;border-radius:999px;background:var(--soft);margin:16px 0 12px}
-.bar i{display:block;min-width:3px;transition:transform var(--t1) var(--ease),opacity var(--t1) var(--ease),filter var(--t1) var(--ease)}
-.bar i:first-child{border-radius:999px 0 0 999px}.bar i:last-child{border-radius:0 999px 999px 0}.bar i:only-child{border-radius:999px}
-.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mut)}
-.legend span{display:inline-flex;align-items:center;gap:6px;transition:opacity var(--t1) var(--ease)}
-.legend em{font-style:normal;color:var(--fg);font-weight:600}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.OK{--c:var(--ok)}.FAIL{--c:var(--fail)}.CRASHED{--c:var(--crash)}.SUSPECT{--c:var(--sus)}.SKIP{--c:var(--skip)}.NA{--c:var(--na)}
-.bar i,.dot{background:var(--c)}
-table{width:100%;border-collapse:collapse}
-th{font-weight:500;color:var(--mut);text-align:left;font-size:12.5px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--soft);white-space:nowrap}
-td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
-tr:last-child td{border-bottom:0}
-tbody tr.run{cursor:pointer}
-tbody tr.run td{transition:background var(--t1) var(--ease),box-shadow var(--t1) var(--ease)}
-tbody tr.run:hover td{background:var(--soft)}
-tbody tr.sel td{background:color-mix(in srgb,var(--acc) 8%,transparent)}
-tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
-.hfilter{margin:0;padding:12px 16px 4px}
-.hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
-.pager{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
-.pager .pn{display:flex;align-items:center;gap:4px}
-.pager button{min-width:30px;height:30px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fg);font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer;transition:background var(--t1) var(--ease),border-color var(--t1) var(--ease),transform var(--t1) var(--ease)}
-.pager button:hover:not(:disabled):not([aria-current]){background:var(--soft);border-color:var(--line)}
-.pager button[aria-current]{background:var(--fg);color:var(--bg);border-color:var(--fg);cursor:default}
-.pager button:disabled{color:var(--na);cursor:default}
-.pager button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-.pager .gap{min-width:18px;text-align:center}
-@media(max-width:720px){
-  .hscroll th,.hscroll td{white-space:nowrap;padding-left:12px;padding-right:12px}
-  .hfilter{padding:10px 12px 4px}
-  .pager{padding:10px 12px;justify-content:center}
-}
-.num{text-align:right;font-variant-numeric:tabular-nums}
-.bad{color:var(--fail);font-weight:600}
-.empty{padding:36px;text-align:center;color:var(--mut)}
-.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
-.tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background var(--t1) var(--ease),border-color var(--t1) var(--ease),color var(--t1) var(--ease),transform var(--t1) var(--ease)}
-.tab:hover:not([aria-pressed=true]){background:var(--soft)}
-.tab:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.tab[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.tab span{color:var(--mut);margin-left:4px}.tab[aria-pressed=true] span{color:inherit;opacity:.7}
-details{border-top:1px solid var(--line)}
-details:first-of-type{border-top:0}
-summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 20px;transition:background var(--t1) var(--ease)}
-summary:hover{background:var(--soft)}
-summary::-webkit-details-marker{display:none}
-summary::before{content:"›";color:var(--mut);transition:transform var(--t2) var(--ease);display:inline-block;width:10px}
-details[open]>summary::before{transform:rotate(90deg)}
-summary .name{font-weight:600}
-summary .cnt{margin-left:auto;display:flex;gap:10px;color:var(--mut);font-size:12.5px}
-summary .cnt b{color:var(--c);font-weight:600}
-.rows{padding:0 20px 12px 40px}
-.row{display:grid;grid-template-columns:78px minmax(0,1.3fr) minmax(0,1.7fr);gap:12px;padding:7px 0;border-top:1px dashed var(--line)}
-.row:first-child{border-top:0}
-.tag{font-size:11px;font-weight:700;color:var(--c);letter-spacing:.03em}
-.row code{min-width:0;overflow-wrap:anywhere}
-.row .d{color:var(--mut);min-width:0;word-break:break-word}
-@media(max-width:720px){.row{grid-template-columns:70px 1fr}.row .d{grid-column:1/-1}}
-.note{padding:14px 20px;color:var(--mut)}
-.diff{padding:4px 20px 12px}
-.diff .row{grid-template-columns:minmax(0,1.6fr) 150px}
-.arrow{color:var(--mut)}
-footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:12px;text-align:center}
-footer a,footer a:link,footer a:visited,footer a:hover,footer a:active{color:inherit;text-decoration:none}
-footer a:hover{text-decoration:underline}
+[hidden]{display:none!important}
+input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none}
+html{scrollbar-gutter:stable}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:'cv11','ss01'}
+body.lock{overflow:hidden}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+button{font:inherit;color:inherit}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.ic{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-/* ===== 动效：只动 transform / opacity；入场只在首屏播放一次 ===== */
-@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+/* 状态色：--c 由状态类提供 */
+.OK{--c:var(--ok)}.FAIL{--c:var(--fail)}.CRASHED{--c:var(--crash)}.SUSPECT{--c:var(--sus)}.SKIP{--c:var(--skip)}.NA{--c:var(--na)}
+.st{display:inline-flex;align-items:center;gap:6px;color:var(--c);font-weight:500;white-space:nowrap}
+.st .ic{width:15px;height:15px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--c);display:inline-block;flex:none}
+
+/* ===== 顶部导航 ===== */
+.nav{position:sticky;top:0;z-index:30;height:var(--nav-h);background:var(--bg);border-bottom:1px solid var(--line2)}
+.nav-in{max-width:1360px;height:100%;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--fg);font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.brand:hover{text-decoration:none}
+.brand svg{width:22px;height:22px}
+.brand .dash{color:var(--mut);font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 9px;border:1px solid var(--line);border-radius:999px;font-size:12px;color:var(--mut);white-space:nowrap}
+.pill b{color:var(--fg);font-weight:500}
+.pill .dot{background:var(--c,var(--na))}
+.pill.sk{width:150px;border-color:transparent}
+.nav-links{display:flex;align-items:center;gap:2px;margin-left:auto}
+.nav-links a{position:relative;display:flex;align-items:center;height:var(--nav-h);padding:0 12px;color:var(--mut);font-weight:500;transition:color .15s}
+.nav-links a:hover{color:var(--fg);text-decoration:none}
+.nav-links a[aria-current=page]{color:var(--fg)}
+.nav-links a[aria-current=page]::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--acc);border-radius:2px;animation:grow .25s var(--ease)}
+.nav-tools{display:flex;align-items:center;gap:4px;padding-left:10px;margin-left:6px;border-left:1px solid var(--line2)}
+.ib{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--mut);cursor:pointer;transition:background .15s,color .15s}
+.ib:hover{background:var(--raise);color:var(--fg);text-decoration:none}
+.ib svg{width:17px;height:17px}
+.ib .gh{fill:currentColor;stroke:none}
+.lang{display:inline-flex;padding:2px;border:1px solid var(--line);border-radius:6px}
+.lang button{height:24px;padding:0 8px;border:0;border-radius:4px;background:transparent;color:var(--mut);font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.lang button:hover:not([aria-pressed=true]){color:var(--fg)}
+.lang button[aria-pressed=true]{background:var(--raise);color:var(--fg);cursor:default}
+.theme-sun{display:none}:root[data-theme=light] .theme-sun{display:block}:root[data-theme=light] .theme-moon{display:none}
+
+/* ===== 布局 ===== */
+main{max-width:1360px;margin:0 auto;padding:22px 24px 72px}
+.pagebar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.pagebar h1{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.upd{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:12.5px}
+.btn{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,transform .1s}
+.btn:hover{background:var(--raise);border-color:var(--dim);text-decoration:none}
+.btn:active{transform:scale(.97)}
+.btn.sm{height:26px;padding:0 9px;font-size:12px}
+.spin .ic{animation:rot .8s linear infinite}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:clip}
+.sec{margin-top:22px}
+.sec>h2{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 10px;font-size:13px;font-weight:600;color:var(--fg)}
+.sec>h2 small{font-weight:400;color:var(--mut);font-size:12.5px}
+
+/* 元数据条 */
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.meta>div{padding:11px 16px;min-width:0;border-left:1px solid var(--line2)}
+.meta>div:first-child{border-left:0}
+.meta label{display:block;font-size:11.5px;color:var(--mut);font-weight:500;margin-bottom:3px;white-space:nowrap}
+.meta .v{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0;font-weight:500;white-space:nowrap}
+.meta .v>*{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.meta .v code{color:var(--fg)}
+.meta .v em{font-style:normal;color:var(--dim);font-size:12px;font-weight:400}
+.meta .v a{color:var(--acc)}
+@media(max-width:700px){.meta>div{border-left:0;border-top:1px solid var(--line2)}.meta>div:first-child{border-top:0}.meta{grid-template-columns:1fr 1fr}.meta>div:nth-child(even){border-left:1px solid var(--line2)}}
+
+/* 提示条 */
+.banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);font-size:13px}
+.banner .ic{width:16px;height:16px}
+.banner .grow{flex:1;min-width:200px}
+.banner small{color:var(--mut);font-size:12.5px;margin-left:6px}
+.banner.reg{border-color:color-mix(in srgb,var(--fail) 55%,var(--line));background:color-mix(in srgb,var(--fail) 8%,var(--surface))}
+.banner.reg>.ic{color:var(--fail)}
+.banner.good>.ic{color:var(--ok)}
+.banner.note>.ic{color:var(--acc)}
+.banner b{font-weight:600}
+.banner.err{border-color:color-mix(in srgb,var(--skip) 55%,var(--line));background:color-mix(in srgb,var(--skip) 8%,var(--surface))}
+.banner.err>.ic{color:var(--skip)}
+
+/* 统计卡片 */
+.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:12px}
+@media(max-width:1100px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+.stat{display:block;width:100%;text-align:left;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);cursor:pointer;transition:border-color .15s,background .15s,transform .1s}
+.stat:hover{border-color:var(--dim)}
+.stat:active{transform:scale(.985)}
+.stat[aria-pressed=true]{border-color:var(--c,var(--acc));background:color-mix(in srgb,var(--c,var(--acc)) 6%,var(--surface))}
+.stat.nofilter{cursor:default}
+.stat .lb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut);font-weight:500}
+.stat .lb .ic{color:var(--c,var(--mut));width:13px;height:13px}
+.stat .n{margin-top:6px;font-size:26px;line-height:1.1;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .n.z{color:var(--dim)}
+.stat .n small{font-size:14px;font-weight:500;color:var(--mut);margin-left:1px}
+.stat .sub{margin-top:4px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.up{color:var(--ok)}.down{color:var(--fail)}
+
+/* 状态分布条 */
+.dist{margin-top:12px}
+.bar{display:flex;gap:2px;height:8px;border-radius:999px;overflow:hidden;background:var(--raise)}
+.bar i{display:block;min-width:3px;background:var(--c);transform-origin:left;animation:grow .7s var(--ease) backwards;animation-delay:calc(.2s + var(--n,0)*60ms);transition:opacity .15s,transform .15s}
+.bar.dim i:not(.hl){opacity:.3}
+.bar i.hl{transform:scaleY(1.5)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:9px;font-size:12px;color:var(--mut)}
+.legend span{display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.legend em{font-style:normal;color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums}
+.legend.dim span:not(.hl){opacity:.4}
+.mini{display:flex;gap:1px;width:64px;height:5px;border-radius:3px;overflow:hidden;background:var(--raise)}
+.mini i{display:block;background:var(--c)}
+
+/* 工具栏 */
+.tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line)}
+.search{position:relative;flex:1 1 220px;min-width:180px;max-width:340px}
+.search .ic{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--dim);width:15px;height:15px;pointer-events:none}
+.search input{width:100%;height:30px;padding:0 28px 0 32px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;font-size:13px;transition:border-color .15s,box-shadow .15s}
+.search input::placeholder{color:var(--dim)}
+.search input:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 22%,transparent)}
+.search kbd{position:absolute;right:8px;top:50%;transform:translateY(-50%);font:11px var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 5px;pointer-events:none}
+.search input:focus~kbd,.search.has kbd{display:none}
+.search .x{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:24px;height:24px;display:none}
+.search.has .x{display:inline-flex}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:0;border-left:1px solid var(--line);background:transparent;color:var(--mut);font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
+.seg button:first-child{border-left:0}
+.seg button:hover:not([aria-pressed=true]){background:var(--raise);color:var(--fg)}
+.seg button[aria-pressed=true]{background:var(--raise);color:var(--fg)}
+.seg button span{color:var(--dim);font-variant-numeric:tabular-nums}
+.seg button .dot{background:var(--c)}
+.seg button:not([aria-pressed=true]) .dot{opacity:.7}
+.sel{height:30px;padding:0 26px 0 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%238b949e' stroke-width='1.6'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 9px center;color:var(--fg);font:inherit;font-size:12.5px;appearance:none;cursor:pointer;max-width:100%}
+.sel:hover{border-color:var(--dim)}
+.sp{flex:1}
+.tcount{color:var(--mut);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 表格 */
+.tw{overflow:visible}
+table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+th{position:sticky;top:var(--nav-h);z-index:5;background:var(--surface);text-align:left;font-size:12px;font-weight:500;color:var(--mut);padding:0;border-bottom:1px solid var(--line);white-space:nowrap}
+th button{display:flex;align-items:center;gap:5px;width:100%;height:34px;padding:0 14px;border:0;background:transparent;color:inherit;font:inherit;text-align:inherit;cursor:pointer;transition:color .15s}
+th button:hover{color:var(--fg)}
+th[aria-sort] button{color:var(--fg)}
+th .ar{opacity:0;transition:opacity .15s,transform .2s var(--ease)}
+th[aria-sort] .ar{opacity:1}
+th[aria-sort=descending] .ar{transform:rotate(180deg)}
+th.r button{justify-content:flex-end}
+td{padding:0 14px;height:38px;border-bottom:1px solid var(--line2);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--mut)}
+tr.grp td{height:40px;padding:0;background:var(--bg);border-bottom:1px solid var(--line)}
+.gh2{display:flex;align-items:center;gap:10px;width:100%;height:40px;padding:0 14px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.gh2:hover{background:color-mix(in srgb,var(--raise) 55%,transparent)}
+.gh2 .nm{font-weight:600}
+.gh2 .cnt{color:var(--mut);font-size:12.5px;font-variant-numeric:tabular-nums}
+.gh2 .badge{margin-left:auto;display:inline-flex;align-items:center;gap:10px}
+.gh2 .fr{font-size:12.5px;color:var(--mut);font-variant-numeric:tabular-nums}
+.pc{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--fail)}
+.pc .ic{width:13px;height:13px}
+.chev{display:inline-block;width:12px;color:var(--dim);transition:transform .2s var(--ease);flex:none;text-align:center}
+.open>.chev,tr.open .chev,.gh2[aria-expanded=true] .chev{transform:rotate(90deg)}
+tr.if{cursor:pointer;transition:background .12s}
+tr.if:hover td{background:var(--raise)}
+tr.if.bad td:first-child{box-shadow:inset 2px 0 0 var(--fail)}
+tr.if.cr td:first-child{box-shadow:inset 2px 0 0 var(--crash)}
+tr.if.sp2 td:first-child{box-shadow:inset 2px 0 0 var(--sus)}
+tr.if:focus-visible{outline-offset:-2px}
+.nmw{display:flex;align-items:center;gap:8px;min-width:0;height:100%}
+.nm{min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:12.5px}
+.stag{flex:none;font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:0 5px;line-height:17px}
+.frac{display:inline-flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums;color:var(--mut)}
+.frac b{color:var(--fg);font-weight:500}
+.chg{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;white-space:nowrap}
+.chg .ic{width:13px;height:13px}
+.chg.regressed{color:var(--fail)}.chg.fixed{color:var(--ok)}.chg.changed{color:var(--skip)}.chg.added{color:var(--acc)}
+.chg.none{color:var(--dim);font-weight:400}
+tr.sub td{background:color-mix(in srgb,var(--bg) 50%,var(--surface));height:34px;font-size:13px}
+tr.sub.in{animation:fade .22s var(--ease) both;animation-delay:calc(var(--i,0)*14ms)}
+tr.sub .c-name{padding-left:44px}
+tr.sub.t{cursor:pointer}
+tr.sub.t:hover td{background:var(--raise)}
+tr.sub .nm{color:var(--fg)}
+.was{color:var(--dim);font-size:12px;margin-left:4px;font-weight:400}
+.det{color:var(--mut);font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.det code{color:var(--fg)}
+.det.badtxt{color:color-mix(in srgb,var(--c) 75%,var(--fg))}
+tr.subnote td{height:28px;font-size:12px;color:var(--dim);padding-left:44px;background:color-mix(in srgb,var(--bg) 50%,var(--surface))}
+mark{background:color-mix(in srgb,var(--acc) 30%,transparent);color:inherit;border-radius:2px;padding:0 1px}
+.empty{padding:44px 20px;text-align:center;color:var(--mut)}
+.empty .ic{width:26px;height:26px;color:var(--dim);margin-bottom:8px}
+.empty b{display:block;color:var(--fg);font-weight:600;margin-bottom:4px}
+.empty .btn{margin-top:12px}
+@media(max-width:900px){.tw{overflow-x:auto}table{min-width:760px}th{position:static}}
+
+/* 抽屉 */
+#scrim{position:fixed;inset:0;z-index:40;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s}
+#scrim.on{opacity:1;pointer-events:auto}
+#drawer{position:fixed;top:0;right:0;bottom:0;z-index:41;width:min(540px,100vw);display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--pop);transform:translateX(102%);visibility:hidden;transition:transform .28s var(--ease),visibility 0s .28s}
+#drawer.on{transform:none;visibility:visible;transition:transform .28s var(--ease)}
+#drawer:focus{outline:0}
+.dh{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 14px;border-bottom:1px solid var(--line)}
+.dh .tt{flex:1;min-width:0}
+.crumb{font-size:12px;color:var(--mut);display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.crumb code{font-size:12px}
+.dh h3{margin:0;font-family:var(--mono);font-size:15px;font-weight:500;overflow-wrap:anywhere;line-height:1.4}
+.db{flex:1;overflow:auto;padding:16px 18px 24px}
+.db>*+*{margin-top:18px}
+.kv{display:grid;grid-template-columns:128px 1fr;gap:9px 12px;font-size:13px}
+.kv dt{color:var(--mut)}
+.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.dsec h4{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;justify-content:space-between}
+.cb{position:relative;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.cb pre{margin:0;padding:11px 44px 11px 12px;font:12.5px/1.6 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.cb .cp{position:absolute;top:5px;right:5px}
+.cb.err{border-color:color-mix(in srgb,var(--c) 55%,var(--line));background:color-mix(in srgb,var(--c) 7%,var(--bg))}
+.cb.err pre{color:var(--fg)}
+.errh{display:flex;align-items:center;gap:8px;margin-bottom:8px;color:var(--c);font-weight:600;font-size:13px}
+.dsec details summary{cursor:pointer;color:var(--mut);font-size:12.5px;display:flex;align-items:center;gap:6px;list-style:none;padding:2px 0}
+.dsec details summary::-webkit-details-marker{display:none}
+.dsec details summary::before{content:"›";display:inline-block;width:10px;transition:transform .2s var(--ease)}
+.dsec details[open] summary::before{transform:rotate(90deg)}
+.dsec details summary:hover{color:var(--fg)}
+.dsec details .cb{margin-top:8px}
+@media(max-width:720px){#drawer{width:100vw;border-left:0}.kv{grid-template-columns:104px 1fr}}
+
+/* 历史 */
+.hist-grid{display:grid;gap:22px}
+.chart{padding:14px 16px 8px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .gl{stroke:var(--line2);stroke-width:1}
+.chart .ax{fill:var(--dim);font:11px var(--sans)}
+.chart .ln{fill:none;stroke:var(--acc);stroke-width:1.75;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:var(--len,2000);stroke-dashoffset:var(--len,2000);animation:draw 1s var(--ease) .15s forwards}
+.chart .pt{fill:var(--c);stroke:var(--surface);stroke-width:2;animation:fade .4s .8s both}
+.chart .hit{fill:transparent;cursor:pointer}
+.chart .hit:hover+.pt,.chart .pt.on{r:5}
+.cmp-pick{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px;border-bottom:1px solid var(--line)}
+.cmp-pick label{color:var(--mut);font-size:12.5px}
+.cmp-pick .sel{max-width:260px}
+.ctiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line2);border-bottom:1px solid var(--line)}
+@media(max-width:900px){.ctiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.ctile{padding:10px 14px;background:var(--surface);border:0;text-align:left;cursor:pointer;transition:background .15s}
+.ctile:hover{background:var(--raise)}
+.ctile[aria-pressed=true]{background:var(--raise);box-shadow:inset 0 -2px 0 var(--c,var(--acc))}
+.ctile .lb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)}
+.ctile .lb .ic{color:var(--c);width:13px;height:13px}
+.ctile .n{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.ctile .n.z{color:var(--dim)}
+.crows{max-height:420px;overflow:auto}
+.crow{display:grid;grid-template-columns:130px minmax(0,1fr) auto;gap:12px;align-items:center;padding:0 14px;height:36px;border-bottom:1px solid var(--line2);font-size:13px}
+.crow .s{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .ft{display:inline-flex;align-items:center;gap:8px;color:var(--dim)}
+.crow .ft .ic{width:12px;height:12px}
+.crow:last-child{border-bottom:0}
+@media(max-width:700px){.crow{grid-template-columns:minmax(0,1fr) auto}.crow .s{display:none}}
+.hfil{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+table.runs td{height:42px;cursor:pointer}
+table.runs tr:hover td{background:var(--raise)}
+table.runs tr.cur td:first-child{box-shadow:inset 2px 0 0 var(--acc)}
+.rid{display:flex;align-items:center;gap:8px;min-width:0}
+.rid code{overflow:hidden;text-overflow:ellipsis}
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:500;color:var(--c);background:color-mix(in srgb,var(--c) 13%,transparent);white-space:nowrap}
+.chip .ic{width:12px;height:12px}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;padding:9px 12px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
+.pager .pn{display:flex;gap:3px}
+.pager button{min-width:28px;height:28px;padding:0 7px;border:1px solid transparent;border-radius:6px;background:transparent;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer;transition:background .15s}
+.pager button:hover:not(:disabled):not([aria-current]){background:var(--raise);border-color:var(--line)}
+.pager button[aria-current]{background:var(--raise);border-color:var(--line);cursor:default}
+.pager button:disabled{color:var(--dim);cursor:default}
+@media(max-width:900px){table.runs{min-width:860px}}
+
+/* 骨架屏 */
+.skel{background:linear-gradient(90deg,var(--raise) 25%,color-mix(in srgb,var(--raise) 60%,var(--line)) 50%,var(--raise) 75%);background-size:200% 100%;animation:shim 1.3s linear infinite;border-radius:6px}
+.sk-line{height:12px;margin:8px 0}
+.sk-card{height:78px;border-radius:var(--r)}
+.sk-meta{height:62px}
+.sk-row{height:38px;margin:0 12px 8px}
+.stable{padding:14px 0 6px}
+
+/* 提示浮层 */
+#tip{position:fixed;left:0;top:0;z-index:60;pointer-events:none;display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);box-shadow:var(--pop);font-size:12.5px;line-height:1.3;white-space:nowrap;opacity:0;transform:translate(var(--x,0),calc(var(--y,0) + 4px));transition:opacity .12s,transform .18s var(--ease)}
+#tip.on{opacity:1;transform:translate(var(--x,0),var(--y,0))}
+#tip b{font-weight:600;font-variant-numeric:tabular-nums}
+#tip span{color:var(--mut)}
+footer{max-width:1360px;margin:0 auto;padding:0 24px 32px;color:var(--dim);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+footer a{color:inherit}
+
+/* 动效：只动 transform / opacity；入场仅在导航时播放一次 */
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes grow{from{transform:scaleX(0)}to{transform:none}}
-.enter{animation:rise var(--t3) var(--ease) both;animation-delay:calc(var(--i,0)*70ms)}
-.enter .bar i{transform-origin:left;animation:grow .7s var(--ease) backwards;animation-delay:calc(.25s + var(--n,0)*70ms)}
-.swap>*{animation:rise var(--t2) var(--ease) both;animation-delay:calc(var(--i,0)*60ms)}
-tbody tr.run{animation:fade var(--t2) var(--ease) both;animation-delay:calc(var(--i,0)*28ms)}
-details[open]>.rows{animation:fade var(--t2) var(--ease)}
-.row{animation:fade var(--t2) var(--ease) both;animation-delay:calc(var(--i,0)*12ms)}
-.tab:active,.lang button:active:not([aria-pressed=true]),.pager button:active:not(:disabled){transform:scale(.96)}
-@supports(interpolate-size:allow-keywords){
-  :root{interpolate-size:allow-keywords}
-  details::details-content{height:0;overflow:clip;transition:height var(--t2) var(--ease),content-visibility var(--t2) allow-discrete}
-  details[open]::details-content{height:auto}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes shim{to{background-position:-200% 0}}
+.enter>*{animation:rise .4s var(--ease) both;animation-delay:calc(var(--i,0)*55ms)}
+.enter.still>*,.still .chart .pt{animation:none}
+.still .chart .ln{animation:none;stroke-dashoffset:0}
+.th2{display:block;padding:0 14px;line-height:34px}
+th.r .th2{text-align:right}
+
+@media(max-width:820px){
+  .nav-in{padding:0 14px;gap:8px}.brand .dash,.pill .xl{display:none}
+  main{padding:16px 14px 56px}
+  .ib.gh-l{display:none}
 }
-/* 进度条悬停：高亮当前段、淡化其余；浮层由 JS 定位 */
-.bar.dim i:not(.hl){opacity:.35}
-.bar i.hl{transform:scaleY(1.7);filter:saturate(1.15)}
-.legend.dim span:not(.hl){opacity:.4}
-#tip{position:fixed;left:0;top:0;z-index:10;pointer-events:none;display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);box-shadow:var(--pop);font-size:12.5px;line-height:1.3;white-space:nowrap;opacity:0;transform:translate(var(--x,0),calc(var(--y,0) + 4px));transition:opacity var(--t1) var(--ease),transform var(--t2) var(--ease)}
-#tip.on{opacity:1;transform:translate(var(--x,0),var(--y,0))}
-#tip .dot{width:8px;height:8px}
-#tip b{font-weight:600;font-variant-numeric:tabular-nums}
-#tip span{color:var(--mut);font-variant-numeric:tabular-nums}
-@media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
-}
+@media(max-width:560px){.pill{display:none}.nav-links a{padding:0 8px}.nav-tools{padding-left:6px;margin-left:2px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.chart .ln{stroke-dashoffset:0}}
 </style>
 </head>
 <body>
-<main>
-<header class="enter">
-  <div><h1>CS2SDKTest</h1><div class="sub" data-i="sub"></div></div>
-  <div class="hd">
-    <div class="lang" role="group" data-al="langGroup"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><button type="button" data-l="en" lang="en">EN</button><button type="button" data-l="zh" lang="zh-CN">中文</button></div>
-    <span class="it" id="runs" data-ti="runsTip" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span><b id="count"></b> <span class="lb" data-i="runsLb"></span></span></span>
-    <a class="gh" href="https://github.com/zqunagi/CS2SDKTest" target="_blank" rel="noopener" data-al="ghRepo" data-ti="ghRepo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></div>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#overview" aria-label="CS2SDKTest Dashboard">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5.5" stroke="currentColor" stroke-width="1.5" opacity=".55"/><circle cx="7.5" cy="8" r="1.7" fill="var(--ok)"/><path d="M11.5 8h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".8"/><circle cx="7.5" cy="12" r="1.7" fill="var(--fail)"/><path d="M11.5 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".8"/><circle cx="7.5" cy="16" r="1.7" fill="var(--na)"/><path d="M11.5 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".8"/></svg>
+      <span>CS2SDKTest <span class="dash">Dashboard</span></span>
+    </a>
+    <span class="pill sk skel" id="navstat"></span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#overview" data-v="overview" data-i="navOverview"></a>
+      <a href="#history" data-v="history" data-i="navHistory"></a>
+    </nav>
+    <div class="nav-tools">
+      <a class="ib gh-l" href="https://github.com/zqunagi/CS2SDKTest" target="_blank" rel="noopener" data-al="ghRepo" data-ti="ghRepo"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <button class="ib" id="theme" type="button" data-al="theme" data-ti="theme"><svg class="ic theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="ic theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+      <div class="lang" role="group" data-al="langGroup"><button type="button" data-l="en" lang="en">EN</button><button type="button" data-l="zh" lang="zh-CN">中文</button></div>
+    </div>
+  </div>
 </header>
 
-<div id="latest"></div>
-
-<h2 data-i="hist" class="enter" style="--i:2"></h2>
-<div class="card enter" id="history" style="--i:3"></div>
-
-<div id="detail"></div>
-<footer class="enter" style="--i:4">© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
+<main id="app">
+  <div class="skel sk-meta"></div>
+  <div class="stats"><div class="skel sk-card"></div><div class="skel sk-card"></div><div class="skel sk-card"></div><div class="skel sk-card"></div><div class="skel sk-card"></div><div class="skel sk-card"></div></div>
+  <div class="card sec stable"><div class="skel sk-row"></div><div class="skel sk-row"></div><div class="skel sk-row"></div><div class="skel sk-row"></div></div>
 </main>
+<footer><span>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></span></footer>
+
+<div id="scrim"></div>
+<aside id="drawer" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1" aria-hidden="true"></aside>
 
 <script>
-const $=s=>document.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const get=(u,n=2)=>fetch(u,{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error(u+' '+r.status);return r.json()}).catch(e=>{if(n>0)return get(u,n-1);throw e});
+'use strict';
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+const REPO='https://github.com/zqunagi/CS2SDKTest', SDKREPO='https://github.com/alliedmodders/s2sdk';
+
+/* ---------- i18n ---------- */
 const L={
 en:{
-  title:'CS2SDKTest Results',sub:'Linux environment tests',runsTip:'Recorded runs',runsLb:'runs',ghRepo:'GitHub repository',langGroup:'Language',hist:'History',
+  navOverview:'Overview',navHistory:'Test History',ghRepo:'GitHub repository',theme:'Toggle theme',langGroup:'Language',
+  latestRun:'Latest run',completed:'Completed',crashed:'Crashed',timeout:'Timed out',passing:'Passing',failing:n=>`${n} failing`,
   release:'New release',gameupdate:'Game update',manual:'Manual',
-  completed:'Completed',crashed:'Crashed',timeout:'Timed out',
-  FAIL:'Failed',CRASHED:'Crashed',SUSPECT:'Suspect',OK:'Passed',SKIP:'Skipped','N/A':'N/A',
-  plugin:'Plugin',cs2ver:'CS2 version',lastCall:'Last call that did not return: ',noFull:'No complete results were produced for this run.',
-  passedOf:'passed',nFailed:n=>`${n} failed`,loadFail:'Failed to load: ',noRuns:'No runs recorded yet',
-  pageN:n=>`Page ${n}`,range:(a,b,n)=>`${a}–${b} of ${n}`,prev:'Previous page',next:'Next page',histNav:'History pagination',
-  all:'All',thTime:'Time',thStatus:'Status',thTrigger:'Trigger',thFailed:'Failed',thCrashed:'Crashed',
-  detail:'Details',resFail:'Failed to load the results file (slow or interrupted network). ',retry:'Retry',noResFile:'No complete results.json for this run; it did not finish.',
-  attention:'Needs attention',changedVs:(r,v,n)=>`vs ${r} / ${v}: <b style="color:var(--fg)">${n}</b> result${n===1?'':'s'} changed`,noChange:(r,v)=>`No changes vs ${r} / ${v}`,more:n=>`… and ${n} more`,
-  none:'No matching items',vtable:'vtable slot ',offset:'offset '},
+  OK:'Passed',FAIL:'Failed',CRASHED:'Crashed',SUSPECT:'Suspect',SKIP:'Skipped','N/A':'Not tested',
+  tipNA:'The interface was not available on this build, so it was not tested',
+  overview:'Run overview',updated:'Updated',refresh:'Refresh',refreshFail:'Refresh failed',
+  viewingOld:'Viewing an earlier run.',backLatest:'Back to latest',
+  cs2build:'CS2 Build',sdkcommit:'S2SDK Commit',testver:'Test Version',platform:'Platform',lasttested:'Last Tested',testrun:'Test Run',trigger:'Trigger',build:'build',
+  total:'Total tests',passed:'Passed',failed:'Failed',skipped:'Skipped',notTested:'Not tested',passRate:'Pass rate',
+  ofExec:(a,b)=>`${a} of ${b} executed`,noExec:'Nothing executed',vsPrev:'vs previous',failSub:(f,c,s)=>[f&&`${f} failed`,c&&`${c} crashed`,s&&`${s} suspect`].filter(Boolean).join(' · ')||'No failures',
+  regN:n=>`${n} regression${n===1?'':'s'} detected since previous run`,noReg:'No regressions since previous run',
+  newFail:n=>`${n} newly added test${n===1?'':'s'} failing`,fixedN:n=>`${n} newly passing`,showReg:'Show regressions',
+  prevLb:'Previous',noPrev:'No earlier completed run to compare with.',prevFail:'The previous run could not be loaded, so changes are not shown.',
+  results:'Interface test results',iface:'Interface / Test',status:'Status',tests:'Tests',change:'Change',duration:'Duration',
+  search:'Search interfaces and tests',fAll:'All',fPassed:'Passed',fFailed:'Failed',fSkipped:'Skipped',fNA:'Not tested',
+  cAll:'All changes',cReg:'Regressed',cFixed:'Newly passed',cChanged:'Other changes',cAdded:'New',
+  chgReg:'Regressed',chgFixed:'Newly passed',chgChanged:'Changed',chgAdded:'New',
+  group:'Group by suite',collapse:'Collapse all',expand:'Expand all',
+  nIface:(a,b)=>`${a} interface${a===1?'':'s'} · ${b} test${b===1?'':'s'}`,
+  suite:'suite',interfaces:n=>`${n} interface${n===1?'':'s'}`,showing:(a,b)=>`Showing ${a} of ${b} tests`,
+  none:'No matching interfaces',noneSub:'Try a different keyword or clear the filters.',clear:'Clear filters',
+  was:'was',lt1:'<1 ms',testsTip:(a,b)=>`${a} passed of ${b} tests`,
+  drawerClose:'Close',iName:'Interface',tName:'Test case',cur:'Current status',prev:'Previous status',exec:'Execution time',run:'Run',
+  noPrevRun:'No previous run',notInPrev:'Not in previous run',failMsg:'Failure message',reason:'Reason',result:'Result',gd:'Linux gamedata',
+  raw:'Raw record',copy:'Copy',copied:'Copied',src:'View suite source',
+  vtable:'vtable slot ',offset:'offset ',
+  loadFail:'Failed to load test data',loadFailSub:'The data files could not be fetched. This is a network or hosting problem, not a test failure.',retry:'Retry',
+  resFail:'Failed to load this run’s results',resFailSub:'The results file could not be fetched (slow or interrupted network). This is not a test failure.',
+  noRes:'This run did not produce a complete result',noResSub:'The test process ended before it could report results.',lastCall:'Last call that did not return',
+  noRuns:'No runs recorded yet',noRunsSub:'Results will appear here after the first automated run.',
+  hTrend:'Pass rate trend',hTrendSub:'Passed ÷ executed, oldest to newest',hCmp:'Compare runs',hRuns:'Runs',
+  cBase:'Base',cTarget:'Target',swap:'Swap',cFailed:'Newly failed',cPassed:'Newly passed',cOther:'Other changes',cSame:'Unchanged',cNew:'Newly added',cGone:'Removed',
+  cNeed:'Select two completed runs to compare.',cNoDiff:'No tests in this category.',cMore:n=>`… and ${n} more`,cSame2:'Pick two different runs.',
+  rId:'Run ID',rTime:'Timestamp',rBuild:'CS2 Build',rSdk:'SDK Commit',rVer:'Test Version',rRate:'Pass Rate',rPF:'Passed / Failed',rOverall:'Overall',rAll:'All',
+  open:'Open',range:(a,b,n)=>`${a}–${b} of ${n}`,prevPg:'Previous page',nextPg:'Next page',pageN:n=>`Page ${n}`,histNav:'History pagination',
+  ptTip:'Click to open this run',noRate:'—'},
 zh:{
-  title:'CS2SDKTest 测试结果',sub:'Linux 环境测试',runsTip:'已记录的运行次数',runsLb:'次运行',ghRepo:'GitHub 仓库',langGroup:'语言',hist:'历史',
+  navOverview:'概览',navHistory:'测试历史',ghRepo:'GitHub 仓库',theme:'切换主题',langGroup:'语言',
+  latestRun:'最近一次运行',completed:'已完成',crashed:'崩溃',timeout:'超时',passing:'全部通过',failing:n=>`${n} 项失败`,
   release:'新版本',gameupdate:'游戏更新',manual:'手动',
-  completed:'已完成',crashed:'崩溃',timeout:'超时',
-  FAIL:'失败',CRASHED:'崩溃',SUSPECT:'可疑',OK:'通过',SKIP:'跳过','N/A':'不可用',
-  plugin:'插件',cs2ver:'CS2 版本',lastCall:'最后一个未返回的调用：',noFull:'这次没有生成完整结果。',
-  passedOf:'通过',nFailed:n=>`${n} 项失败`,loadFail:'加载失败：',noRuns:'还没有运行记录',
-  pageN:n=>`第 ${n} 页`,range:(a,b,n)=>`第 ${a}–${b} 条，共 ${n} 条`,prev:'上一页',next:'下一页',histNav:'历史分页',
-  all:'全部',thTime:'时间',thStatus:'状态',thTrigger:'触发',thFailed:'失败',thCrashed:'崩溃',
-  detail:'详情',resFail:'结果文件加载失败（网络较慢或中断）。',retry:'点此重试',noResFile:'这次没有完整的 results.json，运行未完成。',
-  attention:'需关注',changedVs:(r,v,n)=>`相比 ${r} / ${v}，<b style="color:var(--fg)">${n}</b> 项结果有变化`,noChange:(r,v)=>`相比 ${r} / ${v}，没有变化`,more:n=>`… 另有 ${n} 项`,
-  none:'没有符合条件的项目',vtable:'虚表槽位 ',offset:'偏移 '}
+  OK:'通过',FAIL:'失败',CRASHED:'崩溃',SUSPECT:'可疑',SKIP:'跳过','N/A':'未测试',
+  tipNA:'该接口在此构建上不可用，因此未测试',
+  overview:'运行概览',updated:'更新于',refresh:'刷新',refreshFail:'刷新失败',
+  viewingOld:'正在查看较早的一次运行。',backLatest:'回到最新',
+  cs2build:'CS2 版本',sdkcommit:'S2SDK 提交',testver:'测试版本',platform:'平台',lasttested:'测试时间',testrun:'运行编号',trigger:'触发方式',build:'构建',
+  total:'测试总数',passed:'通过',failed:'失败',skipped:'跳过',notTested:'未测试',passRate:'通过率',
+  ofExec:(a,b)=>`已执行 ${b} 项，通过 ${a} 项`,noExec:'没有已执行的测试',vsPrev:'较上次',failSub:(f,c,s)=>[f&&`${f} 项失败`,c&&`${c} 项崩溃`,s&&`${s} 项可疑`].filter(Boolean).join(' · ')||'无失败',
+  regN:n=>`相比上一次运行，发现 ${n} 项回归`,noReg:'相比上一次运行没有回归',
+  newFail:n=>`${n} 项新增测试失败`,fixedN:n=>`${n} 项新通过`,showReg:'只看回归',
+  prevLb:'上一次',noPrev:'没有更早的已完成运行可对比。',prevFail:'上一次运行的结果加载失败，因此不显示变化。',
+  results:'接口测试结果',iface:'接口 / 测试',status:'状态',tests:'用例',change:'变化',duration:'耗时',
+  search:'搜索接口和测试',fAll:'全部',fPassed:'通过',fFailed:'失败',fSkipped:'跳过',fNA:'未测试',
+  cAll:'所有变化',cReg:'回归',cFixed:'新通过',cChanged:'其他变化',cAdded:'新增',
+  chgReg:'回归',chgFixed:'新通过',chgChanged:'有变化',chgAdded:'新增',
+  group:'按套件分组',collapse:'全部收起',expand:'全部展开',
+  nIface:(a,b)=>`${a} 个接口 · ${b} 项测试`,
+  suite:'套件',interfaces:n=>`${n} 个接口`,showing:(a,b)=>`显示 ${b} 项中的 ${a} 项`,
+  none:'没有符合条件的接口',noneSub:'换个关键词，或清除筛选。',clear:'清除筛选',
+  was:'之前',lt1:'<1 ms',testsTip:(a,b)=>`${b} 项测试中通过 ${a} 项`,
+  drawerClose:'关闭',iName:'接口',tName:'测试用例',cur:'当前状态',prev:'上次状态',exec:'执行耗时',run:'运行',
+  noPrevRun:'没有上一次运行',notInPrev:'上一次运行中没有此项',failMsg:'失败信息',reason:'原因',result:'结果',gd:'Linux gamedata',
+  raw:'原始记录',copy:'复制',copied:'已复制',src:'查看套件源码',
+  vtable:'虚表槽位 ',offset:'偏移 ',
+  loadFail:'测试数据加载失败',loadFailSub:'数据文件没能取到，这是网络或托管问题，不是测试失败。',retry:'重试',
+  resFail:'这次运行的结果加载失败',resFailSub:'结果文件没能取到（网络较慢或中断），这不是测试失败。',
+  noRes:'这次运行没有生成完整结果',noResSub:'测试进程在汇报结果之前就结束了。',lastCall:'最后一个未返回的调用',
+  noRuns:'还没有运行记录',noRunsSub:'第一次自动运行完成后，结果会显示在这里。',
+  hTrend:'通过率趋势',hTrendSub:'通过数 ÷ 已执行数，由旧到新',hCmp:'对比运行',hRuns:'运行记录',
+  cBase:'基准',cTarget:'目标',swap:'交换',cFailed:'新失败',cPassed:'新通过',cOther:'其他变化',cSame:'无变化',cNew:'新增',cGone:'已移除',
+  cNeed:'请选择两次已完成的运行进行对比。',cNoDiff:'这个类别下没有测试。',cMore:n=>`… 另有 ${n} 项`,cSame2:'请选择两次不同的运行。',
+  rId:'运行 ID',rTime:'时间',rBuild:'CS2 版本',rSdk:'SDK 提交',rVer:'测试版本',rRate:'通过率',rPF:'通过 / 失败',rOverall:'总体',rAll:'全部',
+  open:'打开',range:(a,b,n)=>`第 ${a}–${b} 条，共 ${n} 条`,prevPg:'上一页',nextPg:'下一页',pageN:n=>`第 ${n} 页`,histNav:'历史分页',
+  ptTip:'点击打开这次运行',noRate:'—'}
 };
-let lang='en';
-try{const v=localStorage.getItem('lang');if(v in L)lang=v}catch(e){}
-const t=(k,...a)=>{const v=(L[lang][k]??L.en[k]??k);return typeof v==='function'?v(...a):v};
-// REASON/STATUS 的键（release、completed…）与词典同名，未知值返回 undefined 让调用处回退到原文
-const tr=new Proxy({},{get:(_,k)=>typeof k==='string'&&k in L.en?t(k):undefined});
-const REASON=tr,STATUS=tr;
-const OUT=['FAIL','CRASHED','SUSPECT','OK','SKIP','N/A'];
+let lang=ls.get('lang')in L?ls.get('lang'):'en';
+const t=(k,...a)=>{const v=L[lang][k]??L.en[k]??k;return typeof v==='function'?v(...a):v};
+
+/* ---------- 常量与小工具 ---------- */
+const BAD=new Set(['FAIL','CRASHED','SUSPECT']);
+const OUTS=['OK','FAIL','CRASHED','SUSPECT','SKIP','N/A'];
+const RANK={CRASHED:0,FAIL:1,SUSPECT:2,OK:3,SKIP:4,'N/A':5};
 const key=o=>o==='N/A'?'NA':o;
-const label=new Proxy({},{get:(_,k)=>typeof k==='string'&&OUT.includes(k)?t(k):undefined});
-const cache={};
-let runs=[];
-
-// Valve 总部（Bellevue）所在时区，随夏令时在 PST / PDT 间切换
-const vfmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'});
-const vparts=t=>{const d=new Date(t);if(isNaN(d))return null;const o={};vfmt.formatToParts(d).forEach(p=>o[p.type]=p.value);return o};
-const zone=t=>{const o=t&&vparts(t);return o?o.timeZoneName:''};
-const when=t=>{const o=t&&vparts(t);return o?`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}:${o.second}`:'-'};
-// 与表头缩写不同（跨夏令时切换）时，在单元格里补上缩写
-const whenZ=(t,z)=>when(t)+(zone(t)&&zone(t)!==z?' '+zone(t):'');
-const ver=r=>r.game_version||r.game_buildid;
-const num=n=>n==null?'-':n.toLocaleString();
-
-function bar(s){
-  const tot=s.total||1;
-  const seg=[['OK',s.ok,t('OK')],['SUSPECT',s.suspect,t('SUSPECT')],['FAIL',s.failed,t('FAIL')],['CRASHED',s.crashed,t('CRASHED')],['SKIP',s.skipped,t('SKIP')],['NA',s.unavailable,t('N/A')]];
-  return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n],j)=>`<i class="${k}" style="width:${v/tot*100}%;--n:${j}" data-k="${k}" data-n="${esc(n)}" data-v="${num(v)}" data-p="${(v/tot*100).toFixed(1)}"></i>`).join('')}</div>
-  <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}" data-k="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
-}
-
-// 展示用：去掉 SchemaDiff 结果名前面的 “SchemaDiff::”（只影响显示，配对仍用原始 call）
+const svg=d=>`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
+const ICON={
+  OK:svg('<path d="M3.5 8.5l3 3 6-7"/>'),
+  FAIL:svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
+  CRASHED:svg('<path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"/>'),
+  SUSPECT:svg('<path d="M6 6.2a2 2 0 1 1 3 1.7c-.7.4-1 .8-1 1.6M8 12.2v.01"/>'),
+  SKIP:svg('<circle cx="8" cy="8" r="5.5"/><path d="M4.4 11.6l7.2-7.2"/>'),
+  'N/A':svg('<circle cx="8" cy="8" r="5.5" stroke-dasharray="2 2.3"/>')
+};
+const I={
+  search:svg('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>'),
+  x:svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
+  chev:'<span class="chev" aria-hidden="true">›</span>',
+  refresh:svg('<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/>'),
+  warn:svg('<path d="M8 2l6.5 11.5h-13zM8 6.5v3M8 11.6v.01"/>'),
+  info:svg('<circle cx="8" cy="8" r="6"/><path d="M8 7.2V11M8 5v.01"/>'),
+  ok:svg('<circle cx="8" cy="8" r="6"/><path d="M5.3 8.3l1.8 1.8 3.6-4"/>'),
+  arrow:svg('<path d="M3 8h10M9.5 4.5L13 8l-3.5 3.5"/>'),
+  down:svg('<path d="M4 4.5l7 7M11.5 6v5.5H6"/>'),
+  up:svg('<path d="M4 11.5l7-7M11.5 10V4.5H6"/>'),
+  plus:svg('<path d="M8 3.5v9M3.5 8h9"/>'),
+  swap:svg('<path d="M3 5.5h9.5M10 3l2.5 2.5L10 8M13 10.5H3.5M6 8l-2.5 2.5L6 13"/>'),
+  sortar:svg('<path d="M4 9.5l4-4 4 4"/>'),
+  copy:svg('<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/>'),
+  ext:svg('<path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2.5"/>'),
+  total:svg('<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7"/>'),
+  pct:svg('<path d="M3 13L13 3"/><circle cx="4.7" cy="4.7" r="1.5"/><circle cx="11.3" cy="11.3" r="1.5"/>')
+};
+const stBadge=o=>`<span class="st ${key(o)}"${o==='N/A'?` title="${esc(t('tipNA'))}"`:''}>${ICON[o]}<span>${esc(t(o))}</span></span>`;
+const num=n=>n==null?'—':Number(n).toLocaleString();
+const fmtMs=ms=>ms<1?t('lt1'):ms>=1000?(ms/1000).toFixed(ms>=10000?0:1)+' s':ms+' ms';
+function pct(ok,ran){ // 未执行不算通过；有失败时绝不四舍五入成 100.0
+  if(!ran)return null;const s=(ok/ran*100).toFixed(1);return s==='100.0'&&ok<ran?'99.9':s}
 const callName=c=>String(c).replace(/^SchemaDiff::/,'');
+const hl=(s,q)=>{if(!q)return esc(s);const i=s.toLowerCase().indexOf(q);return i<0?esc(s):esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length))};
 
-async function gamedata(id){
-  const k='gd:'+id;
-  if(!(k in cache)) cache[k]=get('data/runs/'+encodeURIComponent(id)+'/gamedata.json').catch(()=>null);
-  return cache[k];
-}
-// gamedata 行的第三列：不显示测试结果，显示这次测试所用平台（Linux）的 gamedata 内容
-function gdCell(x,gd){
-  if(x.suite!=='gamedata'||!gd||!(x.call in gd))return esc(x.detail);
-  const v=gd[x.call], kind=x.call.split('.')[0];
-  const lab=kind==='vtables'?t('vtable'):kind==='offsets'?t('offset'):'';
-  return `${lab}<code>${esc(v)}</code>`;
+// 时间：沿用 Valve 总部（Bellevue）时区，随夏令时在 PST / PDT 间切换
+const vfmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'});
+const vparts=x=>{const d=new Date(x);if(isNaN(d))return null;const o={};vfmt.formatToParts(d).forEach(p=>o[p.type]=p.value);return o};
+const when=x=>{const o=x&&vparts(x);return o?`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}:${o.second}`:'—'};
+const zone=x=>{const o=x&&vparts(x);return o?o.timeZoneName:''};
+const whenS=x=>{const o=x&&vparts(x);return o?`${o.month}-${o.day} ${o.hour}:${o.minute}`:'—'};
+function rel(x){
+  const d=new Date(x);if(isNaN(d))return '';
+  const s=Math.round((d-Date.now())/1000),f=new Intl.RelativeTimeFormat(lang==='zh'?'zh-CN':'en',{numeric:'auto'});
+  for(const [u,n] of [['year',31536000],['month',2592000],['day',86400],['hour',3600],['minute',60]])if(Math.abs(s)>=n)return f.format(Math.round(s/n),u);
+  return f.format(s,'second')}
+
+async function copyText(text,btn){
+  try{await navigator.clipboard.writeText(text)}catch(e){
+    const ta=Object.assign(document.createElement('textarea'),{value:text});ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(_){}ta.remove()}
+  if(btn){const o=btn.innerHTML;btn.innerHTML=I.ok+t('copied');setTimeout(()=>btn.innerHTML=o,1200)}
 }
 
-async function result(id){
-  if(!(id in cache)) cache[id]=get('data/runs/'+encodeURIComponent(id)+'/results.json').catch(()=>{delete cache[id];return null});
-  return cache[id];
+/* ---------- 数据层 ---------- */
+function get(u,n=2){
+  return fetch(u,{cache:'no-cache'}).then(r=>{if(!r.ok){const e=new Error(u+' → '+r.status);e.status=r.status;throw e}return r.text()})
+    .catch(e=>{if(n>0&&e.status!==404)return get(u,n-1);throw e});
+}
+let runs=[],idxText='',updatedAt=null;
+const resCache=new Map(),gdCache=new Map(),modelCache=new Map();
+// 404 视为“这次运行没有结果文件”；其他错误向上抛，由界面区分为“加载失败”
+function loadResult(id){
+  if(!resCache.has(id))resCache.set(id,get('data/runs/'+encodeURIComponent(id)+'/results.json').then(JSON.parse)
+    .catch(e=>{if(e.status===404)return null;resCache.delete(id);throw e}));
+  return resCache.get(id);
+}
+function loadGd(id){
+  if(!gdCache.has(id))gdCache.set(id,get('data/runs/'+encodeURIComponent(id)+'/gamedata.json').then(JSON.parse).catch(()=>null));
+  return gdCache.get(id);
+}
+const runBad=r=>(r.failed||0)+(r.crashed||0)+(r.suspect||0);
+// 单次运行的汇总：优先 index.json 内联字段；缺失时由懒加载的 results.json 补上
+function runStats(r){
+  if(r.total!=null)return{total:r.total,ok:r.ok||0,failed:r.failed||0,crashed:r.crashed||0,suspect:r.suspect||0,skipped:r.skipped||0,na:r.unavailable||0};
+  if(r._s)return r._s;return null}
+const execd=s=>s.ok+s.failed+s.crashed+s.suspect;
+function overall(r){
+  if(r.status==='crashed')return{k:'CRASHED',txt:t('crashed')};
+  if(r.status==='timeout')return{k:'CRASHED',txt:t('timeout')};
+  const b=runBad(r);return b?{k:'FAIL',txt:t('failing',b)}:{k:'OK',txt:t('passing')}}
+const prevOf=r=>{const i=runs.indexOf(r);return runs.slice(i+1).find(x=>x.status==='completed')||null};
+
+/* ---------- 结果模型 ---------- */
+// 同一个 suite|call 可能出现多次，按出现序号配对，避免后一条覆盖前一条
+function keyed(list){const n={};return list.map(x=>{const b=x.suite+'|'+x.call;n[b]=(n[b]||0)+1;return b+'|'+n[b]})}
+function classify(p,o){
+  if(p===undefined)return'added';if(p===o)return'same';
+  if(!BAD.has(p)&&BAD.has(o))return'regressed';
+  return o==='OK'?'fixed':'changed'}
+// 把调用名拆成 接口 / 测试：在 <> () 之外的第一个 “::” 处拆开
+function split(x){
+  let c=x.call;
+  if(x.suite==='schemadiff')c=callName(c);
+  if(x.suite==='gamedata'){const i=c.indexOf('.');return i>0?[c.slice(0,i),c.slice(i+1)]:[c,c]}
+  let d=0;
+  for(let i=0;i<c.length-1;i++){const ch=c[i];
+    if(ch==='<'||ch==='(')d++;else if(ch==='>'||ch===')')d--;
+    else if(d===0&&ch===':'&&c[i+1]===':')return i>0?[c.slice(0,i),c.slice(i+2)]:[c,c]}
+  return[c,c]}
+const count=list=>{const c={OK:0,FAIL:0,CRASHED:0,SUSPECT:0,SKIP:0,'N/A':0};list.forEach(x=>c[x.o]++);return c};
+const aggSt=c=>c.CRASHED?'CRASHED':c.FAIL?'FAIL':c.SUSPECT?'SUSPECT':c.OK?'OK':c.SKIP?'SKIP':'N/A';
+const badN=c=>c.FAIL+c.CRASHED+c.SUSPECT;
+
+function buildModel(run,res,prevRes){
+  const ks=keyed(res.results);
+  let pm=null;
+  if(prevRes){const pk=keyed(prevRes.results);pm=new Map(prevRes.results.map((x,i)=>[pk[i],x.outcome]))}
+  const items=res.results.map((x,i)=>{
+    const [iface,name]=split(x),p=pm?pm.get(ks[i]):undefined;
+    return{i,suite:x.suite,iface,name,call:x.call,o:x.outcome,ms:x.ms||0,detail:x.detail||'',raw:x,
+      prev:p,chg:pm?classify(p,x.outcome):'none',lname:name.toLowerCase()}});
+  const ifaces=[],groups=[],im=new Map(),gm=new Map();
+  for(const it of items){
+    const k=it.suite+'\0'+it.iface;let f=im.get(k);
+    if(!f){f={ix:ifaces.length,suite:it.suite,name:it.iface,lname:it.iface.toLowerCase(),tests:[]};im.set(k,f);ifaces.push(f);
+      let g=gm.get(it.suite);if(!g){g={suite:it.suite,ifaces:[],tests:[]};gm.set(it.suite,g);groups.push(g)}g.ifaces.push(f);f.g=g}
+    f.tests.push(it);f.g.tests.push(it);it.f=f}
+  const P={regressed:0,fixed:1,changed:2,added:3,none:4};
+  for(const f of ifaces){
+    f.c=count(f.tests);f.st=aggSt(f.c);f.ms=f.tests.reduce((a,x)=>a+x.ms,0);
+    f.expandable=f.tests.length>1||f.tests[0].name!==f.name;
+    f.ratio=f.c.OK/f.tests.length;
+    f.chg=f.tests.reduce((a,x)=>P[x.chg]<P[a]?x.chg:a,'none');
+    f.cc={};f.tests.forEach(x=>f.cc[x.chg]=(f.cc[x.chg]||0)+1)}
+  for(const g of groups){g.c=count(g.tests);g.st=aggSt(g.c);g.bad=badN(g.c)}
+  const c=count(items);
+  const defOpen=new Set(groups.filter(g=>g.bad).map(g=>g.suite));if(!defOpen.size&&groups[0])defOpen.add(groups[0].suite);
+  const cc={};items.forEach(x=>cc[x.chg]=(cc[x.chg]||0)+1);
+  const pc=prevRes?count(prevRes.results.map(x=>({o:x.outcome}))):null;   // 上一次运行的各状态数量，用于卡片上的变化量
+  return{run,res,items,ifaces,groups,c,cc,pc,pn:prevRes?prevRes.results.length:0,hasPrev:!!pm,defOpen,
+    ran:c.OK+badN(c),rate:pct(c.OK,c.OK+badN(c))}}
+
+/* ---------- 全局状态 ---------- */
+let view='overview',routeSeq=0,ctx=null;       // ctx: 当前概览所用的 {run,model,prevRun,gd}
+const T={q:'',status:'all',chg:'all',sort:'sev',dir:1,group:true,gU:new Map(),iU:new Map()};
+const H={pg:0,reason:'ALL',a:null,b:null,cat:null};
+const PAGE=15;
+let firstPaint=true;
+
+/* ---------- 路由 ---------- */
+function parseHash(){
+  let h='';try{h=decodeURIComponent(location.hash.replace(/^#/,''))}catch(e){}
+  if(h==='history')return{v:'history'};
+  if(h.startsWith('run='))return{v:'overview',run:h.slice(4)};
+  if(h&&h!=='overview'&&runs.some(r=>r.id===h))return{v:'overview',run:h};
+  return{v:'overview'}}
+const runHash=id=>'#run='+encodeURIComponent(id);
+function setNav(){
+  $$('.nav-links a').forEach(a=>{if(a.dataset.v===view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')})}
+window.addEventListener('hashchange',()=>route());
+
+async function route(still){
+  const seq=++routeSeq,h=parseHash();
+  closeDrawer(true);
+  view=h.v;setNav();
+  if(!runs.length){$('#app').innerHTML=emptyRuns();return}
+  if(view==='history'){return renderHistory(seq,still)}
+  return renderOverview(seq,h.run,still)}
+
+/* ---------- 顶栏状态 ---------- */
+function paintNav(){
+  const el=$('#navstat');
+  if(!runs.length){el.className='pill';el.innerHTML='';el.hidden=true;return}
+  el.hidden=false;const r=runs[0],o=overall(r);
+  el.className='pill '+key(o.k);
+  el.innerHTML=`<i class="dot ${key(o.k)}"></i><span><span class="xl">${esc(t('latestRun'))}: </span><b>${esc(t(r.status)||r.status)}</b></span>${runBad(r)?`<span class="xl">· ${esc(t('failing',runBad(r)))}</span>`:''}`}
+
+/* ---------- 空 / 错误状态 ---------- */
+const emptyRuns=()=>`<div class="card empty">${I.info}<b>${esc(t('noRuns'))}</b>${esc(t('noRunsSub'))}</div>`;
+const errCard=(title,sub,retry)=>`<div class="card empty">${I.warn}<b>${esc(title)}</b>${esc(sub)}${retry?`<div><button class="btn" type="button" data-retry>${I.refresh}${esc(t('retry'))}</button></div>`:''}</div>`;
+function skeleton(){
+  return `<div class="skel sk-meta"></div><div class="stats">${'<div class="skel sk-card"></div>'.repeat(6)}</div><div class="card sec stable">${'<div class="skel sk-row"></div>'.repeat(5)}</div>`}
+
+/* ============================================================
+   概览
+   ============================================================ */
+async function renderOverview(seq,runId,still){
+  let run=runs.find(r=>r.id===runId)||runs[0];
+  const app=$('#app');
+  if(!still||!ctx||ctx.run!==run)app.innerHTML=skeleton();
+  let res;
+  try{res=await loadResult(run.id)}catch(e){
+    if(seq!==routeSeq)return;
+    app.innerHTML=pagebar(run)+errCard(t('resFail'),t('resFailSub'),true);
+    bindPagebar(run);$('[data-retry]',app).onclick=()=>route();return}
+  if(seq!==routeSeq)return;
+  if(!res){
+    // 没有结果文件：运行没完成（崩溃/超时），与“测试失败”区分开
+    let suspect='';
+    try{suspect=JSON.parse(await get('data/runs/'+encodeURIComponent(run.id)+'/run.json')).suspect||''}catch(e){}
+    if(seq!==routeSeq)return;
+    app.innerHTML=pagebar(run)+metaBar(run,null)+`<div class="card empty sec">${I.warn}<b>${esc(t('noRes'))}</b>${esc(t('noResSub'))}${suspect?`<div style="margin-top:12px">${esc(t('lastCall'))}: <code>${esc(suspect)}</code></div>`:''}</div>`;
+    bindPagebar(run);ctx=null;return}
+  const prevRun=prevOf(run);let prevRes=null,prevFail=false;
+  if(prevRun){try{prevRes=await loadResult(prevRun.id)}catch(e){prevFail=true}}
+  if(seq!==routeSeq)return;
+  const mk=run.id+'|'+(prevRes?prevRun.id:'');
+  let model=modelCache.get(mk);if(!model){model=buildModel(run,res,prevRes);modelCache.set(mk,model)}
+  const same=ctx&&ctx.run===run;
+  ctx={run,model,prevRun:prevRes?prevRun:null,gd:(ctx&&ctx.run===run)?ctx.gd:null};
+  if(!same){T.q='';T.status='all';T.chg='all';T.gU=new Map();T.iU=new Map()}
+  const first=!still;
+  app.innerHTML=`<div class="enter${still?' still':''}">${overviewHTML(ctx,prevRun,prevFail,first)}</div>`;
+  bindOverview();
+  if(!still&&!matchMedia('(prefers-reduced-motion:reduce)').matches)countUp();
+  if(res.results.some(x=>x.suite==='gamedata'))loadGd(run.id).then(gd=>{if(ctx&&ctx.run===run&&gd){ctx.gd=gd;renderTable()}});
 }
 
-function hero(r,res){
-  const s=res&&res.summary;
-  const bad=s?s.failed+s.crashed:0;
-  return `<div class="card pad enter" style="--i:1"><div class="hero">
-    <div>
-      <span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span>
-      <div class="meta" style="margin-top:12px">
-        <span>${t('plugin')} <b>${esc(r.release)}</b></span>
-        <span>${t('cs2ver')} <b>${esc(ver(r))}</b></span>
-        ${r.s2sdk?`<span>s2sdk <b>${esc(r.s2sdk)}</b></span>`:''}
-        <span>${esc(REASON[r.reason]||r.reason)}</span>
-        <span>${esc(when(r.finished))} ${esc(zone(r.finished))}</span>
-      </div>
-      ${r.suspect?`<div class="meta">${t('lastCall')}<code>${esc(r.suspect)}</code></div>`:''}
-    </div>
-    <div>${s?`<div class="big"><span class="cu" data-to="${s.ok}">${num(s.ok)}</span><small>/ ${num(s.total)} ${t('passedOf')}${bad?` · <span class="bad">${t('nFailed',bad)}</span>`:''}</small></div>${bar(s)}`
-            :`<div class="sub">${t('noFull')}</div>`}</div>
-  </div></div>`;
+function pagebar(run){
+  const cur=run!==runs[0];
+  return `<div class="pagebar"><h1>${esc(t('overview'))}</h1>
+    <div class="upd"><span id="updtxt">${updatedAt?esc(t('updated'))+' '+updatedAt.toLocaleTimeString([], {hour12:false}):''}</span>
+    <button class="btn" type="button" id="refresh">${I.refresh}${esc(t('refresh'))}</button></div></div>
+    ${cur?`<div class="banner note">${I.info}<span class="grow">${esc(t('viewingOld'))} <small><code>${esc(run.id)}</code></small></span><a class="btn sm" href="#overview">${esc(t('backLatest'))}</a></div>`:''}`}
+function bindPagebar(){const b=$('#refresh');if(b)b.onclick=refresh}
+
+function parseSdk(s){const m=/^([0-9a-f]{7,40})\b\s*(?:\((.*)\))?/i.exec(s||'');return m?{h:m[1],d:m[2]||''}:null}
+function metaBar(run,res){
+  const sdk=parseSdk(run.s2sdk||(res&&res.s2sdk));
+  const plat=res&&res.platform?res.platform.charAt(0).toUpperCase()+res.platform.slice(1):'—';
+  const ver=run.game_version||run.game_buildid||'—';
+  const cell=(l,v)=>`<div><label>${esc(l)}</label><div class="v">${v}</div></div>`;
+  return `<div class="card meta" style="--i:1">
+    ${cell(t('cs2build'),`<code>${esc(ver)}</code>${run.game_version&&run.game_buildid?`<em>${esc(t('build'))} ${esc(run.game_buildid)}</em>`:''}`)}
+    ${cell(t('sdkcommit'),sdk?`<a href="${SDKREPO}/commit/${esc(sdk.h)}" target="_blank" rel="noopener"><code>${esc(sdk.h.slice(0,8))}</code></a>${sdk.d?`<em>${esc(sdk.d)}</em>`:''}`:'<code>—</code>')}
+    ${cell(t('testver'),`<a href="${REPO}/releases/tag/${encodeURIComponent(run.release)}" target="_blank" rel="noopener"><code>${esc(run.release)}</code></a>`)}
+    ${cell(t('platform'),esc(plat))}
+    ${cell(t('lasttested'),`<span title="${esc(when(run.finished)+' '+zone(run.finished))}">${esc(rel(run.finished))}</span><em>${esc(whenS(run.finished))} ${esc(zone(run.finished))}</em>`)}
+    ${cell(t('testrun'),`<code title="${esc(run.id)}" style="overflow:hidden;text-overflow:ellipsis">${esc(run.id)}</code>`)}
+    ${cell(t('trigger'),esc(t(run.reason)||run.reason||'—'))}
+  </div>`}
+
+function overviewHTML(c,prevRun,prevFail,first){
+  const {run,model:m,prevRun:pr}=c,s=m.c,bad=badN(s);
+  // 回归提示：只有“上次不是失败、这次失败”才算回归；新增的失败测试单独说明
+  let ban='';
+  if(m.hasPrev){
+    const reg=m.cc.regressed||0,newFail=m.items.filter(x=>x.chg==='added'&&BAD.has(x.o)).length,fixed=m.cc.fixed||0;
+    const ref=`<small>${esc(t('prevLb'))}: ${esc(pr.release)} · CS2 ${esc(pr.game_version||pr.game_buildid)}</small>`;
+    const extra=[newFail&&t('newFail',newFail),fixed&&t('fixedN',fixed)].filter(Boolean).join(' · ');
+    ban=reg?`<div class="banner reg" role="status">${ICON.FAIL}<span class="grow"><b>${esc(t('regN',reg))}</b>${ref}${extra?`<small>· ${esc(extra)}</small>`:''}</span><button class="btn sm" type="button" id="showreg">${esc(t('showReg'))}</button></div>`
+      :`<div class="banner good" role="status">${I.ok}<span class="grow"><b>${esc(t('noReg'))}</b>${ref}${extra?`<small>· ${esc(extra)}</small>`:''}</span></div>`;
+  }else if(prevFail)ban=`<div class="banner err">${I.warn}<span class="grow">${esc(t('prevFail'))}</span></div>`;
+  else ban=`<div class="banner note">${I.info}<span class="grow">${esc(t('noPrev'))}</span></div>`;
+  // 与上次对比的数字变化
+  // goodUp：true=增加是好事（绿），null=只显示数字不着色（总数、跳过、未测试的增减本身不代表好坏）
+  const dl=(now,was,goodUp)=>{if(!m.pc)return '';const d=now-was;if(!d)return '';
+    const cls=goodUp===null?'':(d>0)===goodUp?'up':'down';
+    return `<span class="${cls}">${d>0?'+':''}${num(d)}</span> ${esc(t('vsPrev'))}`};
+  const pm=m.pc?{total:m.pn,ok:m.pc.OK,sk:m.pc.SKIP,na:m.pc['N/A']}:null;
+  const card=(f,cls,ic,lb,n,sub)=>`<button type="button" class="stat ${cls}${f?'':' nofilter'}" ${f?`data-f="${f}" aria-pressed="${T.status===f&&f!=='all'}"`:'tabindex="-1"'}>
+      <div class="lb">${ic}${esc(lb)}</div><div class="n${n===0?' z':''}">${typeof n==='number'?`<span class="cu" data-to="${n}">${num(n)}</span>`:n}</div><div class="sub">${sub||'&nbsp;'}</div></button>`;
+  const rate=m.rate;
+  const failSub=esc(t('failSub',s.FAIL,s.CRASHED,s.SUSPECT));
+  const cards=`<div class="stats">
+    ${card('all','',I.total,t('total'),m.items.length,pm?dl(m.items.length,pm.total,null):'')}
+    ${card('passed','OK',ICON.OK,t('passed'),s.OK,pm?dl(s.OK,pm.ok,true):'')}
+    ${card('failed',bad?'FAIL':'',ICON.FAIL,t('failed'),bad,failSub)}
+    ${card('skipped','SKIP',ICON.SKIP,t('skipped'),s.SKIP,pm?dl(s.SKIP,pm.sk,null):'')}
+    ${card('na','NA',ICON['N/A'],t('notTested'),s['N/A'],pm?dl(s['N/A'],pm.na,null):'')}
+    ${card(null,'',I.pct,t('passRate'),rate==null?'—':`${rate}<small>%</small>`,rate==null?esc(t('noExec')):esc(t('ofExec',num(s.OK),num(m.ran))))}
+  </div>`;
+  const tot=m.items.length||1;
+  const seg=[['OK',s.OK],['SUSPECT',s.SUSPECT],['FAIL',s.FAIL],['CRASHED',s.CRASHED],['SKIP',s.SKIP],['N/A',s['N/A']]];
+  const dist=`<div class="dist" style="--i:3"><div class="bar" role="img" aria-label="${esc(seg.map(([o,v])=>t(o)+' '+v).join(', '))}">${seg.filter(x=>x[1]).map(([o,v],j)=>`<i class="${key(o)}" style="width:${v/tot*100}%;--n:${j}" data-k="${key(o)}" data-n="${esc(t(o))}" data-v="${num(v)}" data-p="${(v/tot*100).toFixed(1)}"></i>`).join('')}</div>
+    <div class="legend">${seg.filter(x=>x[1]||x[0]==='OK').map(([o,v])=>`<span class="${key(o)}" data-k="${key(o)}"><i class="dot"></i>${esc(t(o))} <em>${num(v)}</em></span>`).join('')}</div></div>`;
+  return pagebar(run)+metaBar(run,m.res)+`<div style="--i:2">${ban}</div>${cards}${dist}
+    <section class="sec" style="--i:4"><h2>${esc(t('results'))}<small id="tcount"></small></h2>
+    <div class="card"><div class="tools" id="tools">${toolsHTML(m)}</div><div class="tw"><table id="tbl"></table></div></div></section>`;
 }
+
+/* ----- 工具栏 ----- */
+function toolsHTML(m){
+  const s=m.c,bad=badN(s);
+  const fs=[['all',t('fAll'),m.items.length,''],['passed',t('fPassed'),s.OK,'OK'],['failed',t('fFailed'),bad,'FAIL'],['skipped',t('fSkipped'),s.SKIP,'SKIP'],['na',t('fNA'),s['N/A'],'NA']];
+  return `<div class="search${T.q?' has':''}">${I.search}<input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="${esc(t('search'))}" aria-label="${esc(t('search'))}" value="${esc(T.q)}"><kbd>/</kbd><button class="ib x" type="button" id="qx" aria-label="${esc(t('clear'))}">${I.x}</button></div>
+    <div class="seg" role="group" aria-label="${esc(t('status'))}" id="fseg">${fs.map(([k,l,n,c])=>`<button type="button" data-f="${k}" aria-pressed="${T.status===k}">${c?`<i class="dot ${c}"></i>`:''}${esc(l)} <span>${num(n)}</span></button>`).join('')}</div>
+    ${m.hasPrev?`<select class="sel" id="cfil" aria-label="${esc(t('change'))}">${[['all',t('cAll')],['regressed',t('cReg')+' ('+(m.cc.regressed||0)+')'],['fixed',t('cFixed')+' ('+(m.cc.fixed||0)+')'],['changed',t('cChanged')+' ('+(m.cc.changed||0)+')'],['added',t('cAdded')+' ('+(m.cc.added||0)+')']].map(([k,l])=>`<option value="${k}"${T.chg===k?' selected':''}>${esc(l)}</option>`).join('')}</select>`:''}
+    <span class="sp"></span>
+    <button class="btn sm" type="button" id="gtoggle" aria-pressed="${T.group}">${esc(t('group'))}</button>
+    <button class="btn sm" type="button" id="gall">${esc(t('collapse'))}</button>`}
+
+function bindOverview(){
+  bindPagebar();
+  const q=$('#q');
+  let tm;q.oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>{T.q=q.value;$('.search').classList.toggle('has',!!T.q);renderTable()},90)};
+  $('#qx').onclick=()=>{q.value='';T.q='';$('.search').classList.remove('has');renderTable();q.focus()};
+  $$('#fseg button').forEach(b=>b.onclick=()=>setStatus(b.dataset.f));
+  $$('.stat[data-f]').forEach(b=>b.onclick=()=>{setStatus(b.dataset.f==='all'?'all':b.dataset.f);$('#tools').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'})});
+  const cf=$('#cfil');if(cf)cf.onchange=()=>{T.chg=cf.value;renderTable()};
+  const sr=$('#showreg');if(sr)sr.onclick=()=>{T.chg='regressed';T.status='all';syncTools();renderTable();$('#tools').scrollIntoView({behavior:'smooth',block:'start'})};
+  $('#gtoggle').onclick=()=>{T.group=!T.group;syncTools();renderTable()};
+  $('#gall').onclick=()=>{
+    const m=ctx.model,anyOpen=m.groups.some(g=>groupOpen(g));
+    m.groups.forEach(g=>T.gU.set(g.suite,!anyOpen));renderTable();syncTools()};
+  const tb=$('#tbl');
+  tb.onclick=e=>{
+    const th=e.target.closest('th[data-s]');if(th)return setSort(th.dataset.s);
+    const g=e.target.closest('.gh2');if(g)return toggleGroup(g.dataset.g);
+    const tr=e.target.closest('tr');if(!tr)return;
+    if(tr.classList.contains('if')){const f=ctx.model.ifaces[+tr.dataset.ix];
+      if(f.expandable)toggleIface(f.ix);else openDrawer(f.tests[0])}
+    else if(tr.classList.contains('t'))openDrawer(ctx.model.items[+tr.dataset.t])};
+  tb.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('tr.if,tr.t')){e.preventDefault();e.target.click()}};
+  syncTools();renderTable();
+}
+function setStatus(f){T.status=T.status===f&&f!=='all'?'all':f;syncTools();renderTable()}
+function syncTools(){
+  $$('#fseg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.f===T.status));
+  $$('.stat[data-f]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.f===T.status&&T.status!=='all'));
+  const cf=$('#cfil');if(cf)cf.value=T.chg;
+  const gt=$('#gtoggle');if(gt){gt.setAttribute('aria-pressed',T.group);gt.style.borderColor=T.group?'var(--acc)':'';}
+  const ga=$('#gall');if(ga){ga.hidden=!T.group||filtering();const open=ctx.model.groups.some(g=>groupOpen(g));ga.textContent=t(open?'collapse':'expand')}}
+function setSort(s){if(T.sort===s)T.dir=-T.dir;else{T.sort=s;T.dir=1}renderTable()}
+
+/* ----- 表格主体 ----- */
+const filtering=()=>!!T.q.trim()||T.status!=='all'||T.chg!=='all';
+function groupOpen(g){return filtering()?true:T.gU.has(g.suite)?T.gU.get(g.suite):ctx.model.defOpen.has(g.suite)}
+let vis=new Map();  // iface.ix → {tests,viaTest}
+function ifaceOpen(f){
+  if(T.iU.has(f.ix))return T.iU.get(f.ix);
+  const v=vis.get(f.ix);
+  return !!(v&&v.viaTest)||(badN(f.c)>0&&(T.status==='all'||T.status==='failed')&&!T.q.trim())||(T.chg==='regressed')}
+
+function computeVisible(){
+  const q=T.q.trim().toLowerCase(),st=T.status;
+  const okS=o=>st==='all'||(st==='passed'?o==='OK':st==='failed'?BAD.has(o):st==='skipped'?o==='SKIP':o==='N/A');
+  vis=new Map();const out=[];
+  for(const f of ctx.model.ifaces){
+    const nameHit=!q||f.lname.includes(q)||f.suite.includes(q);
+    const tests=f.tests.filter(x=>okS(x.o)&&(T.chg==='all'||x.chg===T.chg)&&(nameHit||x.lname.includes(q)));
+    if(tests.length){const v={tests,viaTest:!!q&&!nameHit};vis.set(f.ix,v);out.push(f)}}
+  return out}
+function sorter(){
+  const d=T.dir,CP={regressed:0,fixed:1,changed:2,added:3,none:4};
+  const by={
+    sev:(a,b)=>(RANK[a.st]-RANK[b.st])||(a.ix-b.ix),
+    name:(a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}),
+    tests:(a,b)=>(a.ratio-b.ratio)||(a.ix-b.ix),
+    chg:(a,b)=>(CP[a.chg]-CP[b.chg])||(RANK[a.st]-RANK[b.st])||(a.ix-b.ix),
+    ms:(a,b)=>(a.ms-b.ms)||(a.ix-b.ix)}[T.sort];
+  return (a,b)=>by(a,b)*d}
+
+function thead(){
+  const col=(s,l,cls='')=>`<th class="${cls}" data-s="${s}" ${T.sort===s?`aria-sort="${T.dir>0?'ascending':'descending'}"`:''}><button type="button">${esc(l)}<span class="ar">${I.sortar}</span></button></th>`;
+  return `<colgroup><col><col style="width:150px"><col style="width:190px"><col style="width:150px"><col style="width:100px"></colgroup>
+    <thead><tr>${col('name',t('iface'))}${col('sev',t('status'))}${col('tests',t('tests'))}${col('chg',t('change'))}${col('ms',t('duration'),'r')}</tr></thead>`}
+
+const miniBar=c=>{const n=OUTS.reduce((a,o)=>a+c[o],0)||1;return `<span class="mini" aria-hidden="true">${['OK','SUSPECT','FAIL','CRASHED','SKIP','N/A'].filter(o=>c[o]).map(o=>`<i class="${key(o)}" style="width:${c[o]/n*100}%"></i>`).join('')}</span>`};
+function chgBadge(chg,n){
+  const m={regressed:[I.down,t('chgReg')],fixed:[I.up,t('chgFixed')],changed:[I.arrow,t('chgChanged')],added:[I.plus,t('chgAdded')]}[chg];
+  return m?`<span class="chg ${chg}">${m[0]}${esc(m[1])}${n>1?` ${n}`:''}</span>`:'<span class="chg none">—</span>'}
+
+function ifaceRow(f,q,flat){
+  const bad=badN(f.c),v=vis.get(f.ix),open=f.expandable&&ifaceOpen(f);
+  const cls=['if',open?'open':'',f.c.CRASHED?'cr':f.c.FAIL?'bad':f.c.SUSPECT?'sp2':''].join(' ');
+  const ran=f.c.OK+bad,cn=f.chg==='none'?0:f.cc[f.chg];
+  return `<tr class="${cls}" data-ix="${f.ix}" tabindex="0" ${f.expandable?`aria-expanded="${open}"`:''}>
+    <td class="c-name"><div class="nmw">${f.expandable?I.chev:'<span class="chev"></span>'}<span class="nm" title="${esc(f.name)}">${hl(f.name,q)}</span>${flat?`<span class="stag">${esc(f.suite)}</span>`:''}</div></td>
+    <td>${stBadge(f.st)}</td>
+    <td title="${esc(t('testsTip',f.c.OK,f.tests.length))}"><span class="frac">${ran?`<span><b>${f.c.OK}</b>/${f.tests.length}</span>`:`<span>—</span>`}${miniBar(f.c)}</span></td>
+    <td>${chgBadge(f.chg,cn)}</td><td class="num">${esc(fmtMs(f.ms))}</td></tr>`}
+function detHTML(x){
+  const gd=ctx&&ctx.gd;
+  if(x.suite==='gamedata'&&gd&&x.call in gd){const k=x.call.split('.')[0],lab=k==='vtables'?t('vtable'):k==='offsets'?t('offset'):'';return `<span class="det">${esc(lab)}<code>${esc(gd[x.call])}</code></span>`}
+  return `<span class="det${BAD.has(x.o)?' badtxt':''}" title="${esc(x.detail)}">${esc(x.detail)}</span>`}
+function subRows(f,q,anim){
+  const v=vis.get(f.ix),ts=v?v.tests:f.tests;
+  const rows=ts.map((x,i)=>{
+    const was=x.chg!=='same'&&x.chg!=='none'&&x.chg!=='added'&&x.prev?`<span class="was">${esc(t('was'))} ${esc(t(x.prev))}</span>`:'';
+    return `<tr class="sub t${anim?' in':''}" data-t="${x.i}" data-p="${f.ix}" tabindex="0" style="--i:${Math.min(i,10)}">
+      <td class="c-name"><div class="nmw"><span class="nm" title="${esc(x.name)}">${hl(x.name,q)}</span></div></td>
+      <td>${stBadge(x.o)}${was}</td><td colspan="2">${detHTML(x)}</td>
+      <td class="num">${esc(fmtMs(x.ms))}</td></tr>`}).join('');
+  const note=ts.length<f.tests.length?`<tr class="sub subnote${anim?' in':''}" data-p="${f.ix}"><td colspan="5">${esc(t('showing',ts.length,f.tests.length))}</td></tr>`:'';
+  return note+rows}
+
+function renderTable(){
+  if(!ctx)return;
+  const m=ctx.model,q=T.q.trim().toLowerCase(),list=computeVisible(),cmp=sorter();
+  const flat=!T.group;let body='';
+  if(!list.length){
+    body=`<tbody><tr><td colspan="5" style="height:auto;padding:0;white-space:normal"><div class="empty">${I.search}<b>${esc(t('none'))}</b>${esc(t('noneSub'))}<div><button class="btn" type="button" id="clr">${esc(t('clear'))}</button></div></div></td></tr></tbody>`;
+  }else if(flat){
+    body='<tbody>'+[...list].sort(cmp).map(f=>ifaceRow(f,q,true)+(f.expandable&&ifaceOpen(f)?subRows(f,q,false):'')).join('')+'</tbody>';
+  }else{
+    const byG=new Map();list.forEach(f=>{if(!byG.has(f.g))byG.set(f.g,[]);byG.get(f.g).push(f)});
+    const gs=[...byG.keys()];
+    // 默认排序下，有失败的套件排在前面；其余保持套件原有顺序
+    if(T.sort==='sev'&&T.dir===1)gs.sort((a,b)=>(RANK[a.st]-RANK[b.st])||(m.groups.indexOf(a)-m.groups.indexOf(b)));
+    body='<tbody>'+gs.map(g=>{
+      const open=groupOpen(g),fs=byG.get(g).sort(cmp),c=g.c,bad=g.bad;
+      const nt=g.tests.length;
+      return `<tr class="grp"><td colspan="5"><button type="button" class="gh2" data-g="${esc(g.suite)}" aria-expanded="${open}" ${filtering()?'tabindex="-1"':''}>${I.chev}<span class="nm" style="font-family:var(--mono)">${hl(g.suite,q)}</span><span class="cnt">${esc(t('interfaces',g.ifaces.length))}</span>
+        <span class="badge">${bad?`<span class="pc">${ICON.FAIL}${bad}</span>`:''}<span class="fr"><b style="color:var(--fg);font-weight:500">${c.OK}</b>/${nt}</span>${miniBar(c)}</span></button></td></tr>`
+        +(open?fs.map(f=>ifaceRow(f,q,false)+(f.expandable&&ifaceOpen(f)?subRows(f,q,false):'')).join(''):'')}).join('')+'</tbody>';
+  }
+  $('#tbl').innerHTML=thead()+body;
+  const nt=list.reduce((a,f)=>a+vis.get(f.ix).tests.length,0);
+  $('#tcount').textContent=t('nIface',num(list.length),num(nt));
+  const c=$('#clr');if(c)c.onclick=()=>{T.q='';T.status='all';T.chg='all';const q2=$('#q');q2.value='';$('.search').classList.remove('has');syncTools();renderTable()};
+  syncTools();
+}
+function toggleGroup(s){
+  if(filtering())return;
+  const g=ctx.model.groups.find(x=>x.suite===s);T.gU.set(s,!groupOpen(g));renderTable()}
+function toggleIface(ix){
+  const f=ctx.model.ifaces[ix],tr=$(`tr.if[data-ix="${ix}"]`);if(!tr)return;
+  const open=!ifaceOpen(f);T.iU.set(ix,open);
+  tr.classList.toggle('open',open);tr.setAttribute('aria-expanded',open);
+  if(open){tr.insertAdjacentHTML('afterend',subRows(f,T.q.trim().toLowerCase(),true))}
+  else{let n=tr.nextElementSibling;while(n&&n.classList.contains('sub')){const x=n;n=n.nextElementSibling;x.remove()}}}
 
 // 数字滚动：仅首屏一次；减少动效偏好下直接显示终值
 function countUp(){
-  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
-  document.querySelectorAll('.cu').forEach(e=>{
-    const to=+e.dataset.to,t0=performance.now(),d=700;
+  $$('.cu').forEach(e=>{const to=+e.dataset.to,t0=performance.now(),d=650;
     const step=now=>{const p=Math.min(1,(now-t0)/d),k=1-Math.pow(1-p,3);e.textContent=num(Math.round(to*k));if(p<1)requestAnimationFrame(step)};
-    e.textContent=num(0);requestAnimationFrame(step);
-  });
-}
-// 进度条悬停：高亮对应段 + 自定义浮层（图例悬停同样联动）
-const tip=document.body.appendChild(Object.assign(document.createElement('div'),{id:'tip',role:'tooltip'}));
-function barHover(k){
-  document.querySelectorAll('.bar,.legend').forEach(g=>g.classList.toggle('dim',!!k));
-  document.querySelectorAll('.bar i,.legend span').forEach(e=>e.classList.toggle('hl',!!k&&e.dataset.k===k));
-  const seg=k&&document.querySelector(`.bar i[data-k="${k}"]`);
-  if(!seg){tip.classList.remove('on');return}
-  tip.innerHTML=`<i class="dot ${k}"></i><span>${seg.dataset.n}</span><b>${seg.dataset.v}</b><span>${seg.dataset.p}%</span>`;
-  const r=seg.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
-  const x=Math.min(Math.max(r.left+r.width/2-w/2,8),innerWidth-w-8);
-  tip.style.setProperty('--x',x+'px');tip.style.setProperty('--y',(r.top-h-14)+'px');
-  tip.classList.add('on');
-}
-if(matchMedia('(hover:hover)').matches){
-  document.addEventListener('mouseover',e=>{const el=e.target.closest('.bar i,.legend span');barHover(el&&el.dataset.k||null)});
-  document.addEventListener('scroll',()=>barHover(null),{passive:true});
-}
-let loadErr=null,latestRes=null;
-const paintErr=()=>{$('#latest').innerHTML=`<div class="card empty">${t('loadFail')}${esc(loadErr)}</div>`};
-const paintEmpty=()=>{$('#latest').innerHTML=`<div class="card empty">${t('noRuns')}</div>`;$('#history').innerHTML=''};
+    e.textContent=num(0);requestAnimationFrame(step)})}
 
-// 静态文案 + 语言切换按钮
-function applyStatic(){
-  document.documentElement.lang=lang==='zh'?'zh-CN':'en';
-  document.title=t('title');
-  document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
-  document.querySelectorAll('[data-ti]').forEach(e=>e.title=t(e.dataset.ti));
-  document.querySelectorAll('[data-al]').forEach(e=>e.setAttribute('aria-label',t(e.dataset.al)));
-  document.querySelectorAll('.lang button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.l===lang));
+/* ============================================================
+   详情抽屉
+   ============================================================ */
+const SUITE_FILE={convar:'ConVarSuite',engineservicemgr:'EngineServiceMgrSuite',filesystem:'FileSystemSuite',gamedata:'GamedataSuite',gameentities:'GameEntitiesSuite',entity:'GameEntitySystemSuite',event:'GameEventSuite',hoststatemgr:'HostStateMgrSuite',keyvalues3:'KeyValues3Suite',localize:'LocalizeSuite',metamod:'MetamodListenerSuite',netchannel:'NetChannelSuite',netmessages:'NetworkMessagesSuite',netserver:'NetworkServerSuite',resourcesystem:'ResourceSystemSuite',schemadiff:'SchemaDiffSuite',schema:'SchemaSystemSuite',serverconfig:'ServerConfigSuite',engine:'Source2EngineSuite',clients:'Source2GameClientsSuite',server:'Source2ServerSuite',stringtable:'StringTableSuite',tier0containers:'Tier0ContainerSuite'};
+let lastFocus=null;
+function codeBlock(text,cls='',extra=''){return `<div class="cb ${cls}" ${extra}><pre>${esc(text)}</pre><button class="btn sm cp" type="button" data-copy>${I.copy}${esc(t('copy'))}</button></div>`}
+function openDrawer(x){
+  const {run,prevRun,model:m}=ctx,d=$('#drawer');
+  lastFocus=document.activeElement;
+  const file=SUITE_FILE[x.suite];
+  const prevTxt=!prevRun?t('noPrevRun'):x.prev===undefined?t('notInPrev'):`${stBadge(x.prev)} <span class="was">${esc(prevRun.release)}</span>`;
+  const gd=ctx.gd&&x.suite==='gamedata'&&x.call in ctx.gd?ctx.gd[x.call]:null;
+  const isBad=BAD.has(x.o);
+  const detail=x.detail&&x.detail!=='-'?x.detail:'';
+  const resBlock=isBad?`<div class="dsec ${key(x.o)}"><div class="errh">${ICON[x.o]}${esc(t('failMsg'))}</div>${codeBlock(detail||t(x.o),'err')}</div>`
+    :x.o==='OK'?(detail?`<div class="dsec"><h4>${esc(t('result'))}</h4>${codeBlock(detail)}</div>`:'')
+    :(detail?`<div class="dsec"><h4>${esc(t('reason'))}</h4>${codeBlock(detail)}</div>`:'');
+  d.innerHTML=`<div class="dh"><div class="tt"><div class="crumb"><span>${esc(x.suite)}</span><span>›</span><code title="${esc(x.iface)}">${esc(x.iface)}</code></div><h3 id="dt">${esc(callName(x.call))}</h3></div>
+      <button class="ib" type="button" id="dclose" aria-label="${esc(t('drawerClose'))}">${I.x}</button></div>
+    <div class="db">
+      <dl class="kv">
+        <dt>${esc(t('cur'))}</dt><dd>${stBadge(x.o)}</dd>
+        <dt>${esc(t('prev'))}</dt><dd>${prevTxt}</dd>
+        <dt>${esc(t('exec'))}</dt><dd>${esc(fmtMs(x.ms))}</dd>
+        <dt>${esc(t('iName'))}</dt><dd><code>${esc(x.iface)}</code></dd>
+        <dt>${esc(t('tName'))}</dt><dd><code>${esc(x.name)}</code></dd>
+        <dt>${esc(t('run'))}</dt><dd><code>${esc(run.release)}</code> · CS2 ${esc(run.game_version||run.game_buildid)}</dd>
+      </dl>
+      ${resBlock}
+      ${gd!=null?`<div class="dsec"><h4>${esc(t('gd'))}</h4>${codeBlock(String(gd))}</div>`:''}
+      <div class="dsec"><details><summary>${esc(t('raw'))}</summary>${codeBlock(JSON.stringify(x.raw,null,2))}</details></div>
+      ${file?`<div><a class="btn" href="${REPO}/blob/${encodeURIComponent(run.release)}/src/suites/${file}.cpp" target="_blank" rel="noopener">${I.ext}${esc(t('src'))}</a></div>`:''}
+    </div>`;
+  d.classList.add('on');d.removeAttribute('aria-hidden');$('#scrim').classList.add('on');document.body.classList.add('lock');
+  $('#dclose').onclick=()=>closeDrawer();
+  $$('[data-copy]',d).forEach(b=>b.onclick=()=>copyText($('pre',b.parentNode).textContent,b));
+  requestAnimationFrame(()=>$('#dclose').focus({preventScroll:true}));
 }
-function setLang(l){
-  if(l===lang||!(l in L))return;
-  lang=l;try{localStorage.setItem('lang',l)}catch(e){}
-  applyStatic();
-  if(loadErr)return paintErr();
-  if(!runs.length)return paintEmpty();
-  $('#latest').innerHTML=hero(runs[0],latestRes).replace(/ enter" style="--i:1"/,'"');
-  renderHistory(true);
-  if(curId)show(curId,true,true);
+function closeDrawer(quiet){
+  const d=$('#drawer');if(!d.classList.contains('on'))return;
+  d.classList.remove('on');d.setAttribute('aria-hidden','true');$('#scrim').classList.remove('on');document.body.classList.remove('lock');
+  if(!quiet&&lastFocus&&document.contains(lastFocus))lastFocus.focus({preventScroll:true})}
+$('#scrim').onclick=()=>closeDrawer();
+// 焦点困在抽屉内
+$('#drawer').addEventListener('keydown',e=>{
+  if(e.key!=='Tab')return;
+  const f=$$('button,a[href],summary',$('#drawer')).filter(el=>el.offsetParent!==null);if(!f.length)return;
+  const a=f[0],z=f[f.length-1];
+  if(e.shiftKey&&document.activeElement===a){e.preventDefault();z.focus()}
+  else if(!e.shiftKey&&document.activeElement===z){e.preventDefault();a.focus()}});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if($('#drawer').classList.contains('on'))closeDrawer();else if(document.activeElement===$('#q')&&T.q){$('#qx').click()}}
+  else if(e.key==='/'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&$('#q')&&view==='overview'){e.preventDefault();$('#q').focus()}});
+
+/* ============================================================
+   历史
+   ============================================================ */
+let statsSeq=0;
+async function ensureStats(){
+  const todo=runs.filter(r=>r.status==='completed'&&runStats(r)==null&&r._s!==false),seq=++statsSeq;
+  let i=0;
+  const worker=async()=>{while(i<todo.length&&seq===statsSeq){const r=todo[i++];
+    try{const res=await loadResult(r.id);
+      if(res&&res.summary){const s=res.summary;r._s={total:s.total,ok:s.ok,failed:s.failed,crashed:s.crashed,suspect:s.suspect||0,skipped:s.skipped,na:s.unavailable}}else r._s=false}
+    catch(e){r._s=false}
+    if(view==='history'&&seq===statsSeq)paintHistoryBody()}};
+  await Promise.all([worker(),worker()])}
+
+function renderHistory(seq,still){
+  const app=$('#app');
+  const done=runs.filter(r=>r.status==='completed');
+  if(!H.a||!runs.some(r=>r.id===H.a)||!runs.some(r=>r.id===H.b)){H.b=done[0]&&done[0].id;H.a=done[1]&&done[1].id;H.cat=null}
+  chartSig='';
+  app.innerHTML=`<div class="enter${still?' still':''}">
+    <div class="pagebar" style="--i:0"><h1>${esc(t('navHistory'))}</h1><div class="upd"><span id="updtxt">${updatedAt?esc(t('updated'))+' '+updatedAt.toLocaleTimeString([], {hour12:false}):''}</span><button class="btn" type="button" id="refresh">${I.refresh}${esc(t('refresh'))}</button></div></div>
+    <div class="hist-grid">
+      <section style="--i:1" id="sec-trend"></section>
+      <section style="--i:2"><h2 style="display:flex;justify-content:space-between;margin:0 0 10px;font-size:13px;font-weight:600">${esc(t('hCmp'))}</h2><div class="card" id="cmp"></div></section>
+      <section style="--i:3"><h2 style="display:flex;justify-content:space-between;margin:0 0 10px;font-size:13px;font-weight:600">${esc(t('hRuns'))}<small style="font-weight:400;color:var(--mut)">${num(runs.length)}</small></h2><div class="card" id="runs"></div></section>
+    </div></div>`;
+  bindPagebar();
+  paintChart();paintHistoryBody();paintCompare();
+  ensureStats();
 }
-document.querySelectorAll('.lang button').forEach(b=>b.onclick=()=>setLang(b.dataset.l));
-applyStatic();
 
-async function init(){
-  try{
-    ({runs}=await get('data/index.json'));
-  }catch(e){loadErr=e.message;paintErr();return}
-  $('#count').textContent=runs.length||'';$('#runs').hidden=!runs.length;
-  if(!runs.length){paintEmpty();return}
-  latestRes=await result(runs[0].id);
-  $('#latest').innerHTML=hero(runs[0],latestRes);
-  countUp();
-  const hid=location.hash.length>1?decodeURIComponent(location.hash.slice(1)):'';
-  const hi=runs.findIndex(r=>r.id===hid);
-  if(hi>=0)pg=Math.floor(hi/PAGE_SIZE);
-  renderHistory();
-  show(location.hash.length>1?decodeURIComponent(location.hash.slice(1)):runs[0].id,true);
+let chartSig='';
+function paintChart(){
+  const el=$('#sec-trend');if(!el)return;
+  const pts=[...runs].reverse().map(r=>({r,s:runStats(r)})).filter(p=>p.s&&execd(p.s)>0).map(p=>({...p,rate:p.s.ok/execd(p.s)*100}));
+  // 数据没变就不重绘，避免筛选/翻页时折线动画重播
+  const sig=lang+'|'+pts.map(p=>p.r.id+p.rate).join(',');
+  if(sig===chartSig)return;chartSig=sig;
+  if(pts.length<2){el.innerHTML='';return}
+  const W=1000,Hh=150,pl=46,pr=14,pt=14,pb=26,min=Math.min(...pts.map(p=>p.rate));
+  let lo=Math.max(0,Math.floor(min-0.4));if(lo>=100)lo=99;
+  const X=i=>pl+(W-pl-pr)*(pts.length===1?.5:i/(pts.length-1)),Y=v=>pt+(Hh-pt-pb)*(1-(v-lo)/(100-lo));
+  const path=pts.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p.rate).toFixed(1)).join('');
+  const dense=pts.length>60;
+  const ticks=[lo,(lo+100)/2,100];
+  el.innerHTML=`<h2 style="display:flex;justify-content:space-between;align-items:baseline;margin:0 0 10px;font-size:13px;font-weight:600">${esc(t('hTrend'))}<small style="font-weight:400;color:var(--mut);font-size:12.5px">${esc(t('hTrendSub'))}</small></h2>
+    <div class="card chart"><svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="${esc(t('hTrend'))}">
+      ${ticks.map(v=>`<line class="gl" x1="${pl}" x2="${W-pr}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ax" x="${pl-8}" y="${Y(v)+4}" text-anchor="end">${+v.toFixed(1)}%</text>`).join('')}
+      <text class="ax" x="${pl}" y="${Hh-6}">${esc(whenS(pts[0].r.finished))}</text><text class="ax" x="${W-pr}" y="${Hh-6}" text-anchor="end">${esc(whenS(pts[pts.length-1].r.finished))}</text>
+      <path class="ln" d="${path}" pathLength="2000" style="--len:2000"/>
+      ${pts.map((p,i)=>{const o=overall(p.r);return `<g><circle class="hit" cx="${X(i)}" cy="${Y(p.rate)}" r="11" data-id="${esc(p.r.id)}" data-rate="${p.rate.toFixed(2)}"/>${dense?'':`<circle class="pt ${key(o.k)}" cx="${X(i)}" cy="${Y(p.rate)}" r="3.6" pointer-events="none"/>`}</g>`}).join('')}
+    </svg></div>`;
+  const svgEl=$('.chart svg',el);
+  svgEl.onclick=e=>{const h=e.target.closest('.hit');if(h)location.hash=runHash(h.dataset.id)};
+  svgEl.onmouseover=e=>{const h=e.target.closest('.hit');if(!h)return hideTip();
+    const r=runs.find(x=>x.id===h.dataset.id),s=runStats(r);
+    showTip(`<span>${esc(r.release)}</span><b>${esc(h.dataset.rate)}%</b><span>${esc(whenS(r.finished))} · ${esc(t('ptTip'))}</span>`,h.getBoundingClientRect())};
+  svgEl.onmouseleave=hideTip;
 }
 
-const PAGE_SIZE=7;
-let trig='ALL', curId=null, pg=0;
-const inTrig=r=>trig==='ALL'||r.reason===trig;
-
+function filteredRuns(){return runs.filter(r=>H.reason==='ALL'||r.reason===H.reason)}
+function paintHistoryBody(){
+  const el=$('#runs');if(!el)return;
+  const reasons=[...new Set(runs.map(r=>r.reason))],all=filteredRuns(),pages=Math.max(1,Math.ceil(all.length/PAGE));
+  H.pg=Math.min(Math.max(H.pg,0),pages-1);
+  const list=all.slice(H.pg*PAGE,(H.pg+1)*PAGE),z=zone(runs[0].finished)||'PT';
+  const cell=r=>{const s=runStats(r);
+    if(r.status!=='completed'||r._s===false)return `<td class="num">—</td><td class="num">—</td>`;
+    if(!s)return `<td class="num"><span class="skel" style="display:inline-block;width:46px;height:12px;vertical-align:middle"></span></td><td class="num"><span class="skel" style="display:inline-block;width:70px;height:12px;vertical-align:middle"></span></td>`;
+    const p=pct(s.ok,execd(s)),b=s.failed+s.crashed+s.suspect;
+    return `<td class="num" style="color:var(--fg)">${p==null?'—':p+'%'}</td><td class="num"><span class="${s.ok?'':''}" style="color:var(--ok)">${num(s.ok)}</span> / <span style="color:${b?'var(--fail)':'var(--dim)'}">${num(b)}</span></td>`};
+  el.innerHTML=(reasons.length>1?`<div class="hfil"><div class="seg" role="group">${[['ALL',t('rAll'),runs.length],...reasons.map(k=>[k,t(k)||k,runs.filter(r=>r.reason===k).length])].map(([k,l,n])=>`<button type="button" data-rf="${esc(k)}" aria-pressed="${H.reason===k}">${esc(l)} <span>${n}</span></button>`).join('')}</div></div>`:'')+
+    `<div class="tw"><table class="runs"><colgroup><col style="width:280px"><col style="width:130px"><col style="width:150px"><col style="width:100px"><col style="width:90px"><col style="width:120px"><col style="width:100px"><col></colgroup><thead><tr>${[[t('rId')],[t('rTime')+' ('+z+')'],[t('rBuild')],[t('rSdk')],[t('rVer')],[t('rRate'),'r'],[t('rPF'),'r'],[t('rOverall')]].map(([l,c])=>`<th class="${c||''}"><span class="th2">${esc(l)}</span></th>`).join('')}</tr></thead><tbody>`+
+    list.map(r=>{const o=overall(r),sdk=parseSdk(r.s2sdk);return `<tr data-id="${esc(r.id)}" ${runs[0]===r?'class="cur"':''} tabindex="0">
+      <td><div class="rid"><code title="${esc(r.id)}">${esc(r.id)}</code></div></td>
+      <td class="mono" style="color:var(--mut)">${esc(whenS(r.finished))}</td>
+      <td><code>${esc(r.game_version||r.game_buildid)}</code></td>
+      <td><code>${esc(sdk?sdk.h.slice(0,8):'—')}</code></td>
+      <td><code>${esc(r.release)}</code></td>${cell(r)}
+      <td><span class="chip ${key(o.k)}">${ICON[o.k]}${esc(o.txt)}</span></td></tr>`}).join('')+'</tbody></table></div>'+pager(all.length,pages);
+  $$('[data-rf]',el).forEach(b=>b.onclick=()=>{H.reason=b.dataset.rf;H.pg=0;paintHistoryBody()});
+  $$('.pager button[data-p]',el).forEach(b=>b.onclick=()=>{H.pg=+b.dataset.p;paintHistoryBody()});
+  $$('table.runs tbody tr',el).forEach(tr=>{tr.onclick=()=>{location.hash=runHash(tr.dataset.id)};tr.onkeydown=e=>{if(e.key==='Enter')tr.click()}});
+  paintChart();
+}
 function pager(total,pages){
   if(pages<2)return '';
-  const set=new Set([0,pages-1,pg-1,pg,pg+1]),nums=[];
-  for(let i=0;i<pages;i++)if(set.has(i))nums.push(i);
+  const set=new Set([0,pages-1,H.pg-1,H.pg,H.pg+1]),nums=[...set].filter(i=>i>=0&&i<pages).sort((a,b)=>a-b);
   let btn='',last=-1;
-  for(const i of nums){
-    if(last>=0&&i-last>1)btn+='<span class="gap">…</span>';
-    btn+=`<button data-p="${i}"${i===pg?' aria-current="page"':''} aria-label="${esc(t('pageN',i+1))}">${i+1}</button>`;
-    last=i;
-  }
-  const from=pg*PAGE_SIZE+1,to=Math.min(total,(pg+1)*PAGE_SIZE);
-  return `<nav class="pager" aria-label="${esc(t('histNav'))}"><span>${t('range',from,to,total)}</span><div class="pn">`+
-    `<button data-p="${pg-1}"${pg===0?' disabled':''} aria-label="${esc(t('prev'))}">‹</button>${btn}`+
-    `<button data-p="${pg+1}"${pg===pages-1?' disabled':''} aria-label="${esc(t('next'))}">›</button></div></nav>`;
+  for(const i of nums){if(last>=0&&i-last>1)btn+='<span style="padding:0 4px;align-self:center">…</span>';
+    btn+=`<button type="button" data-p="${i}"${i===H.pg?' aria-current="page"':''} aria-label="${esc(t('pageN',i+1))}">${i+1}</button>`;last=i}
+  const from=H.pg*PAGE+1,to=Math.min(total,(H.pg+1)*PAGE);
+  return `<nav class="pager" aria-label="${esc(t('histNav'))}"><span>${esc(t('range',from,to,total))}</span><div class="pn"><button type="button" data-p="${H.pg-1}"${H.pg===0?' disabled':''} aria-label="${esc(t('prevPg'))}">‹</button>${btn}<button type="button" data-p="${H.pg+1}"${H.pg===pages-1?' disabled':''} aria-label="${esc(t('nextPg'))}">›</button></div></nav>`}
+
+/* ----- 对比 ----- */
+let cmpSeq=0;
+const runLabel=r=>`${r.release} · ${r.game_version||r.game_buildid} · ${whenS(r.finished)}`;
+function cmpPicker(){
+  const opts=sel=>runs.filter(r=>r.status==='completed').map(r=>`<option value="${esc(r.id)}"${r.id===sel?' selected':''}>${esc(runLabel(r))}</option>`).join('');
+  return `<div class="cmp-pick"><label for="ca">${esc(t('cBase'))}</label><select class="sel" id="ca">${opts(H.a)}</select>
+    <button class="btn sm" type="button" id="cswap" aria-label="${esc(t('swap'))}" title="${esc(t('swap'))}">${I.swap}</button>
+    <label for="cb2">${esc(t('cTarget'))}</label><select class="sel" id="cb2">${opts(H.b)}</select></div>`}
+async function paintCompare(){
+  const el=$('#cmp');if(!el)return;const seq=++cmpSeq;
+  const head=cmpPicker();
+  const bind=()=>{
+    $('#ca').onchange=e=>{H.a=e.target.value;H.cat=null;paintCompare()};
+    $('#cb2').onchange=e=>{H.b=e.target.value;H.cat=null;paintCompare()};
+    $('#cswap').onclick=()=>{[H.a,H.b]=[H.b,H.a];H.cat=null;paintCompare()}};
+  const msg=m=>{el.innerHTML=head+`<div class="empty" style="padding:28px">${esc(m)}</div>`;bind()};
+  if(!H.a||!H.b)return msg(t('cNeed'));
+  if(H.a===H.b)return msg(t('cSame2'));
+  el.innerHTML=head+`<div class="stable">${'<div class="skel sk-row"></div>'.repeat(3)}</div>`;bind();
+  let A,B;
+  try{[A,B]=await Promise.all([loadResult(H.a),loadResult(H.b)])}catch(e){if(seq!==cmpSeq)return;el.innerHTML=head+errCard(t('resFail'),t('resFailSub'),true);bind();$('[data-retry]',el).onclick=paintCompare;return}
+  if(seq!==cmpSeq)return;
+  if(!A||!B)return msg(t('noRes'));
+  // base 是被比较的“旧”一侧，target 是“新”一侧；用户选反了也照实比较
+  const ka=keyed(A.results),kb=keyed(B.results),ma=new Map(A.results.map((x,i)=>[ka[i],x])),mb=new Map(B.results.map((x,i)=>[kb[i],x]));
+  const cat={failed:[],passed:[],other:[],added:[],removed:[]};let same=0;
+  B.results.forEach((x,i)=>{const p=ma.get(kb[i]);
+    if(!p)return cat.added.push({x,from:null,to:x.outcome});
+    const c=classify(p.outcome,x.outcome);
+    if(c==='same')same++;else if(c==='regressed')cat.failed.push({x,from:p.outcome,to:x.outcome});
+    else if(c==='fixed')cat.passed.push({x,from:p.outcome,to:x.outcome});else cat.other.push({x,from:p.outcome,to:x.outcome})});
+  A.results.forEach((x,i)=>{if(!mb.has(ka[i]))cat.removed.push({x,from:x.outcome,to:null})});
+  const tiles=[['failed',t('cFailed'),'FAIL',ICON.FAIL,cat.failed.length],['passed',t('cPassed'),'OK',ICON.OK,cat.passed.length],['other',t('cOther'),'SKIP',I.arrow,cat.other.length],['same',t('cSame'),'NA',ICON['N/A'],same],['added',t('cNew'),'',I.plus,cat.added.length],['removed',t('cGone'),'',I.x,cat.removed.length]];
+  if(!H.cat)H.cat=(tiles.find(x=>x[0]!=='same'&&x[4])||tiles[0])[0];
+  const draw=()=>{
+    const rows=H.cat==='same'?[]:cat[H.cat]||[];
+    el.innerHTML=head+`<div class="ctiles">${tiles.map(([k,l,c,ic,n])=>`<button type="button" class="ctile ${c}" data-c="${k}" aria-pressed="${H.cat===k}"><div class="lb">${ic}${esc(l)}</div><div class="n${n?'':' z'}">${num(n)}</div></button>`).join('')}</div>
+      <div class="crows">${H.cat==='same'?`<div class="empty" style="padding:24px">${esc(num(same))} ${esc(t('cSame').toLowerCase())}</div>`:rows.length?rows.slice(0,200).map(({x,from,to})=>`<div class="crow"><span class="s">${esc(x.suite)}</span><code title="${esc(callName(x.call))}">${esc(callName(x.call))}</code><span class="ft">${from?stBadge(from):'<span>—</span>'}${I.arrow}${to?stBadge(to):'<span>—</span>'}</span></div>`).join('')+(rows.length>200?`<div class="empty" style="padding:14px">${esc(t('cMore',rows.length-200))}</div>`:''):`<div class="empty" style="padding:24px">${esc(t('cNoDiff'))}</div>`}</div>`;
+    bind();$$('.ctile',el).forEach(b=>b.onclick=()=>{H.cat=b.dataset.c;draw()})};
+  draw();
 }
 
-function renderHistory(still){
-  const reasons=[...new Set(runs.map(r=>r.reason))];
-  const tabs=[['ALL',t('all'),runs.length],...reasons.map(k=>[k,REASON[k]||k,runs.filter(r=>r.reason===k).length])];
-  const all=runs.filter(inTrig), pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));
-  pg=Math.min(Math.max(pg,0),pages-1);
-  const list=all.slice(pg*PAGE_SIZE,(pg+1)*PAGE_SIZE);
-  $('#history').innerHTML=(reasons.length>1?`<div class="tabs hfilter">${tabs.map(t=>`<button class="tab" data-t="${esc(t[0])}" aria-pressed="${t[0]===trig}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>`:'')+
-    `<div class="hscroll"><table><thead><tr><th>${t('thTime')} (${esc(zone(runs[0].finished)||'PT')})</th><th>${t('thStatus')}</th><th>${t('thTrigger')}</th><th>${t('plugin')}</th><th>${t('cs2ver')}</th><th>s2sdk</th><th class="num">${t('thFailed')}</th><th class="num">${t('thCrashed')}</th></tr></thead><tbody>`+
-    list.map((r,i)=>`<tr class="run" data-id="${esc(r.id)}"${still?' style="animation:none"':` style="--i:${i}"`}><td>${esc(whenZ(r.finished,zone(runs[0].finished)))}</td>
-    <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
-    <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td><td class="mono">${esc(r.s2sdk||'-')}</td>
-    <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table></div>'+pager(all.length,pages);
-  document.querySelectorAll('tr.run').forEach(tr=>tr.onclick=()=>show(tr.dataset.id));
-  document.querySelectorAll('.hfilter .tab').forEach(b=>b.onclick=()=>{trig=b.dataset.t;pg=0;renderHistory();if(curId)show(curId,true)});
-  document.querySelectorAll('.pager button[data-p]').forEach(b=>b.onclick=()=>{pg=+b.dataset.p;renderHistory()});
-  if(curId)document.querySelectorAll('tr.run').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===curId));
+/* ============================================================
+   刷新 / 主题 / 语言 / 浮层
+   ============================================================ */
+const tip=document.body.appendChild(Object.assign(document.createElement('div'),{id:'tip',role:'tooltip'}));
+function showTip(html,r){
+  tip.innerHTML=html;const w=tip.offsetWidth,h=tip.offsetHeight;
+  const x=Math.min(Math.max(r.left+r.width/2-w/2,8),innerWidth-w-8);
+  tip.style.setProperty('--x',x+'px');tip.style.setProperty('--y',(r.top-h-10)+'px');tip.classList.add('on')}
+const hideTip=()=>tip.classList.remove('on');
+// 进度条悬停：高亮对应段 + 浮层（图例悬停同样联动）
+let hk=null;
+function barHover(k){
+  if(k===hk)return;hk=k;
+  $$('.bar,.legend').forEach(g=>g.classList.toggle('dim',!!k));
+  $$('.bar i,.legend span').forEach(e=>e.classList.toggle('hl',!!k&&e.dataset.k===k));
+  const seg=k&&$(`.bar i[data-k="${k}"]`);
+  if(!seg)return hideTip();
+  showTip(`<i class="dot ${k}"></i><span>${seg.dataset.n}</span><b>${seg.dataset.v}</b><span>${seg.dataset.p}%</span>`,seg.getBoundingClientRect())}
+if(matchMedia('(hover:hover)').matches){
+  document.addEventListener('mouseover',e=>{const el=e.target.closest&&e.target.closest('.bar i,.legend span');
+    if(el||hk)barHover(el&&el.dataset.k||null)});
+  document.addEventListener('scroll',hideTip,{passive:true})}
+
+async function refresh(){
+  const b=$('#refresh');if(!b||b.classList.contains('spin'))return;
+  b.classList.add('spin');
+  try{
+    const txt=await get('data/index.json');
+    updatedAt=new Date();
+    if(txt!==idxText){
+      idxText=txt;runs=JSON.parse(txt).runs||[];
+      paintNav();
+      // 有新数据才重绘；用 still 避免整页重新入场/闪烁
+      await route(true);
+    }
+  }catch(e){const u=$('#updtxt');if(u)u.textContent=t('refreshFail')}
+  finally{const bb=$('#refresh');if(bb)bb.classList.remove('spin');const u=$('#updtxt');if(u&&updatedAt&&u.textContent!==t('refreshFail'))u.textContent=t('updated')+' '+updatedAt.toLocaleTimeString([], {hour12:false})}
 }
 
-async function show(id,quiet,still){
-  const idx=runs.findIndex(r=>r.id===id);
-  if(idx<0)return;
-  curId=id;
-  document.querySelectorAll('tr.run').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===id));
-  if(!quiet)history.replaceState(null,'','#'+encodeURIComponent(id));
-  const run=runs[idx], res=await result(id), d=$('#detail');
-  const gd=await gamedata(id);
-  if(!res){
-    d.innerHTML=run.status==='completed'
-      ?`<h2>${t('detail')}</h2><div class="card note">${t('resFail')}<a href="#" id="retry">${t('retry')}</a></div>`
-      :`<h2>${t('detail')}</h2><div class="card note">${t('noResFile')}</div>`;
-    const a=$('#retry');if(a)a.onclick=e=>{e.preventDefault();show(id,true)};
-    return;
-  }
+function applyStatic(){
+  document.documentElement.lang=lang==='zh'?'zh-CN':'en';
+  document.title='CS2SDKTest Dashboard';
+  $$('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
+  $$('[data-ti]').forEach(e=>e.title=t(e.dataset.ti));
+  $$('[data-al]').forEach(e=>e.setAttribute('aria-label',t(e.dataset.al)));
+  $$('.lang button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.l===lang))}
+$$('.lang button').forEach(b=>b.onclick=()=>{
+  if(b.dataset.l===lang)return;lang=b.dataset.l;ls.set('lang',lang);applyStatic();paintNav();if(runs.length)route(true)});
+$('#theme').onclick=()=>{
+  const n=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=n;ls.set('theme',n)};
+applyStatic();
 
-  const prevRun=runs.slice(idx+1).find(r=>r.status==='completed'&&inTrig(r));
-  const prev=prevRun?await result(prevRun.id):null;
-  // 同一个 suite|call 可能出现多次（如不同场景的多条记录），按出现序号配对，避免后一条覆盖前一条
-  const keyed=l=>{const n={};return l.map(x=>{const k=x.suite+'|'+x.call;return [k+'|'+(n[k]=(n[k]||0)+1),x]})};
-  const before=new Map(keyed(prev?prev.results:[]).map(([k,x])=>[k,x.outcome]));
-  const changed=prev?keyed(res.results).filter(([k,x])=>before.has(k)&&before.get(k)!==x.outcome):[];
-
-  const counts={};
-  res.results.forEach(x=>counts[x.outcome]=(counts[x.outcome]||0)+1);
-  const problems=(counts.FAIL||0)+(counts.CRASHED||0)+(counts.SUSPECT||0);
-  let filter=problems?'problems':'ALL';
-
-  const render=()=>{
-    const list=res.results.filter(x=>filter==='ALL'||(filter==='problems'?['FAIL','CRASHED','SUSPECT'].includes(x.outcome):x.outcome===filter));
-    const bySuite=new Map();
-    list.forEach(x=>{if(!bySuite.has(x.suite))bySuite.set(x.suite,[]);bySuite.get(x.suite).push(x)});
-    const tabs=[['problems',t('attention'),problems],['ALL',t('all'),res.results.length],...OUT.filter(o=>counts[o]).map(o=>[o,t(o),counts[o]])];
-    const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
-    d.classList.toggle('swap',!still);
-    d.innerHTML=`<h2>${t('detail')} · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
-      ${prev?`<div class="card" style="margin-bottom:14px;--i:1">${changed.length
-        ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(([k,x])=>{const b=before.get(k);return `<div class="row"><code>${esc(callName(x.call))}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
-        :`<div class="note">${t('noChange',esc(prevRun.release),esc(ver(prevRun)))}</div>`}</div>`:''}
-      <div class="tabs" style="--i:2">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
-      <div class="card" style="--i:3">${bySuite.size?[...bySuite].map(([name,items])=>{
-        const c={};items.forEach(x=>c[x.outcome]=(c[x.outcome]||0)+1);
-        return `<details${open?' open':''}><summary><span class="name">${esc(name)}</span>
-          <span class="cnt">${OUT.filter(o=>c[o]).map(o=>`<span class="${key(o)}"><b>${c[o]}</b> ${esc(t(o))}</span>`).join('')}</span></summary>
-          <div class="rows">${items.map((x,i)=>`<div class="row ${key(x.outcome)}" style="--i:${Math.min(i,12)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(callName(x.call))}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
-        :`<div class="empty">${t('none')}</div>`}</div>`;
-    d.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
-  };
-  render();
+/* ---------- 启动 ---------- */
+async function init(){
+  try{
+    idxText=await get('data/index.json');runs=JSON.parse(idxText).runs||[];updatedAt=new Date();
+  }catch(e){
+    $('#navstat').className='pill';$('#navstat').hidden=true;
+    $('#app').innerHTML=errCard(t('loadFail'),t('loadFailSub'),true);$('[data-retry]').onclick=()=>{$('#app').innerHTML=skeleton();init()};return}
+  paintNav();
+  await route();
 }
 init();
 </script>
