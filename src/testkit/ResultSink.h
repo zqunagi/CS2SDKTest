@@ -53,7 +53,7 @@ public:
 
 	/** A call finished (or was recorded without running). */
 	void Result(const std::string& suite, const std::string& call,
-		CallOutcome outcome, const std::string& detail);
+		CallOutcome outcome, const std::string& detail, int source_line = 0);
 
 	/** Writes results.json with "completed": true and closes the jsonl. */
 	void Finish(const RunTally& tally);
@@ -71,6 +71,8 @@ private:
 		std::string outcome;
 		std::string detail;
 		long long ms = 0;
+		/** Source line of the CS2ST_CALL that produced it; 0 when not known. */
+		int line = 0;
 	};
 
 	void WriteLine(const std::string& line);

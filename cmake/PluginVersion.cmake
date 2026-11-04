@@ -29,6 +29,29 @@ function(cs2sdktest_resolve_sdk_revision sdk_dir out_var)
   set(${out_var} "${_revision}" PARENT_SCOPE)
 endfunction()
 
+# Full hash of HEAD. Unlike the description above it ignores the dirty flag: it
+# names the commit the links should open, and a dirty tree has no better answer.
+function(cs2sdktest_resolve_git_commit source_dir out_var)
+  set(_commit "unknown")
+
+  find_package(Git QUIET)
+  if(GIT_FOUND AND EXISTS "${source_dir}/.git")
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+      WORKING_DIRECTORY "${source_dir}"
+      OUTPUT_VARIABLE _head
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE _git_result
+    )
+    if(_git_result EQUAL 0 AND _head)
+      set(_commit "${_head}")
+    endif()
+  endif()
+
+  set(${out_var} "${_commit}" PARENT_SCOPE)
+endfunction()
+
 function(cs2sdktest_resolve_git_revision source_dir out_var)
   set(_revision "unknown")
 

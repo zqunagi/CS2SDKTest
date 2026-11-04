@@ -164,8 +164,23 @@ void TestContext::Suspect(const char* format, ...)
 	va_end(args);
 }
 
-CallOutcome TestContext::RunCall(const std::string& target, const std::function<void()>& body)
+int CallSite::SuiteLine() const
 {
+	// Only a call written under src/suites/ can be linked to by the results
+	// page; a helper in testkit/ passing a target through would otherwise
+	// publish its own line number against the wrong file.
+	if (file == nullptr || line <= 0)
+	{
+		return 0;
+	}
+	const std::string path(file);
+	return (path.find("/suites/") != std::string::npos ||
+		path.find("\\suites\\") != std::string::npos) ? line : 0;
+}
+
+CallOutcome TestContext::RunCall(const CallSite& site, const std::function<void()>& body)
+{
+	const std::string& target = site.target;
 	pending_detail_.clear();
 	pending_failure_.clear();
 	pending_suspect_.clear();
@@ -217,11 +232,11 @@ CallOutcome TestContext::RunCall(const std::string& target, const std::function<
 		detail = pending_skip_ + (detail.empty() ? "" : " (" + detail + ")");
 	}
 
-	Record(target, outcome, detail);
+	Record(target, outcome, detail, site.SuiteLine());
 	return outcome;
 }
 
-void TestContext::SkipCall(const std::string& target, const char* format, ...)
+void TestContext::SkipCall(const CallSite& site, const char* format, ...)
 {
 	va_list args;
 	va_start(args, format);
@@ -235,23 +250,23 @@ void TestContext::SkipCall(const std::string& target, const char* format, ...)
 		pending_skip_ = reason;
 		return;
 	}
-	Record(target, CallOutcome::kSkipped, reason);
+	Record(site.target, CallOutcome::kSkipped, reason, site.SuiteLine());
 }
 
-void TestContext::UnavailableCall(const std::string& target, const char* format, ...)
+void TestContext::UnavailableCall(const CallSite& site, const char* format, ...)
 {
 	va_list args;
 	va_start(args, format);
 	const std::string reason = FormatToString(format, args);
 	va_end(args);
 
-	Record(target, CallOutcome::kUnavailable, reason);
+	Record(site.target, CallOutcome::kUnavailable, reason, site.SuiteLine());
 }
 
-void TestContext::Record(const std::string& target, CallOutcome outcome, const std::string& detail)
+void TestContext::Record(const std::string& target, CallOutcome outcome, const std::string& detail, int line)
 {
 	tally_.Count(outcome);
-	ResultSink::Get().Result(section_, target, outcome, detail);
+	ResultSink::Get().Result(section_, target, outcome, detail, line);
 
 	// Only the two failure outcomes are coloured. Colouring every row would
 	// make none of them stand out, and the job here is spotting the three bad

@@ -131,6 +131,8 @@ std::string ResultSink::MetaJson() const
 	out += ',';
 	AppendString(out, "git", PLUGIN_GIT_REVISION);
 	out += ',';
+	AppendString(out, "commit", PLUGIN_GIT_COMMIT);
+	out += ',';
 	AppendString(out, "platform", PLUGIN_BUILD_PLATFORM);
 	out += ',';
 	AppendString(out, "build_type", PLUGIN_BUILD_TYPE);
@@ -235,7 +237,7 @@ void ResultSink::Begin(const std::string& suite, const std::string& call)
 }
 
 void ResultSink::Result(const std::string& suite, const std::string& call,
-	CallOutcome outcome, const std::string& detail)
+	CallOutcome outcome, const std::string& detail, int source_line)
 {
 	if (file_ == nullptr)
 	{
@@ -247,6 +249,7 @@ void ResultSink::Result(const std::string& suite, const std::string& call,
 	entry.call = call;
 	entry.outcome = CallOutcomeName(outcome);
 	entry.detail = detail;
+	entry.line = source_line;
 	if (call_open_)
 	{
 		entry.ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -264,6 +267,11 @@ void ResultSink::Result(const std::string& suite, const std::string& call,
 	AppendNumber(line, "ms", entry.ms);
 	line += ',';
 	AppendString(line, "detail", entry.detail);
+	if (entry.line > 0)
+	{
+		line += ',';
+		AppendNumber(line, "line", entry.line);
+	}
 	line += '}';
 	WriteLine(line);
 
@@ -313,6 +321,11 @@ void ResultSink::Finish(const RunTally& tally)
 		AppendNumber(json, "ms", e.ms);
 		json += ',';
 		AppendString(json, "detail", e.detail);
+		if (e.line > 0)
+		{
+			json += ',';
+			AppendNumber(json, "line", e.line);
+		}
 		json += '}';
 	}
 	json += "\n  ]\n}\n";

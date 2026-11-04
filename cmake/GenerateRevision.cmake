@@ -12,6 +12,7 @@
 include("${CMAKE_CURRENT_LIST_DIR}/PluginVersion.cmake")
 
 cs2sdktest_resolve_git_revision("${SOURCE_DIR}" CS2SDKTEST_GIT_REVISION)
+cs2sdktest_resolve_git_commit("${SOURCE_DIR}" CS2SDKTEST_GIT_COMMIT)
 cs2sdktest_resolve_sdk_revision("${S2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
 cs2sdktest_full_version("${PROJECT_VERSION}" "${CS2SDKTEST_GIT_REVISION}" CS2SDKTEST_FULL_VERSION)
 

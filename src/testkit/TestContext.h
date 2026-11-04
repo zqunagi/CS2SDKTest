@@ -32,6 +32,34 @@
 namespace cs2st
 {
 
+/**
+ * The name a call is recorded under, plus where in the source it was written.
+ *
+ * Every parameter that takes a target takes this instead of a std::string. A
+ * string literal converts to it implicitly, and the default arguments are then
+ * evaluated at the argument itself, so `line` is the line the target literal is
+ * on - the first line of a multi-line call. __LINE__ cannot do this: Clang
+ * reports the closing parenthesis for a call written through a macro.
+ *
+ * The results page uses the line to link a row to the code that produced it.
+ */
+struct CallSite
+{
+	std::string target;
+	const char* file;
+	int line;
+
+	CallSite(const char* target_name, const char* source_file = __builtin_FILE(),
+		int source_line = __builtin_LINE())
+		: target(target_name), file(source_file), line(source_line) {}
+	CallSite(const std::string& target_name, const char* source_file = __builtin_FILE(),
+		int source_line = __builtin_LINE())
+		: target(target_name), file(source_file), line(source_line) {}
+
+	/** The line to publish: 0 unless the call was written in a suite source file. */
+	int SuiteLine() const;
+};
+
 struct RunTally
 {
 	std::size_t ok = 0;
@@ -94,13 +122,13 @@ public:
 	 * Runs one probing call through the fault guard and logs the result.
 	 * Prefer the CS2ST_CALL macro, which reads better at the call site.
 	 */
-	CallOutcome RunCall(const std::string& target, const std::function<void()>& body);
+	CallOutcome RunCall(const CallSite& site, const std::function<void()>& body);
 
 	/** Records a call that was not attempted, with a reason. */
-	void SkipCall(const std::string& target, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
+	void SkipCall(const CallSite& site, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
 
 	/** Records a call whose prerequisite interface was missing. */
-	void UnavailableCall(const std::string& target, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
+	void UnavailableCall(const CallSite& site, const char* format, ...) CS2ST_PRINTF_FMT(3, 4);
 
 	/**
 	 * Sets the detail text for the call currently running.
@@ -132,7 +160,7 @@ public:
 	const std::map<std::string, Module>& modules() const { return modules_; }
 
 private:
-	void Record(const std::string& target, CallOutcome outcome, const std::string& detail);
+	void Record(const std::string& target, CallOutcome outcome, const std::string& detail, int line = 0);
 
 	std::map<std::string, Module> modules_;
 	RunTally tally_;

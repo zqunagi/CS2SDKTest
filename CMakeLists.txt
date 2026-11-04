@@ -101,6 +101,7 @@ else()
 endif()
 
 cs2sdktest_resolve_git_revision("${CMAKE_CURRENT_SOURCE_DIR}" CS2SDKTEST_GIT_REVISION)
+cs2sdktest_resolve_git_commit("${CMAKE_CURRENT_SOURCE_DIR}" CS2SDKTEST_GIT_COMMIT)
 cs2sdktest_resolve_sdk_revision("${CS2SDKTEST_S2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
 cs2sdktest_full_version("${PROJECT_VERSION}" "${CS2SDKTEST_GIT_REVISION}" CS2SDKTEST_FULL_VERSION)
 
