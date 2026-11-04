@@ -407,7 +407,7 @@ en:{
   was:'was',lt1:'<1 ms',testsTip:(a,b)=>`${a} passed of ${b} tests`,
   drawerClose:'Close',iName:'Interface',tName:'Test case',cur:'Current status',prev:'Previous status',exec:'Execution time',run:'Run',
   noPrevRun:'No previous run',notInPrev:'Not in previous run',failMsg:'Failure message',reason:'Reason',result:'Result',gd:'Linux gamedata',
-  raw:'Raw record',copy:'Copy',copied:'Copied',src:'View suite source',
+  raw:'Raw record',copy:'Copy',copied:'Copied',src:'View Source',
   vtable:'vtable slot ',offset:'offset ',
   loadFail:'Failed to load test data',loadFailSub:'The data files could not be fetched. This is a network or hosting problem, not a test failure.',retry:'Retry',
   resFail:'Failed to load this run’s results',resFailSub:'The results file could not be fetched (slow or interrupted network). This is not a test failure.',
@@ -445,7 +445,7 @@ zh:{
   was:'之前',lt1:'<1 ms',testsTip:(a,b)=>`${b} 项测试中通过 ${a} 项`,
   drawerClose:'关闭',iName:'接口',tName:'测试用例',cur:'当前状态',prev:'上次状态',exec:'执行耗时',run:'运行',
   noPrevRun:'没有上一次运行',notInPrev:'上一次运行中没有此项',failMsg:'失败信息',reason:'原因',result:'结果',gd:'Linux gamedata',
-  raw:'原始记录',copy:'复制',copied:'已复制',src:'查看套件源码',
+  raw:'原始记录',copy:'复制',copied:'已复制',src:'查看源码',
   vtable:'虚表槽位 ',offset:'偏移 ',
   loadFail:'测试数据加载失败',loadFailSub:'数据文件没能取到，这是网络或托管问题，不是测试失败。',retry:'重试',
   resFail:'这次运行的结果加载失败',resFailSub:'结果文件没能取到（网络较慢或中断），这不是测试失败。',
@@ -955,7 +955,7 @@ function openDrawer(x){
       ${resBlock}
       ${gd!=null?`<div class="dsec"><h4>${esc(t('gd'))}</h4>${codeBlock(String(gd))}</div>`:''}
       <div class="dsec"><details><summary>${esc(t('raw'))}</summary>${codeBlock(JSON.stringify(x.raw,null,2))}</details></div>
-      ${file?`<div><a class="btn" href="${srcHref}" target="_blank" rel="noopener">${I.ext}${esc(t('src'))}${srcLine?esc(' · L'+srcLine):''}</a></div>`:''}
+      ${file?`<div><a class="btn" href="${srcHref}" target="_blank" rel="noopener">${I.ext}${esc(t('src'))}</a></div>`:''}
     </div>`;
   d.classList.add('on');d.removeAttribute('aria-hidden');$('#scrim').classList.add('on');document.body.classList.add('lock');
   $('#dclose').onclick=()=>closeDrawer();
