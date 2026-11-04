@@ -14,6 +14,7 @@ header explains its oracles; this page is only the map.
 | GameEntitiesSuite | ISource2GameEntities: IAppSystem slots, baseline-name query, empty-list transmit / pack callbacks | engine2/isource2server.h |
 | NetChannelSuite | INetChannelInfo, INetChannel: a playback channel built with INetworkSystem::CreateNetChannel (no client needed) | inetchannelinfo.h, networksystem/inetchannel.h, inetworksystem.h |
 | HostStateMgrSuite | IHostStateMgr: IAppSystem slots, every Request skipped; CHostStateMgr / CHostStateRequest layout | engine2/hoststate.h |
+| LoopModeSuite | ILoopMode / ILoopModeFactory, reached through the server module's loop mode registration list (Linux signature scan); factory type and three ILoopMode methods called, the rest skipped | engine2/iengineservicemgr.h, engineevents.h; inputsystem/inputenums.h |
 | ResourceSystemSuite | IResourceSystem (types, handles, names, status, lock, listeners) and IGameResourceService (empty manifest round trip); ResourceBindingBase_t, CGameResourceService layout | resourcesystem/iresourcesystem.h, engine2/igameresourceservice.h |
 | LocalizeSuite | ILocalize: token lookup by name and index, language state, Construct* formatting | localize/ilocalize.h |
 | ConVarSuite | ICvar, ConVar, ConCommand; 5 layouts, 6 hooks | tier0/icvar.h, convar.h |
