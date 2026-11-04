@@ -9,11 +9,14 @@
   --bg:#f7f8fa;--surface:#fff;--fg:#14181f;--mut:#667085;--line:#e4e7ec;--soft:#f2f4f7;
   --ok:#16a34a;--fail:#dc2626;--crash:#7f1d1d;--sus:#d97706;--skip:#98a2b3;--na:#cbd5e1;--acc:#2563eb;
   --shadow:0 1px 2px rgba(16,24,40,.06);
+  --pop:0 8px 24px rgba(16,24,40,.14),0 1px 3px rgba(16,24,40,.08);
+  --ease:cubic-bezier(.22,.8,.2,1);--t1:.15s;--t2:.25s;--t3:.5s;
 }
 @media(prefers-color-scheme:dark){:root{
   --bg:#0c0f14;--surface:#141922;--fg:#e6eaf0;--mut:#8b95a5;--line:#252c38;--soft:#1b212c;
   --ok:#34d399;--fail:#f87171;--crash:#fb7185;--sus:#fbbf24;--skip:#64748b;--na:#475569;--acc:#60a5fa;
   --shadow:none;
+  --pop:0 8px 24px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04);
 }}
 *{box-sizing:border-box}
 body{margin:0;-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
@@ -27,13 +30,13 @@ h1{font-size:24px;font-weight:700;margin:0;letter-spacing:-.02em}
 .it[hidden]{display:none}
 .it b{color:var(--fg);font-weight:600}
 .it svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.gh{display:inline-flex;align-items:center;justify-content:center;width:36px;color:var(--fg);transition:background .15s}
+.gh{display:inline-flex;align-items:center;justify-content:center;width:36px;color:var(--fg);transition:background var(--t1) var(--ease)}
 .gh:hover{background:var(--soft)}
 .gh:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .gh svg{width:16px;height:16px;fill:currentColor}
 .lang{display:inline-flex;align-items:center;gap:2px;padding:3px 3px 3px 10px;color:var(--mut)}
 .lang>svg{width:14px;height:14px;flex:none;margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.lang button{height:24px;padding:0 10px;border:0;border-radius:999px;background:transparent;color:var(--mut);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.lang button{height:24px;padding:0 10px;border:0;border-radius:999px;background:transparent;color:var(--mut);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--t1) var(--ease),color var(--t1) var(--ease),transform var(--t1) var(--ease)}
 .lang button:hover:not([aria-pressed=true]){color:var(--fg);background:var(--soft)}
 .lang button[aria-pressed=true]{background:var(--fg);color:var(--bg);cursor:default}
 .lang button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
@@ -52,10 +55,11 @@ h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;lett
 .meta b{color:var(--fg);font-weight:600}
 .big{font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .big small{font-size:14px;color:var(--mut);font-weight:500;margin-left:6px}
-.bar{display:flex;gap:2px;height:10px;border-radius:999px;overflow:hidden;background:var(--soft);margin:16px 0 12px}
-.bar i{display:block;min-width:3px}
+.bar{display:flex;gap:2px;height:10px;border-radius:999px;background:var(--soft);margin:16px 0 12px}
+.bar i{display:block;min-width:3px;transition:transform var(--t1) var(--ease),opacity var(--t1) var(--ease),filter var(--t1) var(--ease)}
+.bar i:first-child{border-radius:999px 0 0 999px}.bar i:last-child{border-radius:0 999px 999px 0}.bar i:only-child{border-radius:999px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mut)}
-.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend span{display:inline-flex;align-items:center;gap:6px;transition:opacity var(--t1) var(--ease)}
 .legend em{font-style:normal;color:var(--fg);font-weight:600}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
 .OK{--c:var(--ok)}.FAIL{--c:var(--fail)}.CRASHED{--c:var(--crash)}.SUSPECT{--c:var(--sus)}.SKIP{--c:var(--skip)}.NA{--c:var(--na)}
@@ -65,6 +69,7 @@ th{font-weight:500;color:var(--mut);text-align:left;font-size:12.5px;padding:10p
 td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
 tbody tr.run{cursor:pointer}
+tbody tr.run td{transition:background var(--t1) var(--ease),box-shadow var(--t1) var(--ease)}
 tbody tr.run:hover td{background:var(--soft)}
 tbody tr.sel td{background:color-mix(in srgb,var(--acc) 8%,transparent)}
 tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
@@ -72,7 +77,7 @@ tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
 .hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
 .pager .pn{display:flex;align-items:center;gap:4px}
-.pager button{min-width:30px;height:30px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fg);font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer}
+.pager button{min-width:30px;height:30px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fg);font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer;transition:background var(--t1) var(--ease),border-color var(--t1) var(--ease),transform var(--t1) var(--ease)}
 .pager button:hover:not(:disabled):not([aria-current]){background:var(--soft);border-color:var(--line)}
 .pager button[aria-current]{background:var(--fg);color:var(--bg);border-color:var(--fg);cursor:default}
 .pager button:disabled{color:var(--na);cursor:default}
@@ -87,17 +92,17 @@ tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
 .bad{color:var(--fail);font-weight:600}
 .empty{padding:36px;text-align:center;color:var(--mut)}
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
-.tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background .15s,border-color .15s}
+.tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background var(--t1) var(--ease),border-color var(--t1) var(--ease),color var(--t1) var(--ease),transform var(--t1) var(--ease)}
 .tab:hover:not([aria-pressed=true]){background:var(--soft)}
 .tab:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .tab[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .tab span{color:var(--mut);margin-left:4px}.tab[aria-pressed=true] span{color:inherit;opacity:.7}
 details{border-top:1px solid var(--line)}
 details:first-of-type{border-top:0}
-summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 20px;transition:background .15s}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 20px;transition:background var(--t1) var(--ease)}
 summary:hover{background:var(--soft)}
 summary::-webkit-details-marker{display:none}
-summary::before{content:"›";color:var(--mut);transition:transform .12s;display:inline-block;width:10px}
+summary::before{content:"›";color:var(--mut);transition:transform var(--t2) var(--ease);display:inline-block;width:10px}
 details[open]>summary::before{transform:rotate(90deg)}
 summary .name{font-weight:600}
 summary .cnt{margin-left:auto;display:flex;gap:10px;color:var(--mut);font-size:12.5px}
@@ -116,11 +121,40 @@ summary .cnt b{color:var(--c);font-weight:600}
 footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:12px;text-align:center}
 footer a,footer a:link,footer a:visited,footer a:hover,footer a:active{color:inherit;text-decoration:none}
 footer a:hover{text-decoration:underline}
+
+/* ===== 动效：只动 transform / opacity；入场只在首屏播放一次 ===== */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:none}}
+.enter{animation:rise var(--t3) var(--ease) both;animation-delay:calc(var(--i,0)*70ms)}
+.enter .bar i{transform-origin:left;animation:grow .7s var(--ease) backwards;animation-delay:calc(.25s + var(--n,0)*70ms)}
+.swap>*{animation:rise var(--t2) var(--ease) both;animation-delay:calc(var(--i,0)*60ms)}
+tbody tr.run{animation:fade var(--t2) var(--ease) both;animation-delay:calc(var(--i,0)*28ms)}
+details[open]>.rows{animation:fade var(--t2) var(--ease)}
+.row{animation:fade var(--t2) var(--ease) both;animation-delay:calc(var(--i,0)*12ms)}
+.tab:active,.lang button:active:not([aria-pressed=true]),.pager button:active:not(:disabled){transform:scale(.96)}
+@supports(interpolate-size:allow-keywords){
+  :root{interpolate-size:allow-keywords}
+  details::details-content{height:0;overflow:clip;transition:height var(--t2) var(--ease),content-visibility var(--t2) allow-discrete}
+  details[open]::details-content{height:auto}
+}
+/* 进度条悬停：高亮当前段、淡化其余；浮层由 JS 定位 */
+.bar.dim i:not(.hl){opacity:.35}
+.bar i.hl{transform:scaleY(1.7);filter:saturate(1.15)}
+.legend.dim span:not(.hl){opacity:.4}
+#tip{position:fixed;left:0;top:0;z-index:10;pointer-events:none;display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);box-shadow:var(--pop);font-size:12.5px;line-height:1.3;white-space:nowrap;opacity:0;transform:translate(var(--x,0),calc(var(--y,0) + 4px));transition:opacity var(--t1) var(--ease),transform var(--t2) var(--ease)}
+#tip.on{opacity:1;transform:translate(var(--x,0),var(--y,0))}
+#tip .dot{width:8px;height:8px}
+#tip b{font-weight:600;font-variant-numeric:tabular-nums}
+#tip span{color:var(--mut);font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
 </style>
 </head>
 <body>
 <main>
-<header>
+<header class="enter">
   <div><h1>CS2SDKTest</h1><div class="sub" data-i="sub"></div></div>
   <div class="hd">
     <div class="lang" role="group" data-al="langGroup"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><button type="button" data-l="en" lang="en">EN</button><button type="button" data-l="zh" lang="zh-CN">中文</button></div>
@@ -130,11 +164,11 @@ footer a:hover{text-decoration:underline}
 
 <div id="latest"></div>
 
-<h2 data-i="hist"></h2>
-<div class="card" id="history"></div>
+<h2 data-i="hist" class="enter" style="--i:2"></h2>
+<div class="card enter" id="history" style="--i:3"></div>
 
 <div id="detail"></div>
-<footer>© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
+<footer class="enter" style="--i:4">© <a href="https://github.com/zqunagi" target="_blank" rel="noopener">zqunagi</a></footer>
 </main>
 
 <script>
@@ -192,8 +226,8 @@ const num=n=>n==null?'-':n.toLocaleString();
 function bar(s){
   const tot=s.total||1;
   const seg=[['OK',s.ok,t('OK')],['SUSPECT',s.suspect,t('SUSPECT')],['FAIL',s.failed,t('FAIL')],['CRASHED',s.crashed,t('CRASHED')],['SKIP',s.skipped,t('SKIP')],['NA',s.unavailable,t('N/A')]];
-  return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n])=>`<i class="${k}" style="width:${v/tot*100}%" title="${n} ${v}"></i>`).join('')}</div>
-  <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
+  return `<div class="bar">${seg.filter(x=>x[1]).map(([k,v,n],j)=>`<i class="${k}" style="width:${v/tot*100}%;--n:${j}" data-k="${k}" data-n="${esc(n)}" data-v="${num(v)}" data-p="${(v/tot*100).toFixed(1)}"></i>`).join('')}</div>
+  <div class="legend">${seg.map(([k,v,n])=>`<span class="${k}" data-k="${k}"><i class="dot"></i>${n} <em>${num(v)}</em></span>`).join('')}</div>`;
 }
 
 // 展示用：去掉 SchemaDiff 结果名前面的 “SchemaDiff::”（只影响显示，配对仍用原始 call）
@@ -220,7 +254,7 @@ async function result(id){
 function hero(r,res){
   const s=res&&res.summary;
   const bad=s?s.failed+s.crashed:0;
-  return `<div class="card pad"><div class="hero">
+  return `<div class="card pad enter" style="--i:1"><div class="hero">
     <div>
       <span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span>
       <div class="meta" style="margin-top:12px">
@@ -232,11 +266,37 @@ function hero(r,res){
       </div>
       ${r.suspect?`<div class="meta">${t('lastCall')}<code>${esc(r.suspect)}</code></div>`:''}
     </div>
-    <div>${s?`<div class="big">${num(s.ok)}<small>/ ${num(s.total)} ${t('passedOf')}${bad?` · <span class="bad">${t('nFailed',bad)}</span>`:''}</small></div>${bar(s)}`
+    <div>${s?`<div class="big"><span class="cu" data-to="${s.ok}">${num(s.ok)}</span><small>/ ${num(s.total)} ${t('passedOf')}${bad?` · <span class="bad">${t('nFailed',bad)}</span>`:''}</small></div>${bar(s)}`
             :`<div class="sub">${t('noFull')}</div>`}</div>
   </div></div>`;
 }
 
+// 数字滚动：仅首屏一次；减少动效偏好下直接显示终值
+function countUp(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  document.querySelectorAll('.cu').forEach(e=>{
+    const to=+e.dataset.to,t0=performance.now(),d=700;
+    const step=now=>{const p=Math.min(1,(now-t0)/d),k=1-Math.pow(1-p,3);e.textContent=num(Math.round(to*k));if(p<1)requestAnimationFrame(step)};
+    e.textContent=num(0);requestAnimationFrame(step);
+  });
+}
+// 进度条悬停：高亮对应段 + 自定义浮层（图例悬停同样联动）
+const tip=document.body.appendChild(Object.assign(document.createElement('div'),{id:'tip',role:'tooltip'}));
+function barHover(k){
+  document.querySelectorAll('.bar,.legend').forEach(g=>g.classList.toggle('dim',!!k));
+  document.querySelectorAll('.bar i,.legend span').forEach(e=>e.classList.toggle('hl',!!k&&e.dataset.k===k));
+  const seg=k&&document.querySelector(`.bar i[data-k="${k}"]`);
+  if(!seg){tip.classList.remove('on');return}
+  tip.innerHTML=`<i class="dot ${k}"></i><span>${seg.dataset.n}</span><b>${seg.dataset.v}</b><span>${seg.dataset.p}%</span>`;
+  const r=seg.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
+  const x=Math.min(Math.max(r.left+r.width/2-w/2,8),innerWidth-w-8);
+  tip.style.setProperty('--x',x+'px');tip.style.setProperty('--y',(r.top-h-14)+'px');
+  tip.classList.add('on');
+}
+if(matchMedia('(hover:hover)').matches){
+  document.addEventListener('mouseover',e=>{const el=e.target.closest('.bar i,.legend span');barHover(el&&el.dataset.k||null)});
+  document.addEventListener('scroll',()=>barHover(null),{passive:true});
+}
 let loadErr=null,latestRes=null;
 const paintErr=()=>{$('#latest').innerHTML=`<div class="card empty">${t('loadFail')}${esc(loadErr)}</div>`};
 const paintEmpty=()=>{$('#latest').innerHTML=`<div class="card empty">${t('noRuns')}</div>`;$('#history').innerHTML=''};
@@ -256,9 +316,9 @@ function setLang(l){
   applyStatic();
   if(loadErr)return paintErr();
   if(!runs.length)return paintEmpty();
-  $('#latest').innerHTML=hero(runs[0],latestRes);
-  renderHistory();
-  if(curId)show(curId,true);
+  $('#latest').innerHTML=hero(runs[0],latestRes).replace(/ enter" style="--i:1"/,'"');
+  renderHistory(true);
+  if(curId)show(curId,true,true);
 }
 document.querySelectorAll('.lang button').forEach(b=>b.onclick=()=>setLang(b.dataset.l));
 applyStatic();
@@ -271,6 +331,7 @@ async function init(){
   if(!runs.length){paintEmpty();return}
   latestRes=await result(runs[0].id);
   $('#latest').innerHTML=hero(runs[0],latestRes);
+  countUp();
   const hid=location.hash.length>1?decodeURIComponent(location.hash.slice(1)):'';
   const hi=runs.findIndex(r=>r.id===hid);
   if(hi>=0)pg=Math.floor(hi/PAGE_SIZE);
@@ -298,7 +359,7 @@ function pager(total,pages){
     `<button data-p="${pg+1}"${pg===pages-1?' disabled':''} aria-label="${esc(t('next'))}">›</button></div></nav>`;
 }
 
-function renderHistory(){
+function renderHistory(still){
   const reasons=[...new Set(runs.map(r=>r.reason))];
   const tabs=[['ALL',t('all'),runs.length],...reasons.map(k=>[k,REASON[k]||k,runs.filter(r=>r.reason===k).length])];
   const all=runs.filter(inTrig), pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE));
@@ -306,7 +367,7 @@ function renderHistory(){
   const list=all.slice(pg*PAGE_SIZE,(pg+1)*PAGE_SIZE);
   $('#history').innerHTML=(reasons.length>1?`<div class="tabs hfilter">${tabs.map(t=>`<button class="tab" data-t="${esc(t[0])}" aria-pressed="${t[0]===trig}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>`:'')+
     `<div class="hscroll"><table><thead><tr><th>${t('thTime')} (${esc(zone(runs[0].finished)||'PT')})</th><th>${t('thStatus')}</th><th>${t('thTrigger')}</th><th>${t('plugin')}</th><th>${t('cs2ver')}</th><th>s2sdk</th><th class="num">${t('thFailed')}</th><th class="num">${t('thCrashed')}</th></tr></thead><tbody>`+
-    list.map(r=>`<tr class="run" data-id="${esc(r.id)}"><td>${esc(whenZ(r.finished,zone(runs[0].finished)))}</td>
+    list.map((r,i)=>`<tr class="run" data-id="${esc(r.id)}"${still?' style="animation:none"':` style="--i:${i}"`}><td>${esc(whenZ(r.finished,zone(runs[0].finished)))}</td>
     <td><span class="chip ${esc(r.status)}">${esc(STATUS[r.status]||r.status)}</span></td>
     <td>${esc(REASON[r.reason]||r.reason)}</td><td>${esc(r.release)}</td><td class="mono">${esc(ver(r))}</td><td class="mono">${esc(r.s2sdk||'-')}</td>
     <td class="num ${r.failed?'bad':''}">${esc(r.failed??'-')}</td><td class="num ${r.crashed?'bad':''}">${esc(r.crashed??'-')}</td></tr>`).join('')+'</tbody></table></div>'+pager(all.length,pages);
@@ -316,7 +377,7 @@ function renderHistory(){
   if(curId)document.querySelectorAll('tr.run').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===curId));
 }
 
-async function show(id,quiet){
+async function show(id,quiet,still){
   const idx=runs.findIndex(r=>r.id===id);
   if(idx<0)return;
   curId=id;
@@ -350,16 +411,17 @@ async function show(id,quiet){
     list.forEach(x=>{if(!bySuite.has(x.suite))bySuite.set(x.suite,[]);bySuite.get(x.suite).push(x)});
     const tabs=[['problems',t('attention'),problems],['ALL',t('all'),res.results.length],...OUT.filter(o=>counts[o]).map(o=>[o,t(o),counts[o]])];
     const open=filter==='problems'||filter==='FAIL'||filter==='CRASHED'||filter==='SUSPECT';
+    d.classList.toggle('swap',!still);
     d.innerHTML=`<h2>${t('detail')} · ${esc(run.release)} · CS2 ${esc(ver(run))}${run.s2sdk?` · s2sdk ${esc(run.s2sdk)}`:''}</h2>
-      ${prev?`<div class="card" style="margin-bottom:14px">${changed.length
+      ${prev?`<div class="card" style="margin-bottom:14px;--i:1">${changed.length
         ?`<div class="note" style="padding-bottom:6px">${t('changedVs',esc(prevRun.release),esc(ver(prevRun)),changed.length)}</div><div class="diff">${changed.slice(0,60).map(([k,x])=>{const b=before.get(k);return `<div class="row"><code>${esc(callName(x.call))}</code><span>${esc(label[b]||b)} <span class="arrow">→</span> <b class="${key(x.outcome)}" style="color:var(--c)">${esc(label[x.outcome]||x.outcome)}</b></span></div>`}).join('')}${changed.length>60?`<div class="note">${t('more',changed.length-60)}</div>`:''}</div>`
         :`<div class="note">${t('noChange',esc(prevRun.release),esc(ver(prevRun)))}</div>`}</div>`:''}
-      <div class="tabs">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
-      <div class="card">${bySuite.size?[...bySuite].map(([name,items])=>{
+      <div class="tabs" style="--i:2">${tabs.map(t=>`<button class="tab" data-f="${esc(t[0])}" aria-pressed="${t[0]===filter}">${esc(t[1])}<span>${t[2]}</span></button>`).join('')}</div>
+      <div class="card" style="--i:3">${bySuite.size?[...bySuite].map(([name,items])=>{
         const c={};items.forEach(x=>c[x.outcome]=(c[x.outcome]||0)+1);
         return `<details${open?' open':''}><summary><span class="name">${esc(name)}</span>
           <span class="cnt">${OUT.filter(o=>c[o]).map(o=>`<span class="${key(o)}"><b>${c[o]}</b> ${esc(t(o))}</span>`).join('')}</span></summary>
-          <div class="rows">${items.map(x=>`<div class="row ${key(x.outcome)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(callName(x.call))}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
+          <div class="rows">${items.map((x,i)=>`<div class="row ${key(x.outcome)}" style="--i:${Math.min(i,12)}"><span class="tag">${esc(x.outcome)}</span><code>${esc(callName(x.call))}</code><span class="d">${gdCell(x,gd)}</span></div>`).join('')}</div></details>`}).join('')
         :`<div class="empty">${t('none')}</div>`}</div>`;
     d.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
   };
