@@ -16,6 +16,7 @@
 
 #include "core/Log.h"
 #include "testkit/StructInspector.h"
+#include "testkit/UtlVectorGuard.h"
 
 namespace cs2st
 {
@@ -313,6 +314,7 @@ void ResourceSystemSuite::ExerciseEnumeration(TestContext& context)
 
 	CS2ST_CALL(context, "IResourceSystem::GetAllResources", {
 		CUtlVector<ResourceHandle_t> all;
+		UtlVectorGuard<decltype(all)> all_guard(all);
 		resource_system_->GetAllResources(all, RESOURCE_SYSTEM_INCLUDE_ALL_RESOURCES);
 		all_count = all.Count();
 		context.Detail("-> %d resource(s) with every flag", all_count);
@@ -353,6 +355,7 @@ void ResourceSystemSuite::ExerciseEnumeration(TestContext& context)
 
 	CS2ST_CALL(context, "IResourceSystem::GetAllResources (named and anonymous, no pending)", {
 		CUtlVector<ResourceHandle_t> settled;
+		UtlVectorGuard<decltype(settled)> settled_guard(settled);
 		resource_system_->GetAllResources(settled, RESOURCE_SYSTEM_INCLUDE_NAMED_AND_ANONYMOUS_RESOURCES);
 		context.Detail("-> %d resource(s)", settled.Count());
 		if (all_count >= 0 && settled.Count() > all_count)
@@ -370,7 +373,9 @@ void ResourceSystemSuite::ExerciseEnumeration(TestContext& context)
 		CS2ST_CALL(context, label, {
 			const ResourceType_t type = MakeType(extension);
 			CUtlVector<ResourceHandle_t> by_type;
+			UtlVectorGuard<decltype(by_type)> by_type_guard(by_type);
 			CUtlVector<ResourceHandle_t> named_by_type;
+			UtlVectorGuard<decltype(named_by_type)> named_by_type_guard(named_by_type);
 			resource_system_->GetAllResourcesByType(type, by_type, RESOURCE_SYSTEM_INCLUDE_ALL_RESOURCES);
 			resource_system_->GetAllNamedResourcesByType(type, named_by_type, RESOURCE_SYSTEM_INCLUDE_ALL_RESOURCES);
 			context.Detail("-> %d of the type, %d named", by_type.Count(), named_by_type.Count());
@@ -397,6 +402,7 @@ void ResourceSystemSuite::ExerciseEnumeration(TestContext& context)
 	CS2ST_CALL(context, "IResourceSystem::GetJustInTimeManifestCount / GetJustInTimeManifestResources", {
 		const int manifests = resource_system_->GetJustInTimeManifestCount();
 		CUtlVector<ResourceHandle_t> jit;
+		UtlVectorGuard<decltype(jit)> jit_guard(jit);
 		resource_system_->GetJustInTimeManifestResources(jit);
 		context.Detail("-> %d manifest(s), %d resource(s)", manifests, jit.Count());
 		if (manifests < 0 || jit.Count() < 0)
@@ -803,6 +809,7 @@ void ResourceSystemSuite::ExerciseManifestRoundTrip(TestContext& context)
 
 	CS2ST_CALL(context, "IGameResourceService::GetManifestResourceNames", {
 		CUtlVector<CUtlString> names;
+		UtlVectorGuard<decltype(names)> names_guard(names);
 		game_service_->GetManifestResourceNames(manifest, names);
 		context.Detail("-> %d name(s)", names.Count());
 		if (names.Count() != 0)
