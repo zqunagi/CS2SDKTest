@@ -338,7 +338,7 @@ th.r .th2{text-align:right}
   main{padding:16px 14px 56px}
   .ib.gh-l{display:none}
 }
-@media(max-width:560px){.pill{display:none}.nav-links a{padding:0 8px}.nav-tools{padding-left:6px;margin-left:2px}}
+@media(max-width:560px){.pill{display:none}.brand>span{display:none}.nav-in{gap:4px;padding:0 10px}.nav-links{gap:0;min-width:0}.nav-links a{padding:0 8px;font-size:13px;white-space:nowrap}.nav-links a[aria-current=page]::after{left:6px;right:6px}.nav-tools{padding-left:4px;margin-left:0;gap:2px}.ib{width:28px}.lang button{padding:0 6px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.chart .ln{stroke-dashoffset:0}}
 </style>
 </head>
@@ -387,6 +387,7 @@ en:{
   release:'New release',gameupdate:'Game update',manual:'Manual',
   OK:'Passed',FAIL:'Failed',CRASHED:'Crashed',SUSPECT:'Suspect',SKIP:'Skipped','N/A':'Not tested',
   tipNA:'The interface was not available on this build, so it was not tested',
+  aiCopy:'Copy summary',aiTip:'Copy the test result summary of this run as Markdown',
   overview:'Run overview',updated:'Updated',refresh:'Refresh',refreshFail:'Refresh failed',
   viewingOld:'Viewing an earlier run.',backLatest:'Back to latest',
   cs2build:'CS2 Build',sdkcommit:'S2SDK Commit',testver:'Test Version',platform:'Platform',lasttested:'Last Tested',testrun:'Test Run',trigger:'Trigger',build:'build',
@@ -424,6 +425,7 @@ zh:{
   release:'新版本',gameupdate:'游戏更新',manual:'手动',
   OK:'通过',FAIL:'失败',CRASHED:'崩溃',SUSPECT:'可疑',SKIP:'跳过','N/A':'未测试',
   tipNA:'该接口在此构建上不可用，因此未测试',
+  aiCopy:'复制摘要',aiTip:'以 Markdown 格式复制本次运行的测试结果摘要',
   overview:'运行概览',updated:'更新于',refresh:'刷新',refreshFail:'刷新失败',
   viewingOld:'正在查看较早的一次运行。',backLatest:'回到最新',
   cs2build:'CS2 版本',sdkcommit:'S2SDK 提交',testver:'测试版本',platform:'平台',lasttested:'测试时间',testrun:'运行编号',trigger:'触发方式',build:'构建',
@@ -673,13 +675,46 @@ async function renderOverview(seq,runId,still){
   if(res.results.some(x=>x.suite==='gamedata'))loadGd(run.id).then(gd=>{if(ctx&&ctx.run===run&&gd){ctx.gd=gd;renderTable()}});
 }
 
-function pagebar(run){
+function pagebar(run,ai){
   const cur=run!==runs[0];
   return `<div class="pagebar"><h1>${esc(t('overview'))}</h1>
     <div class="upd"><span id="updtxt">${updatedAt?esc(t('updated'))+' '+updatedAt.toLocaleTimeString([], {hour12:false}):''}</span>
+    ${ai?`<button class="btn" type="button" id="aibtn" title="${esc(t('aiTip'))}">${I.copy}${esc(t('aiCopy'))}</button>`:''}
     <button class="btn" type="button" id="refresh">${I.refresh}${esc(t('refresh'))}</button></div></div>
     ${cur?`<div class="banner note">${I.info}<span class="grow">${esc(t('viewingOld'))} <small><code>${esc(run.id)}</code></small></span><a class="btn sm" href="#overview">${esc(t('backLatest'))}</a></div>`:''}`}
-function bindPagebar(){const b=$('#refresh');if(b)b.onclick=refresh}
+function bindPagebar(){
+  const b=$('#refresh');if(b)b.onclick=refresh;
+  const a=$('#aibtn');if(a)a.onclick=()=>copyText(aiReport(),a)}
+
+// 给 AI 分析用的失败摘要（Markdown，英文，数据均来自已发布的、脱敏后的结果）
+function aiReport(){
+  const {run,model:m,prevRun}=ctx,s=m.c,bad=m.items.filter(x=>BAD.has(x.o)),sdk=parseSdk(run.s2sdk);
+  const nm=x=>callName(x.call).replace(/\s+/g,' ');
+  const line=x=>`- [${x.o}] \`${x.suite}\` · \`${nm(x)}\`${x.detail&&x.detail!=='-'?` — ${x.detail.replace(/\s+/g,' ')}`:''}${m.hasPrev?` (${x.prev===undefined?'new in this run':'previous: '+x.prev})`:''}`;
+  const cap=(arr,n)=>arr.slice(0,n).map(line).concat(arr.length>n?[`- … and ${arr.length-n} more`]:[]);
+  const out=['# CS2SDKTest summary','',
+    'Results of an automated S2SDK interface test run (a Metamod plugin calling s2sdk interfaces on a CS2 Linux dedicated server).','',
+    '## Run',
+    `- Test version: ${run.release}`,
+    `- CS2: ${run.game_version||'?'} (build ${run.game_buildid||'?'})`,
+    `- s2sdk: ${sdk?sdk.h+(sdk.d?` (${sdk.d})`:''):'unknown'}`,
+    `- Platform: ${m.res.platform||'?'}`,
+    `- Finished (UTC): ${run.finished||'?'}`,
+    `- Trigger: ${run.reason||'?'}`,`- Run ID: ${run.id}`,'',
+    '## Summary',
+    `- Total ${m.items.length}: passed ${s.OK}, failed ${s.FAIL}, crashed ${s.CRASHED}, suspect ${s.SUSPECT}, skipped ${s.SKIP}, not tested ${s['N/A']}`,
+    `- Pass rate (passed ÷ executed): ${m.rate==null?'n/a':m.rate+'%'}`];
+  if(m.hasPrev){
+    const reg=m.items.filter(x=>x.chg==='regressed'),lost=m.items.filter(x=>x.chg==='changed'&&x.prev==='OK');
+    out.push(`- Compared with ${prevRun.release} (CS2 ${prevRun.game_version||prevRun.game_buildid}): ${reg.length} regression(s), ${m.cc.fixed||0} newly passing, ${m.cc.added||0} new tests, ${lost.length} previously passing now skipped/not tested`);
+    out.push('','## Regressions (passed before, failing now)',...(reg.length?cap(reg,100):['None.']));
+    if(lost.length)out.push('','## Previously passing, now skipped or not tested',...cap(lost,30));
+  }
+  const byO=o=>bad.filter(x=>x.o===o);
+  out.push('',`## Failing tests (${bad.length})`);
+  if(!bad.length)out.push('None.');
+  for(const o of ['CRASHED','FAIL','SUSPECT'])if(byO(o).length)out.push('',`### ${o} (${byO(o).length})`,...cap(byO(o),100));
+  return out.join('\n')+'\n'}
 
 function parseSdk(s){const m=/^([0-9a-f]{7,40})\b\s*(?:\((.*)\))?/i.exec(s||'');return m?{h:m[1],d:m[2]||''}:null}
 function metaBar(run,res){
@@ -731,7 +766,7 @@ function overviewHTML(c,prevRun,prevFail,first){
   const seg=[['OK',s.OK],['SUSPECT',s.SUSPECT],['FAIL',s.FAIL],['CRASHED',s.CRASHED],['SKIP',s.SKIP],['N/A',s['N/A']]];
   const dist=`<div class="dist" style="--i:3"><div class="bar" role="img" aria-label="${esc(seg.map(([o,v])=>t(o)+' '+v).join(', '))}">${seg.filter(x=>x[1]).map(([o,v],j)=>`<i class="${key(o)}" style="width:${v/tot*100}%;--n:${j}" data-k="${key(o)}" data-n="${esc(t(o))}" data-v="${num(v)}" data-p="${(v/tot*100).toFixed(1)}"></i>`).join('')}</div>
     <div class="legend">${seg.filter(x=>x[1]||x[0]==='OK').map(([o,v])=>`<span class="${key(o)}" data-k="${key(o)}"><i class="dot"></i>${esc(t(o))} <em>${num(v)}</em></span>`).join('')}</div></div>`;
-  return pagebar(run)+metaBar(run,m.res)+`<div style="--i:2">${ban}</div>${cards}${dist}
+  return pagebar(run,true)+metaBar(run,m.res)+`<div style="--i:2">${ban}</div>${cards}${dist}
     <section class="sec" style="--i:4"><h2>${esc(t('results'))}<small id="tcount"></small></h2>
     <div class="card"><div class="tools" id="tools">${toolsHTML(m)}</div><div class="tw"><table id="tbl"></table></div></div></section>`;
 }
