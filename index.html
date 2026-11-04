@@ -666,7 +666,7 @@ async function renderOverview(seq,runId,still){
   const mk=run.id+'|'+(prevRes?prevRun.id:'');
   let model=modelCache.get(mk);if(!model){model=buildModel(run,res,prevRes);modelCache.set(mk,model)}
   const same=ctx&&ctx.run===run;
-  ctx={run,model,prevRun:prevRes?prevRun:null,gd:(ctx&&ctx.run===run)?ctx.gd:null};
+  ctx={run,model,commit:res.commit,prevRun:prevRes?prevRun:null,gd:(ctx&&ctx.run===run)?ctx.gd:null};
   if(!same){T.q='';T.status='all';T.chg='all';T.gU=new Map();T.iU=new Map()}
   const first=!still;
   app.innerHTML=`<div class="enter${still?' still':''}">${overviewHTML(ctx,prevRun,prevFail,first)}</div>`;
@@ -929,6 +929,11 @@ function openDrawer(x){
   const {run,prevRun,model:m}=ctx,d=$('#drawer');
   lastFocus=document.activeElement;
   const file=SUITE_FILE[x.suite];
+  // 有提交哈希就按哈希链接（tag 被移动也不会错位）；旧运行没有则退回 release tag。
+  // line 是插件在构建时记录的调用所在行；旧运行没有就只链到文件。
+  const srcRef=/^[0-9a-f]{40}$/.test(ctx.commit||'')?ctx.commit:encodeURIComponent(run.release);
+  const srcLine=Number.isInteger(x.raw.line)&&x.raw.line>0?x.raw.line:0;
+  const srcHref=file?`${REPO}/blob/${srcRef}/src/suites/${file}.cpp${srcLine?'#L'+srcLine:''}`:'';
   const prevTxt=!prevRun?t('noPrevRun'):x.prev===undefined?t('notInPrev'):`${stBadge(x.prev)} <span class="was">${esc(prevRun.release)}</span>`;
   const gd=ctx.gd&&x.suite==='gamedata'&&x.call in ctx.gd?ctx.gd[x.call]:null;
   const isBad=BAD.has(x.o);
@@ -950,7 +955,7 @@ function openDrawer(x){
       ${resBlock}
       ${gd!=null?`<div class="dsec"><h4>${esc(t('gd'))}</h4>${codeBlock(String(gd))}</div>`:''}
       <div class="dsec"><details><summary>${esc(t('raw'))}</summary>${codeBlock(JSON.stringify(x.raw,null,2))}</details></div>
-      ${file?`<div><a class="btn" href="${REPO}/blob/${encodeURIComponent(run.release)}/src/suites/${file}.cpp" target="_blank" rel="noopener">${I.ext}${esc(t('src'))}</a></div>`:''}
+      ${file?`<div><a class="btn" href="${srcHref}" target="_blank" rel="noopener">${I.ext}${esc(t('src'))}${srcLine?esc(' · L'+srcLine):''}</a></div>`:''}
     </div>`;
   d.classList.add('on');d.removeAttribute('aria-hidden');$('#scrim').classList.add('on');document.body.classList.add('lock');
   $('#dclose').onclick=()=>closeDrawer();
