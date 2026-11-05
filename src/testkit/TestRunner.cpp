@@ -22,6 +22,7 @@
 #include "suites/Tier0ContainerSuite.h"
 #include "suites/KeyValues3Suite.h"
 #include "suites/LocalizeSuite.h"
+#include "suites/GameTypesSuite.h"
 #include "suites/FileSystemSuite.h"
 #include "suites/Source2EngineSuite.h"
 #include "suites/Source2GameClientsSuite.h"
@@ -57,6 +58,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new LoopModeSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ResourceSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new LocalizeSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GameTypesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new KeyValues3Suite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
