@@ -302,7 +302,7 @@ table.runs tr.cur td:first-child{box-shadow:inset 2px 0 0 var(--acc)}
 .pager button:hover:not(:disabled):not([aria-current]){background:var(--raise);border-color:var(--line)}
 .pager button[aria-current]{background:var(--raise);border-color:var(--line);cursor:default}
 .pager button:disabled{color:var(--dim);cursor:default}
-@media(max-width:900px){table.runs{min-width:860px}}
+@media(max-width:900px){table.runs{min-width:940px}}
 
 /* 骨架屏 */
 .skel{background:linear-gradient(90deg,var(--raise) 25%,color-mix(in srgb,var(--raise) 60%,var(--line)) 50%,var(--raise) 75%);background-size:200% 100%;animation:shim 1.3s linear infinite;border-radius:6px}
@@ -1050,7 +1050,7 @@ function paintHistoryBody(){
     const p=pct(s.ok,execd(s)),b=s.failed+s.crashed+s.suspect;
     return `<td class="num" style="color:var(--fg)">${p==null?'—':p+'%'}</td><td class="num"><span class="${s.ok?'':''}" style="color:var(--ok)">${num(s.ok)}</span> / <span style="color:${b?'var(--fail)':'var(--dim)'}">${num(b)}</span></td>`};
   el.innerHTML=(reasons.length>1?`<div class="hfil"><div class="seg" role="group">${[['ALL',t('rAll'),runs.length],...reasons.map(k=>[k,t(k)||k,runs.filter(r=>r.reason===k).length])].map(([k,l,n])=>`<button type="button" data-rf="${esc(k)}" aria-pressed="${H.reason===k}">${esc(l)} <span>${n}</span></button>`).join('')}</div></div>`:'')+
-    `<div class="tw"><table class="runs"><colgroup><col style="width:280px"><col style="width:130px"><col style="width:150px"><col style="width:100px"><col style="width:90px"><col style="width:120px"><col style="width:100px"><col></colgroup><thead><tr>${[[t('rId')],[t('rTime')+' ('+z+')'],[t('rBuild')],[t('rSdk')],[t('rVer')],[t('rRate'),'r'],[t('rPF'),'r'],[t('rOverall')]].map(([l,c])=>`<th class="${c||''}"><span class="th2">${esc(l)}</span></th>`).join('')}</tr></thead><tbody>`+
+    `<div class="tw"><table class="runs"><colgroup><col style="width:260px"><col style="width:180px"><col style="width:150px"><col style="width:100px"><col style="width:90px"><col style="width:120px"><col style="width:100px"><col></colgroup><thead><tr>${[[t('rId')],[t('rTime')+' ('+z+')'],[t('rBuild')],[t('rSdk')],[t('rVer')],[t('rRate'),'r'],[t('rPF'),'r'],[t('rOverall')]].map(([l,c])=>`<th class="${c||''}"><span class="th2">${esc(l)}</span></th>`).join('')}</tr></thead><tbody>`+
     list.map(r=>{const o=overall(r),sdk=parseSdk(r.s2sdk);return `<tr data-id="${esc(r.id)}" ${runs[0]===r?'class="cur"':''} tabindex="0">
       <td><div class="rid"><code title="${esc(r.id)}">${esc(r.id)}</code></div></td>
       <td class="mono" style="color:var(--mut)">${esc(whenS(r.finished))}</td>
