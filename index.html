@@ -502,8 +502,8 @@ function pct(ok,ran){ // 未执行不算通过；有失败时绝不四舍五入�
 const callName=c=>String(c).replace(/^SchemaDiff::/,'');
 const hl=(s,q)=>{if(!q)return esc(s);const i=s.toLowerCase().indexOf(q);return i<0?esc(s):esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length))};
 
-// 时间：沿用 Valve 总部（Bellevue）时区，随夏令时在 PST / PDT 间切换
-const vfmt=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'});
+// 时间：按访问者浏览器所在时区显示（不指定 timeZone），时区缩写随之变化
+const vfmt=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'shortOffset'});
 const vparts=x=>{const d=new Date(x);if(isNaN(d))return null;const o={};vfmt.formatToParts(d).forEach(p=>o[p.type]=p.value);return o};
 const when=x=>{const o=x&&vparts(x);return o?`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}:${o.second}`:'—'};
 const zone=x=>{const o=x&&vparts(x);return o?o.timeZoneName:''};
@@ -1043,7 +1043,7 @@ function paintHistoryBody(){
   const el=$('#runs');if(!el)return;
   const reasons=[...new Set(runs.map(r=>r.reason))],all=filteredRuns(),pages=Math.max(1,Math.ceil(all.length/PAGE));
   H.pg=Math.min(Math.max(H.pg,0),pages-1);
-  const list=all.slice(H.pg*PAGE,(H.pg+1)*PAGE),z=zone(runs[0].finished)||'PT';
+  const list=all.slice(H.pg*PAGE,(H.pg+1)*PAGE),z=zone(runs[0].finished)||'local';
   const cell=r=>{const s=runStats(r);
     if(r.status!=='completed'||r._s===false)return `<td class="num">—</td><td class="num">—</td>`;
     if(!s)return `<td class="num"><span class="skel" style="display:inline-block;width:46px;height:12px;vertical-align:middle"></span></td><td class="num"><span class="skel" style="display:inline-block;width:70px;height:12px;vertical-align:middle"></span></td>`;
