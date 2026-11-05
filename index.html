@@ -1031,7 +1031,7 @@ function paintChart(){
       ${pts.map((p,i)=>{const o=overall(p.r);return `<g><circle class="hit" cx="${X(i)}" cy="${Y(p.rate)}" r="11" data-id="${esc(p.r.id)}" data-rate="${p.rate.toFixed(2)}"/>${dense?'':`<circle class="pt ${key(o.k)}" cx="${X(i)}" cy="${Y(p.rate)}" r="3.6" pointer-events="none"/>`}</g>`}).join('')}
     </svg></div>`;
   const svgEl=$('.chart svg',el);
-  svgEl.onclick=e=>{const h=e.target.closest('.hit');if(h)location.hash=runHash(h.dataset.id)};
+  svgEl.onclick=e=>{const h=e.target.closest('.hit');if(h){hideTip();location.hash=runHash(h.dataset.id)}};
   svgEl.onmouseover=e=>{const h=e.target.closest('.hit');if(!h)return hideTip();
     const r=runs.find(x=>x.id===h.dataset.id),s=runStats(r);
     showTip(`<span>${esc(r.release)}</span><b>${esc(h.dataset.rate)}%</b><span>${esc(whenS(r.finished))} · ${esc(t('ptTip'))}</span>`,h.getBoundingClientRect())};
