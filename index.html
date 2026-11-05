@@ -132,6 +132,7 @@ main{max-width:1360px;margin:0 auto;padding:22px 24px 72px}
 .stat .n small{font-size:14px;font-weight:500;color:var(--mut);margin-left:1px}
 .stat .sub{margin-top:4px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .up{color:var(--ok)}.down{color:var(--fail)}
+.cmplink{cursor:pointer;border-radius:3px}.cmplink:hover{text-decoration:underline;text-underline-offset:2px}.cmplink:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 
 /* 状态分布条 */
 .dist{margin-top:12px}
@@ -392,7 +393,7 @@ en:{
   viewingOld:'Viewing an earlier run.',backLatest:'Back to latest',
   cs2build:'CS2 Build',sdkcommit:'S2SDK Commit',testver:'Test Version',platform:'Platform',lasttested:'Last Tested',testrun:'Test Run',trigger:'Trigger',build:'build',
   total:'Total tests',passed:'Passed',failed:'Failed',skipped:'Skipped',notTested:'Not tested',passRate:'Pass rate',
-  ofExec:(a,b)=>`${a} of ${b} executed`,noExec:'Nothing executed',vsPrev:'vs previous',failSub:(f,c,s)=>[f&&`${f} failed`,c&&`${c} crashed`,s&&`${s} suspect`].filter(Boolean).join(' · ')||'No failures',
+  ofExec:(a,b)=>`${a} of ${b} executed`,noExec:'Nothing executed',vsPrev:'vs previous',cmpGo:'Compare these two runs in Test History',failSub:(f,c,s)=>[f&&`${f} failed`,c&&`${c} crashed`,s&&`${s} suspect`].filter(Boolean).join(' · ')||'No failures',
   regN:n=>`${n} regression${n===1?'':'s'} detected since previous run`,noReg:'No regressions since previous run',
   newFail:n=>`${n} newly added test${n===1?'':'s'} failing`,fixedN:n=>`${n} newly passing`,showReg:'Show regressions',
   prevLb:'Previous',noPrev:'No earlier completed run to compare with.',prevFail:'The previous run could not be loaded, so changes are not shown.',
@@ -430,7 +431,7 @@ zh:{
   viewingOld:'正在查看较早的一次运行。',backLatest:'回到最新',
   cs2build:'CS2 版本',sdkcommit:'S2SDK 提交',testver:'测试版本',platform:'平台',lasttested:'测试时间',testrun:'运行编号',trigger:'触发方式',build:'构建',
   total:'测试总数',passed:'通过',failed:'失败',skipped:'跳过',notTested:'未测试',passRate:'通过率',
-  ofExec:(a,b)=>`已执行 ${b} 项，通过 ${a} 项`,noExec:'没有已执行的测试',vsPrev:'较上次',failSub:(f,c,s)=>[f&&`${f} 项失败`,c&&`${c} 项崩溃`,s&&`${s} 项可疑`].filter(Boolean).join(' · ')||'无失败',
+  ofExec:(a,b)=>`已执行 ${b} 项，通过 ${a} 项`,noExec:'没有已执行的测试',vsPrev:'较上次',cmpGo:'在测试历史中对比这两次运行',failSub:(f,c,s)=>[f&&`${f} 项失败`,c&&`${c} 项崩溃`,s&&`${s} 项可疑`].filter(Boolean).join(' · ')||'无失败',
   regN:n=>`相比上一次运行，发现 ${n} 项回归`,noReg:'相比上一次运行没有回归',
   newFail:n=>`${n} 项新增测试失败`,fixedN:n=>`${n} 项新通过`,showReg:'只看回归',
   prevLb:'上一次',noPrev:'没有更早的已完成运行可对比。',prevFail:'上一次运行的结果加载失败，因此不显示变化。',
@@ -738,7 +739,7 @@ function overviewHTML(c,prevRun,prevFail,first){
   let ban='';
   if(m.hasPrev){
     const reg=m.cc.regressed||0,newFail=m.items.filter(x=>x.chg==='added'&&BAD.has(x.o)).length,fixed=m.cc.fixed||0;
-    const ref=`<small>${esc(t('prevLb'))}: ${esc(pr.release)} · CS2 ${esc(pr.game_version||pr.game_buildid)}</small>`;
+    const ref=`<small><span class="cmplink" role="link" tabindex="0" data-ca="${esc(pr.id)}" data-cb="${esc(run.id)}" title="${esc(t('cmpGo'))}">${esc(t('prevLb'))}: ${esc(pr.release)} · CS2 ${esc(pr.game_version||pr.game_buildid)}</span></small>`;
     const extra=[newFail&&t('newFail',newFail),fixed&&t('fixedN',fixed)].filter(Boolean).join(' · ');
     ban=reg?`<div class="banner reg" role="status">${ICON.FAIL}<span class="grow"><b>${esc(t('regN',reg))}</b>${ref}${extra?`<small>· ${esc(extra)}</small>`:''}</span><button class="btn sm" type="button" id="showreg">${esc(t('showReg'))}</button></div>`
       :`<div class="banner good" role="status">${I.ok}<span class="grow"><b>${esc(t('noReg'))}</b>${ref}${extra?`<small>· ${esc(extra)}</small>`:''}</span></div>`;
@@ -748,7 +749,7 @@ function overviewHTML(c,prevRun,prevFail,first){
   // goodUp：true=增加是好事（绿），null=只显示数字不着色（总数、跳过、未测试的增减本身不代表好坏）
   const dl=(now,was,goodUp)=>{if(!m.pc)return '';const d=now-was;if(!d)return '';
     const cls=goodUp===null?'':(d>0)===goodUp?'up':'down';
-    return `<span class="${cls}">${d>0?'+':''}${num(d)}</span> ${esc(t('vsPrev'))}`};
+    return `<span class="cmplink" role="link" tabindex="0" data-ca="${esc(pr.id)}" data-cb="${esc(run.id)}" title="${esc(t('cmpGo'))}"><span class="${cls}">${d>0?'+':''}${num(d)}</span> ${esc(t('vsPrev'))}</span>`};
   const pm=m.pc?{total:m.pn,ok:m.pc.OK,sk:m.pc.SKIP,na:m.pc['N/A']}:null;
   const card=(f,cls,ic,lb,n,sub)=>`<button type="button" class="stat ${cls}${f?'':' nofilter'}" ${f?`data-f="${f}" aria-pressed="${T.status===f&&f!=='all'}"`:'tabindex="-1"'}>
       <div class="lb">${ic}${esc(lb)}</div><div class="n${n===0?' z':''}">${typeof n==='number'?`<span class="cu" data-to="${n}">${num(n)}</span>`:n}</div><div class="sub">${sub||'&nbsp;'}</div></button>`;
@@ -788,6 +789,7 @@ function bindOverview(){
   let tm;q.oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>{T.q=q.value;$('.search').classList.toggle('has',!!T.q);renderTable()},90)};
   $('#qx').onclick=()=>{q.value='';T.q='';$('.search').classList.remove('has');renderTable();q.focus()};
   $$('#fseg button').forEach(b=>b.onclick=()=>setStatus(b.dataset.f));
+  $$('.cmplink').forEach(a=>{const go=e=>{e.stopPropagation();H.a=a.dataset.ca;H.b=a.dataset.cb;H.cat=null;H.go=true;location.hash='#history'};a.onclick=go;a.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go(e)}}});
   $$('.stat[data-f]').forEach(b=>b.onclick=()=>{setStatus(b.dataset.f==='all'?'all':b.dataset.f);$('#tools').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'})});
   const cf=$('#cfil');if(cf)cf.onchange=()=>{T.chg=cf.value;renderTable()};
   const sr=$('#showreg');if(sr)sr.onclick=()=>{T.chg='regressed';T.status='all';syncTools();renderTable();$('#tools').scrollIntoView({behavior:'smooth',block:'start'})};
@@ -1007,6 +1009,7 @@ function renderHistory(seq,still){
   bindPagebar();
   paintChart();paintHistoryBody();paintCompare();
   ensureStats();
+  if(H.go){H.go=false;const c=$('#cmp');if(c)c.scrollIntoView({block:'start'})}
 }
 
 let chartSig='';
