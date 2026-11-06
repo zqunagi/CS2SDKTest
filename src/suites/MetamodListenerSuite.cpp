@@ -424,14 +424,12 @@ void MetamodListenerSuite::ExerciseFormatting(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "ISmmAPI::ConPrint", {
-		smm_->ConPrint("cs2sdktest: ISmmAPI::ConPrint probe
-");
+		smm_->ConPrint("cs2sdktest: ISmmAPI::ConPrint probe\n");
 		context.Detail("-> void");
 	});
 
 	CS2ST_CALL(context, "ISmmAPI::ConPrintf", {
-		smm_->ConPrintf("cs2sdktest: ISmmAPI::ConPrintf probe %s %d
-", "cs2", 2);
+		smm_->ConPrintf("cs2sdktest: ISmmAPI::ConPrintf probe %s %d\n", "cs2", 2);
 		context.Detail("-> void");
 	});
 }

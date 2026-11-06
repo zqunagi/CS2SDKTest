@@ -29,11 +29,13 @@ public:
 private:
 	void ExerciseSerializer(TestContext& context, const CSerializedEntity* entity);
 	void ExerciseEntityWork(TestContext& context, const CSerializedEntity* entity);
+	void ExerciseLiveEntityWork(TestContext& context);
 	void NoteSkippedCalls(TestContext& context);
 
 	IFlattenedSerializers* serializers_ = nullptr;
 	ISerializedEntities* entities_ = nullptr;
 	INetworkServerService* service_ = nullptr;
+	void* resource_service_ = nullptr;
 };
 
 } // namespace cs2st

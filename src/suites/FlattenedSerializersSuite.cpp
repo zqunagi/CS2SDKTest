@@ -8,9 +8,14 @@
 #include <vector>
 
 #include <engine2/gameshareddefs.h>
+#include <engine2/igameresourceservice.h>
 #include <engine2/inetworkgameserver.h>
 #include <engine2/ivengineserver2.h>
 #include <engine2/networkgameserverbase.h>
+#include <entity2/entityclass.h>
+#include <entity2/entityidentity.h>
+#include <entity2/entityinstance.h>
+#include <gameentitysystem.h>
 #include <interfaces/interfaces.h>
 #include <networksystem/iflattenedserializers.h>
 #include <networksystem/serializedentity.h>
@@ -33,6 +38,8 @@ constexpr int kMaxListed = 6;
 constexpr int kMaxPaths = 1 << 16;
 constexpr NetworkSerializationMode_t kMode = NET_SERIALIZATION_MODE_DEFAULT;
 constexpr int kEntityIndex = 0;
+constexpr int kMaxEntitiesWalked = 512;
+constexpr std::size_t kAddressSweepBytes = 0x400;
 
 typedef CUtlLeanVectorFixedGrowable<uint32> PathVec_t;
 typedef CUtlVector<CUtlString> StringVec_t;
@@ -59,6 +66,16 @@ public:
 private:
 	std::unique_ptr<PathVec_t> vec_;
 };
+
+// CSendProxyDataList has no constructor of its own, so its scalar members are
+// whatever the stack held until they are set.
+void InitSendProxyList(CSendProxyDataList& list)
+{
+	list.m_nSerialNumber = 0;
+	list.m_bNoRecipients = false;
+	list.m_bHasRangeWithoutRecipients = false;
+	list.m_bFullyGathered = false;
+}
 
 const char* Str(const char* text)
 {
@@ -96,6 +113,7 @@ bool FlattenedSerializersSuite::Acquire(TestContext& context)
 		context.QueryInterface("networksystem", SERIALIZEDENTITIES_INTERFACE_VERSION));
 	service_ = static_cast<INetworkServerService*>(
 		context.QueryInterface("engine2", NETWORKSERVERSERVICE_INTERFACE_VERSION));
+	resource_service_ = context.QueryInterface("engine2", GAMERESOURCESERVICESERVER_INTERFACE_VERSION);
 
 	context.Note("interface at %p (%s @ networksystem)", static_cast<void*>(serializers_),
 		FLATTENEDSERIALIZERS_INTERFACE_VERSION);
@@ -118,6 +136,7 @@ void FlattenedSerializersSuite::ExerciseCalls(TestContext& context)
 		ExerciseEntityWork(context, baseline);
 	}
 
+	ExerciseLiveEntityWork(context);
 	NoteSkippedCalls(context);
 }
 
@@ -455,6 +474,286 @@ void FlattenedSerializersSuite::ExerciseEntityWork(TestContext& context, const C
 }
 
 // -----------------------------------------------------------------------------
+//  Calls that need a live entity
+//
+//  CEntityClass carries the serializer of its class, so a live entity gives the
+//  pair (serializer, object) every pObject call below asks for. All of them only
+//  read the entity; what they produce goes into buffers this suite owns.
+// -----------------------------------------------------------------------------
+
+void FlattenedSerializersSuite::ExerciseLiveEntityWork(TestContext& context)
+{
+	context.Note("[IFlattenedSerializers] work on a live entity (read-only on it)");
+
+	if (entities_ == nullptr || resource_service_ == nullptr)
+	{
+		context.UnavailableCall("IFlattenedSerializers (live entity calls)",
+			"ISerializedEntities or IGameResourceService is not available");
+		return;
+	}
+
+	// The SDK's GameEntitySystem() reads this global; GameEntitySystemSuite sets
+	// it too, but suites can run on their own.
+	g_pGameResourceServiceServer = static_cast<IGameResourceService*>(resource_service_);
+
+	void* object = nullptr;
+	FlattenedSerializerDesc_t desc = {};
+	int entity_index = -1;
+	char designer[64] = {};
+	CS2ST_CALL(context, "CEntityClass::m_flattenedSerializer (first live entity with a serializer)", {
+		CGameEntitySystem* system = GameEntitySystem();
+		if (system == nullptr)
+		{
+			context.SkipCall("CEntityClass::m_flattenedSerializer (first live entity with a serializer)",
+				"the entity system pointer could not be located");
+			return;
+		}
+		CEntityIdentity* current = system->m_EntityList.m_pFirstActiveEntity;
+		int walked = 0;
+		while (current != nullptr && walked < kMaxEntitiesWalked && object == nullptr)
+		{
+			++walked;
+			CEntityClass* entity_class = current->m_pClass;
+			if (current->m_pInstance != nullptr && entity_class != nullptr
+				&& entity_class->m_flattenedSerializer.m_name.IsValid()
+				&& entity_class->m_flattenedSerializer.m_name.String()[0] != '\0')
+			{
+				object = current->m_pInstance;
+				desc = entity_class->m_flattenedSerializer;
+				entity_index = current->GetEntityIndex().Get();
+				std::snprintf(designer, sizeof(designer), "%s", Str(current->GetClassname()));
+			}
+			current = current->m_pNext;
+		}
+		context.Detail("-> %p, index %d, designer \"%s\", serializer \"%s\" (%d entit%s walked)", object,
+			entity_index, designer, Str(desc.m_name.String()), walked, walked == 1 ? "y" : "ies");
+	});
+
+	if (object == nullptr)
+	{
+		context.UnavailableCall("IFlattenedSerializers (live entity calls)",
+			"no live entity with a serializer was found");
+		return;
+	}
+
+	// ---- send proxy results ---------------------------------------------------
+
+	CSendProxyDataList proxy_list;
+	InitSendProxyList(proxy_list);
+	UtlVectorGuard<CUtlVector<SendProxyData_t>> proxy_guard(proxy_list.m_Data);
+
+	CS2ST_CALL(context, "IFlattenedSerializers::GatherSendProxyResults", {
+		const bool ok = serializers_->GatherSendProxyResults(desc, object, entity_index, kMode, &proxy_list);
+		context.Detail("-> %s, %d range(s), fully gathered %s", ok ? "true" : "false", proxy_list.m_Data.Count(),
+			proxy_list.m_bFullyGathered ? "true" : "false");
+		if (proxy_list.m_Data.Count() < 0 || proxy_list.m_Data.Count() > kMaxPaths)
+		{
+			context.Suspect("range count %d is not plausible", proxy_list.m_Data.Count());
+		}
+		else if (ok && !proxy_list.m_bFullyGathered)
+		{
+			context.Suspect("gathered the whole entity but m_bFullyGathered is not set");
+		}
+	});
+
+	// ---- serialising the entity through two routes ----------------------------
+
+	CSerializedEntity* encoded = entities_->AllocateSerializedEntity(desc, false, 0);
+	if (encoded == nullptr)
+	{
+		context.UnavailableCall("IFlattenedSerializers::Encode", "could not allocate the output entity");
+	}
+	else
+	{
+		CS2ST_CALL(context, "IFlattenedSerializers::Encode", {
+			const bool ok = serializers_->Encode(desc, encoded, object, entity_index, kMode, &proxy_list);
+			context.Detail("-> %s, %d field(s)", ok ? "true" : "false", encoded->m_nFieldCount);
+			if (ok && !serializers_->ValidateSerializedEntity(desc, encoded, entity_index, kMode))
+			{
+				context.Suspect("the entity Encode produced does not validate against its own serializer");
+			}
+		});
+	}
+
+	// The paths of every field Encode produced. BuildDeltaProperties, CullFields
+	// and the address sweep below all work from them.
+	PathVecHolder encoded_paths_holder;
+	PathVec_t& encoded_paths = encoded_paths_holder.Get();
+	if (encoded != nullptr)
+	{
+		entities_->GetSerializedEntityFieldCount(encoded, &encoded_paths);
+	}
+
+	// ---- delta against the entity just encoded -------------------------------
+
+	if (encoded == nullptr)
+	{
+		context.UnavailableCall("IFlattenedSerializers::BuildDeltaProperties",
+			"no encoded entity to build the delta against");
+	}
+	else
+	{
+		CS2ST_CALL(context, "IFlattenedSerializers::BuildDeltaProperties (against the Encode result)", {
+			// The entity has not changed since Encode read it, so the delta against
+			// that result should be empty. pFrom and pFieldPaths are both real
+			// objects: the engine dereferences them, and null crashes it.
+			PathVecHolder built_paths_holder;
+			PathVec_t& built_paths = built_paths_holder.Get();
+			bool nothing_changed = false;
+			bool size_changed = false;
+			CSerializedEntity* built = serializers_->BuildDeltaProperties(desc, object, entity_index, kMode, encoded,
+				&encoded_paths, &built_paths, &proxy_list, &nothing_changed, &size_changed);
+			context.Detail("-> %p, %d changed path(s), nothing changed %s, size changed %s",
+				static_cast<void*>(built), built_paths.Count(), nothing_changed ? "true" : "false",
+				size_changed ? "true" : "false");
+			if (built != nullptr)
+			{
+				entities_->ReleaseSerializedEntity(built);
+			}
+			if (built_paths.Count() > 0)
+			{
+				context.Suspect("the entity has not changed since Encode, but the delta lists %d path(s)",
+					built_paths.Count());
+			}
+		});
+	}
+
+	// ---- culling the encoded fields for a recipient ---------------------------
+
+	if (encoded == nullptr)
+	{
+		context.UnavailableCall("IFlattenedSerializers::CullFields", "no encoded entity to take field paths from");
+	}
+	else
+	{
+		CS2ST_CALL(context, "IFlattenedSerializers::CullFields (slot 0)", {
+			PathVecHolder culled_holder;
+			PathVec_t& culled = culled_holder.Get();
+			const int result = serializers_->CullFields(desc, CPlayerSlot(0), entity_index, &encoded_paths,
+				&proxy_list, &culled);
+			context.Detail("-> %d, %d of %d path(s) kept", result, culled.Count(), encoded_paths.Count());
+			if (culled.Count() > encoded_paths.Count())
+			{
+				context.Suspect("culling produced more paths (%d) than it was given (%d)", culled.Count(),
+					encoded_paths.Count());
+			}
+		});
+	}
+
+	// ---- one path ---------------------------------------------------------------
+
+	if (proxy_list.m_Data.Count() <= 0 || proxy_list.m_Data.Count() > kMaxPaths)
+	{
+		context.UnavailableCall("IFlattenedSerializers::GatherSendProxyResultsForPath",
+			"the gather above produced no range to take a path from");
+	}
+	else
+	{
+		CS2ST_CALL(context, "IFlattenedSerializers::GatherSendProxyResultsForPath (first range start)", {
+			const CFieldPath start = proxy_list.m_Data[0].m_StartPath;
+			CUtlVector<CFieldPath> out_paths;
+			UtlVectorGuard<CUtlVector<CFieldPath>> out_guard(out_paths);
+			const bool ok = serializers_->GatherSendProxyResultsForPath(desc, object, nullptr, entity_index, kMode,
+				start, &out_paths);
+			context.Detail("-> %s, %d path(s) for a start path of depth %d", ok ? "true" : "false",
+				out_paths.Count(), start.GetDepth());
+		});
+	}
+
+	// ---- address to path ---------------------------------------------------------
+
+	const CFieldPathPacker* sweep_packer = entities_->GetFieldPathPacker();
+	if (encoded == nullptr || sweep_packer == nullptr)
+	{
+		context.UnavailableCall("IFlattenedSerializers::FindFieldPathByAddress",
+			"no encoded entity or no field path packer to check the answers against");
+	}
+	else
+	{
+		CS2ST_CALL(context, "IFlattenedSerializers::FindFieldPathByAddress (sweep of the object)", {
+			// The SDK says the result is the path of the networked field at pField,
+			// and a networked field is exactly what Encode packs. So aim at every
+			// 8-byte step of the start of the object: each address that resolves must
+			// resolve to a path Encode produced. Which addresses hit is the engine's
+			// answer and is only reported.
+			int hits = 0;
+			int in_encoded = 0;
+			int ignored_count = 0;
+			int listed = 0;
+			for (std::size_t offset = 0; offset < kAddressSweepBytes; offset += 8)
+			{
+				bool ignored = false;
+				const CFieldPath path = serializers_->FindFieldPathByAddress(desc, object,
+					static_cast<const char*>(object) + offset, &ignored);
+				if (ignored)
+				{
+					++ignored_count;
+				}
+				if (path.GetDepth() <= 0)
+				{
+					continue;
+				}
+				++hits;
+				bool found = false;
+				for (int i = 0; i < encoded_paths.Count() && !found; ++i)
+				{
+					found = sweep_packer->UnpackPath(encoded_paths[i]) == path;
+				}
+				if (found)
+				{
+					++in_encoded;
+				}
+				else if (listed < kMaxListed)
+				{
+					++listed;
+					context.Detail("   +0x%zx resolves to depth %d, not among the %d Encode path(s)", offset,
+						path.GetDepth(), encoded_paths.Count());
+				}
+			}
+			context.Detail("-> %d of %zu address(es) resolved, %d among the Encode paths, %d ignored offset(s)", hits,
+				kAddressSweepBytes / 8, in_encoded, ignored_count);
+			if (hits > in_encoded)
+			{
+				context.Suspect("%d resolved path(s) are not fields Encode packs; they may be ignored offsets "
+				                "the engine still names",
+					hits - in_encoded);
+			}
+		});
+	}
+
+	// ---- polymorphic metadata ------------------------------------------------------
+
+	CS2ST_CALL(context, "IFlattenedSerializers::GatherPolymorphicMetadata", {
+		PolymorphicMetadata_t metadata;
+		metadata.m_nCount = 0;
+		metadata.m_pEntries = nullptr;
+		metadata.m_bNeedsSort = false;
+		serializers_->GatherPolymorphicMetadata(desc, object, entity_index, kMode, &metadata);
+		context.Detail("-> %d entr%s, needs sort %s", metadata.m_nCount, metadata.m_nCount == 1 ? "y" : "ies",
+			metadata.m_bNeedsSort ? "true" : "false");
+		if (metadata.m_nCount < 0 || metadata.m_nCount > kMaxPaths)
+		{
+			context.Suspect("entry count %d is not plausible", metadata.m_nCount);
+			return;
+		}
+		if (metadata.m_nCount > 0)
+		{
+			StringVec_t lines;
+			UtlVectorGuard<StringVec_t> guard(lines);
+			serializers_->GetPolymorphicMetadataDescription(desc, &metadata, nullptr, &lines);
+			context.Detail("   %d line(s) described", lines.Count());
+		}
+		// The entry array belongs to the engine and the SDK names no release call,
+		// so it is left alone.
+	});
+
+	if (encoded != nullptr)
+	{
+		entities_->ReleaseSerializedEntity(encoded);
+	}
+}
+
+// -----------------------------------------------------------------------------
 //  What is not called, and why
 // -----------------------------------------------------------------------------
 
@@ -462,18 +761,10 @@ void FlattenedSerializersSuite::NoteSkippedCalls(TestContext& context)
 {
 	context.SkipCall("IFlattenedSerializers::FindOrCreateCreateFlattenedSerializers",
 		"builds and registers serializers from class introspection; changes engine state");
-	context.SkipCall("IFlattenedSerializers::Encode",
-		"needs the CEntityInstance being packed as pObject and a send proxy list");
-	context.SkipCall("IFlattenedSerializers::GatherSendProxyResults",
-		"needs the CEntityInstance being packed as pObject");
 	context.SkipCall("IFlattenedSerializers::Decode",
 		"writes the decoded fields into a live entity object");
-	context.SkipCall("IFlattenedSerializers::BuildDeltaProperties",
-		"needs the CEntityInstance being packed as pObject");
 	context.SkipCall("IFlattenedSerializers::BuildMergedSerializedEntity",
 		"the SDK does not say whether pBase and the packed delta are consumed");
-	context.SkipCall("IFlattenedSerializers::CullFields",
-		"needs a CSendProxyDataList from GatherSendProxyResults, which needs a live entity");
 	context.SkipCall("IFlattenedSerializers::SpewSerializer",
 		"needs an IFlattenedSerializerSpewFunc; the SDK only forward-declares it");
 	context.SkipCall("IFlattenedSerializers::MakeSerializersMatchByMeta",
@@ -484,10 +775,6 @@ void FlattenedSerializersSuite::NoteSkippedCalls(TestContext& context)
 		"assigns path ids into a live object's change accessor");
 	context.SkipCall("IFlattenedSerializers::ResolveChanges",
 		"needs a VarChangeList_t from a live edict's change info");
-	context.SkipCall("IFlattenedSerializers::FindFieldPathByAddress",
-		"needs a live CEntityInstance and a field address inside it");
-	context.SkipCall("IFlattenedSerializers::GatherSendProxyResultsForPath",
-		"needs a live CEntityInstance");
 	context.SkipCall("IFlattenedSerializers::DumpSerializedEntityToConsole",
 		"prints the whole entity to the console; DumpSerializedEntityToLines covers the same path");
 	context.SkipCall("IFlattenedSerializers::AddSpewListener",
@@ -510,8 +797,6 @@ void FlattenedSerializersSuite::NoteSkippedCalls(TestContext& context)
 		"pairs with BeginSerializerMetaMatching, which is skipped");
 	context.SkipCall("IFlattenedSerializers::SetFieldEnabled",
 		"turns a field off for every later delta and send proxy gather");
-	context.SkipCall("IFlattenedSerializers::GatherPolymorphicMetadata",
-		"needs the CEntityInstance being packed as pObject");
 }
 
 } // namespace cs2st
