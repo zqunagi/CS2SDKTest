@@ -1,5 +1,6 @@
 #include "suites/MetamodListenerSuite.h"
 
+#include <cstdarg>
 #include <cstddef>
 #include <cstring>
 
@@ -43,6 +44,16 @@ constexpr const char* kOnUnlinkConVar       = "IMetamodListener::OnUnlinkConVar"
 
 /** Number of ids declared above; InstallHooks reports it. */
 constexpr int kListenerCallbackCount = 15;
+
+/** Forwards a printf-style call to ISmmAPI::FormatArgs, which takes a va_list. */
+std::size_t FormatThroughArgs(ISmmAPI* smm, char* buffer, std::size_t size, const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	const std::size_t written = smm->FormatArgs(buffer, size, format, args);
+	va_end(args);
+	return written;
+}
 
 } // namespace
 
@@ -393,6 +404,36 @@ void MetamodListenerSuite::ExerciseFormatting(TestContext& context)
 			context.Fail("the path was truncated or empty");
 		}
 	});
+
+	CS2ST_CALL(context, "ISmmAPI::FormatArgs", {
+		// The va_list twin of Format: the same arguments must give the same text.
+		char buffer[64] = {};
+		const std::size_t written = FormatThroughArgs(smm_, buffer, sizeof(buffer), "%s-%d", "cs2", 2);
+		context.Detail("-> %zu, \"%.63s\"", written, buffer);
+		if (written != 5 || std::strcmp(buffer, "cs2-2") != 0)
+		{
+			context.Fail("expected 5 and \"cs2-2\"");
+		}
+	});
+
+	// Output calls. They return void, so there is nothing to check beyond not
+	// crashing; each writes one clearly labelled line so it is easy to spot.
+	CS2ST_CALL(context, "ISmmAPI::LogMsg", {
+		smm_->LogMsg(g_PLAPI, "cs2sdktest: ISmmAPI::LogMsg probe %d", 1);
+		context.Detail("-> void");
+	});
+
+	CS2ST_CALL(context, "ISmmAPI::ConPrint", {
+		smm_->ConPrint("cs2sdktest: ISmmAPI::ConPrint probe
+");
+		context.Detail("-> void");
+	});
+
+	CS2ST_CALL(context, "ISmmAPI::ConPrintf", {
+		smm_->ConPrintf("cs2sdktest: ISmmAPI::ConPrintf probe %s %d
+", "cs2", 2);
+		context.Detail("-> void");
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -450,12 +491,7 @@ void MetamodListenerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("ISmmAPI::UnregisterConCommand",
 		"would remove a live command; exercised for real in Plugin::Unload");
 	context.SkipCall("ISmmAPI::UnregisterConVar", "would remove a live cvar");
-	context.SkipCall("ISmmAPI::LogMsg", "would write to Metamod's log");
-	context.SkipCall("ISmmAPI::ConPrint", "console noise, no information gained");
-	context.SkipCall("ISmmAPI::ConPrintf", "console noise, no information gained");
 	context.SkipCall("ISmmAPI::ClientConPrintf", "would print into a player's console");
-	context.SkipCall("ISmmAPI::FormatArgs",
-		"the va_list form of Format, which is covered above");
 }
 
 // -----------------------------------------------------------------------------
