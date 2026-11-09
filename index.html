@@ -305,6 +305,36 @@ table.runs tr.cur td:first-child{box-shadow:inset 2px 0 0 var(--acc)}
 .pager button:disabled{color:var(--dim);cursor:default}
 @media(max-width:900px){table.runs{min-width:940px}}
 
+/* ===== 手机适配（仅 ≤700px；桌面/平板不受影响） ===== */
+@media(max-width:700px){
+  /* 运行历史表：横向滚动改为卡片式行 */
+  table.runs,table.runs tbody{display:block;min-width:0;width:100%}
+  table.runs colgroup,table.runs thead{display:none}
+  table.runs tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line2)}
+  table.runs tr:last-child{border-bottom:0}
+  table.runs tr:hover td{background:transparent}
+  table.runs tr:hover{background:var(--raise)}
+  table.runs td{display:block;height:auto;padding:0;border:0;min-width:0}
+  table.runs td:first-child{grid-column:1/span 2}
+  table.runs td:last-child{grid-column:3;grid-row:1;justify-self:end}
+  table.runs td[data-l]::before{content:attr(data-l);display:block;font:11px/1.3 var(--sans);color:var(--dim);margin-bottom:1px}
+  table.runs td.num{text-align:left}
+  table.runs tr.cur td:first-child{box-shadow:none}
+  table.runs tr.cur{box-shadow:inset 2px 0 0 var(--acc)}
+  /* 趋势图：保持可读尺寸，可左右滑动 */
+  .chart{overflow-x:auto}
+  .chart svg{min-width:640px}
+  /* 对比：选择器占满一行；统计块改两列 */
+  .cmp-pick .sel{max-width:none;flex:1 1 100%}
+  .cmp-pick label{flex:1 1 100%}
+  .cmp-pick .btn{order:0}
+  .ctiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .crow{grid-template-columns:minmax(0,1fr) auto;height:auto;min-height:36px;padding:6px 12px}
+  .pagebar h1{font-size:17px}
+  .sec>h2,.hist-grid h2{flex-wrap:wrap}
+  .pager{justify-content:center}
+}
+
 /* 骨架屏 */
 .skel{background:linear-gradient(90deg,var(--raise) 25%,color-mix(in srgb,var(--raise) 60%,var(--line)) 50%,var(--raise) 75%);background-size:200% 100%;animation:shim 1.3s linear infinite;border-radius:6px}
 .sk-line{height:12px;margin:8px 0}
@@ -1048,18 +1078,18 @@ function paintHistoryBody(){
   H.pg=Math.min(Math.max(H.pg,0),pages-1);
   const list=all.slice(H.pg*PAGE,(H.pg+1)*PAGE),z=zone(runs[0].finished)||'local';
   const cell=r=>{const s=runStats(r);
-    if(r.status!=='completed'||r._s===false)return `<td class="num">—</td><td class="num">—</td>`;
-    if(!s)return `<td class="num"><span class="skel" style="display:inline-block;width:46px;height:12px;vertical-align:middle"></span></td><td class="num"><span class="skel" style="display:inline-block;width:70px;height:12px;vertical-align:middle"></span></td>`;
+    if(r.status!=='completed'||r._s===false)return `<td class="num" data-l="${esc(t('rRate'))}">—</td><td class="num" data-l="${esc(t('rPF'))}">—</td>`;
+    if(!s)return `<td class="num" data-l="${esc(t('rRate'))}"><span class="skel" style="display:inline-block;width:46px;height:12px;vertical-align:middle"></span></td><td class="num" data-l="${esc(t('rPF'))}"><span class="skel" style="display:inline-block;width:70px;height:12px;vertical-align:middle"></span></td>`;
     const p=pct(s.ok,execd(s)),b=s.failed+s.crashed+s.suspect;
-    return `<td class="num" style="color:var(--fg)">${p==null?'—':p+'%'}</td><td class="num"><span class="${s.ok?'':''}" style="color:var(--ok)">${num(s.ok)}</span> / <span style="color:${b?'var(--fail)':'var(--dim)'}">${num(b)}</span></td>`};
+    return `<td class="num" data-l="${esc(t('rRate'))}" style="color:var(--fg)">${p==null?'—':p+'%'}</td><td class="num" data-l="${esc(t('rPF'))}"><span class="${s.ok?'':''}" style="color:var(--ok)">${num(s.ok)}</span> / <span style="color:${b?'var(--fail)':'var(--dim)'}">${num(b)}</span></td>`};
   el.innerHTML=(reasons.length>1?`<div class="hfil"><div class="seg" role="group">${[['ALL',t('rAll'),runs.length],...reasons.map(k=>[k,t(k)||k,runs.filter(r=>r.reason===k).length])].map(([k,l,n])=>`<button type="button" data-rf="${esc(k)}" aria-pressed="${H.reason===k}">${esc(l)} <span>${n}</span></button>`).join('')}</div></div>`:'')+
     `<div class="tw"><table class="runs"><colgroup><col style="width:260px"><col style="width:180px"><col style="width:150px"><col style="width:100px"><col style="width:90px"><col style="width:120px"><col style="width:100px"><col></colgroup><thead><tr>${[[t('rId')],[t('rTime')+' ('+z+')'],[t('rBuild')],[t('rSdk')],[t('rVer')],[t('rRate'),'r'],[t('rPF'),'r'],[t('rOverall')]].map(([l,c])=>`<th class="${c||''}"><span class="th2">${esc(l)}</span></th>`).join('')}</tr></thead><tbody>`+
     list.map(r=>{const o=overall(r),sdk=parseSdk(r.s2sdk);return `<tr data-id="${esc(r.id)}" ${runs[0]===r?'class="cur"':''} tabindex="0">
       <td><div class="rid"><code title="${esc(r.id)}">${esc(r.id)}</code></div></td>
-      <td class="mono" style="color:var(--mut)">${esc(whenS(r.finished))}</td>
-      <td><code>${esc(r.game_version||r.game_buildid)}</code></td>
-      <td><code>${esc(sdk?sdk.h.slice(0,8):'—')}</code></td>
-      <td><code>${esc(r.release)}</code></td>${cell(r)}
+      <td class="mono" data-l="${esc(t('rTime'))}" style="color:var(--mut)">${esc(whenS(r.finished))}</td>
+      <td data-l="${esc(t('rBuild'))}"><code>${esc(r.game_version||r.game_buildid)}</code></td>
+      <td data-l="${esc(t('rSdk'))}"><code>${esc(sdk?sdk.h.slice(0,8):'—')}</code></td>
+      <td data-l="${esc(t('rVer'))}"><code>${esc(r.release)}</code></td>${cell(r)}
       <td><span class="chip ${key(o.k)}">${ICON[o.k]}${esc(o.txt)}</span></td></tr>`}).join('')+'</tbody></table></div>'+pager(all.length,pages);
   $$('[data-rf]',el).forEach(b=>b.onclick=()=>{H.reason=b.dataset.rf;H.pg=0;paintHistoryBody()});
   $$('.pager button[data-p]',el).forEach(b=>b.onclick=()=>{H.pg=+b.dataset.p;paintHistoryBody()});
