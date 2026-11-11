@@ -1,6 +1,23 @@
 {
     "runs":  [
                  {
+                     "id":  "20261111-232229_v0.5.4_b26598758",
+                     "status":  "completed",
+                     "reason":  "gameupdate",
+                     "release":  "v0.5.4",
+                     "game_buildid":  "26598758",
+                     "game_version":  "1.41.9.7",
+                     "s2sdk":  "a9863cf0 (2026-11-06)",
+                     "finished":  "2026-11-11T23:22:29Z",
+                     "failed":  3,
+                     "crashed":  11,
+                     "total":  2725,
+                     "ok":  1977,
+                     "suspect":  0,
+                     "skipped":  677,
+                     "unavailable":  57
+                 },
+                 {
                      "id":  "20261106-021239_v0.5.4_b26445667",
                      "status":  "completed",
                      "reason":  "release",
