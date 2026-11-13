@@ -43,26 +43,26 @@ public:
 	// not fail to compile - it would silently misread every argument after it,
 	// which is the exact drift this suite exists to catch.
 
-	KHook::Return<void> Pre_RegisterGameEvent(IGameEventSystem*, INetworkMessageInternal* pEvent);
-	KHook::Return<void> Post_RegisterGameEvent(IGameEventSystem*, INetworkMessageInternal* pEvent);
+	KHook::Return<void> Pre_RegisterGameEvent(IGameEventSystem*, NetMessageInfo_t* pEvent);
+	KHook::Return<void> Post_RegisterGameEvent(IGameEventSystem*, NetMessageInfo_t* pEvent);
 
 	KHook::Return<void> Pre_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
 	                                                         const CUtlAbstractDelegate& delegate,
-	                                                         INetworkMessageInternal* pEvent, int nPriority);
+	                                                         NetMessageInfo_t* pEvent, int nPriority);
 	KHook::Return<void> Post_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
 	                                                          const CUtlAbstractDelegate& delegate,
-	                                                          INetworkMessageInternal* pEvent, int nPriority);
+	                                                          NetMessageInfo_t* pEvent, int nPriority);
 
 	KHook::Return<void> Pre_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
 	                                                           const CUtlAbstractDelegate& delegate,
-	                                                           INetworkMessageInternal* pEvent);
+	                                                           NetMessageInfo_t* pEvent);
 	KHook::Return<void> Post_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
 	                                                            const CUtlAbstractDelegate& delegate,
-	                                                            INetworkMessageInternal* pEvent);
+	                                                            NetMessageInfo_t* pEvent);
 
-	KHook::Return<void> Pre_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot, INetworkMessageInternal* pEvent,
+	KHook::Return<void> Pre_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot, NetMessageInfo_t* pEvent,
 	                                                const CNetMessage* pData, unsigned long nSize);
-	KHook::Return<void> Post_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot, INetworkMessageInternal* pEvent,
+	KHook::Return<void> Post_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot, NetMessageInfo_t* pEvent,
 	                                                 const CNetMessage* pData, unsigned long nSize);
 
 	// The two PostEventAbstract overloads are distinct vtable slots, so they get
@@ -71,27 +71,27 @@ public:
 	// disambiguates it with a static_cast per overload, and from there each
 	// member tracks its own slot.
 	KHook::Return<void> Pre_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly, int nClientCount,
-	                                          const uint64* clients, INetworkMessageInternal* pEvent,
+	                                          const uint64* clients, NetMessageInfo_t* pEvent,
 	                                          const CNetMessage* pData, unsigned long nSize,
 	                                          NetChannelBufType_t bufType);
 	KHook::Return<void> Post_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly, int nClientCount,
-	                                           const uint64* clients, INetworkMessageInternal* pEvent,
+	                                           const uint64* clients, NetMessageInfo_t* pEvent,
 	                                           const CNetMessage* pData, unsigned long nSize,
 	                                           NetChannelBufType_t bufType);
 
 	KHook::Return<void> Pre_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
 	                                                  IRecipientFilter* pFilter,
-	                                                  INetworkMessageInternal* pEvent,
+	                                                  NetMessageInfo_t* pEvent,
 	                                                  const CNetMessage* pData, unsigned long nSize);
 	KHook::Return<void> Post_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
 	                                                   IRecipientFilter* pFilter,
-	                                                   INetworkMessageInternal* pEvent,
+	                                                   NetMessageInfo_t* pEvent,
 	                                                   const CNetMessage* pData, unsigned long nSize);
 
-	KHook::Return<void> Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl, INetworkMessageInternal* pEvent,
+	KHook::Return<void> Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl, NetMessageInfo_t* pEvent,
 	                                                const CNetMessage* pData, unsigned long nSize,
 	                                                NetChannelBufType_t bufType, bool bAllClients);
-	KHook::Return<void> Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl, INetworkMessageInternal* pEvent,
+	KHook::Return<void> Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl, NetMessageInfo_t* pEvent,
 	                                                 const CNetMessage* pData, unsigned long nSize,
 	                                                 NetChannelBufType_t bufType, bool bAllClients);
 
@@ -106,15 +106,15 @@ public:
 	// One KHook::Virtual per vtable slot, bound in the constructor below;
 	// template parameters are the interface, the return type, then the SDK's
 	// argument list. PostEventAbstract appears twice because it *is* two slots.
-	KHook::Virtual<IGameEventSystem, void, INetworkMessageInternal*> hook_RegisterGameEvent_;
-	KHook::Virtual<IGameEventSystem, void, CUtlSlot*, const CUtlAbstractDelegate&, INetworkMessageInternal*, int> hook_RegisterGameEventHandlerAbstract_;
-	KHook::Virtual<IGameEventSystem, void, CUtlSlot*, const CUtlAbstractDelegate&, INetworkMessageInternal*> hook_UnregisterGameEventHandlerAbstract_;
-	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, INetworkMessageInternal*, const CNetMessage*, unsigned long> hook_PostEventAbstract_Local_;
-	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, bool, int, const uint64*, INetworkMessageInternal*,
+	KHook::Virtual<IGameEventSystem, void, NetMessageInfo_t*> hook_RegisterGameEvent_;
+	KHook::Virtual<IGameEventSystem, void, CUtlSlot*, const CUtlAbstractDelegate&, NetMessageInfo_t*, int> hook_RegisterGameEventHandlerAbstract_;
+	KHook::Virtual<IGameEventSystem, void, CUtlSlot*, const CUtlAbstractDelegate&, NetMessageInfo_t*> hook_UnregisterGameEventHandlerAbstract_;
+	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, NetMessageInfo_t*, const CNetMessage*, unsigned long> hook_PostEventAbstract_Local_;
+	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, bool, int, const uint64*, NetMessageInfo_t*,
 	               const CNetMessage*, unsigned long, NetChannelBufType_t> hook_PostEventAbstract_;
-	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, bool, IRecipientFilter*, INetworkMessageInternal*,
+	KHook::Virtual<IGameEventSystem, void, CSplitScreenSlot, bool, IRecipientFilter*, NetMessageInfo_t*,
 	               const CNetMessage*, unsigned long> hook_PostEventAbstractFiltered_;
-	KHook::Virtual<IGameEventSystem, void, const CBaseHandle&, INetworkMessageInternal*, const CNetMessage*, unsigned long,
+	KHook::Virtual<IGameEventSystem, void, const CBaseHandle&, NetMessageInfo_t*, const CNetMessage*, unsigned long,
 	               NetChannelBufType_t, bool> hook_PostEntityEventAbstract_;
 	KHook::Virtual<IGameEventSystem, void> hook_ProcessQueuedEvents_;
 	KHook::Virtual<IGameEventSystem, void> hook_PurgeQueuedEvents_;
@@ -123,7 +123,7 @@ public:
 
 private:
 	/**
-	 * How many distinct INetworkMessageInternal pointers the hooks remember.
+	 * How many distinct NetMessageInfo_t pointers the hooks remember.
 	 *
 	 * Capped and fixed-size on purpose: this is filled from inside the engine's
 	 * frame, where an allocation per event would be a real cost and a container
@@ -132,7 +132,7 @@ private:
 	static constexpr std::size_t kMaxObservedMessages = 24;
 
 	/** Cheap, allocation-free, called from hooks. Duplicates are dropped. */
-	void NoteObservedMessage(INetworkMessageInternal* message);
+	void NoteObservedMessage(NetMessageInfo_t* message);
 
 	void ExerciseAppSystem(TestContext& context);
 	void ExerciseEventSystem(TestContext& context);
@@ -167,9 +167,9 @@ private:
 	 * per-event temporaries, so they outlive the call that produced them. They
 	 * are still re-vetted before use.
 	 */
-	INetworkMessageInternal* legacy_event_message_ = nullptr;
+	NetMessageInfo_t* legacy_event_message_ = nullptr;
 
-	INetworkMessageInternal* observed_messages_[kMaxObservedMessages] = {};
+	NetMessageInfo_t* observed_messages_[kMaxObservedMessages] = {};
 	std::size_t observed_message_count_ = 0;
 	std::size_t observed_message_overflow_ = 0;
 

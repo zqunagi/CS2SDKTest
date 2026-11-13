@@ -26,7 +26,7 @@ header explains its oracles; this page is only the map.
 | GameEntitySystemSuite | CGameEntitySystem / CEntitySystem; 8 layouts; CreateEntityKeyValues called for real, spawn helpers skipped | entity2/, engine2/igameresourceservice.h; `s2sdk/game/shared/gameentitysystem.h` |
 | GameEventSuite | IGameEventSystem, IGameEventManager2 (not reachable, reported as N/A); 9 hooks | engine2/igameeventsystem.h, igameevents.h |
 | NetworkServerSuite | INetworkServerService, INetworkGameServer; 15 cross-checks with other interfaces; 5 hooks | engine2/inetworkserverservice.h, inetworkgameserver.h, networkgameserverbase.h, tier0/netadr.h |
-| NetworkMessagesSuite | INetworkMessages, protobuf round trip | networksystem/inetworkmessages.h, inetworkserializer.h; tier0/logging.h |
+| NetworkMessagesSuite | INetworkMessages, NetMessageInfo_t accessors, protobuf round trip | networksystem/inetworkmessages.h, inetworkserializer.h; tier0/logging.h |
 | FileSystemSuite | IFileSystem, read-only | filesystem/ifilesystem.h |
 | GamedataSuite | `configs/gamedata.toml`: signatures, slots, offsets; 2 hooks | none of its own |
 | MetamodListenerSuite | ISmmAPI / IMetamodListener (Metamod, not s2sdk) | metamod-source `ISmmPlugin.h` |

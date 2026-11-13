@@ -46,7 +46,7 @@ inline bool RegistryNameIs(const char* key, const char* wanted)
 
 /**
  * Finds a registered message by name on builds that key the registry as
- * "Name [id]" (libengine2 renders CProtobufBinding::GetName with "%s [%d]").
+ * "Name [id]" (libengine2 renders the binding's name with "%s [%d]").
  *
  * The bare name is tried first, then the id when the caller knows it, then the
  * partial lookup. Every answer is checked against `name` through
@@ -55,11 +55,11 @@ inline bool RegistryNameIs(const char* key, const char* wanted)
  *
  * @param how  Set to the step that found it, or left untouched when none did.
  */
-inline INetworkMessageInternal* FindRegisteredMessage(INetworkMessages* messages,
-                                                      const char* name, int id,
-                                                      const char** how)
+inline NetMessageInfo_t* FindRegisteredMessage(INetworkMessages* messages,
+                                               const char* name, int id,
+                                               const char** how)
 {
-	INetworkMessageInternal* message = messages->FindNetworkMessage(name);
+	NetMessageInfo_t* message = messages->FindNetworkMessage(name);
 	if (message != nullptr)
 	{
 		*how = "by name";
@@ -69,7 +69,7 @@ inline INetworkMessageInternal* FindRegisteredMessage(INetworkMessages* messages
 	if (id >= 0)
 	{
 		message = messages->FindNetworkMessageById(id);
-		if (message != nullptr && RegistryNameIs(message->GetUnscopedName(), name))
+		if (message != nullptr && RegistryNameIs(message->GetName(), name))
 		{
 			*how = "by id (the registry key carries an id suffix)";
 			return message;
@@ -77,7 +77,7 @@ inline INetworkMessageInternal* FindRegisteredMessage(INetworkMessages* messages
 	}
 
 	message = messages->FindNetworkMessagePartial(name);
-	if (message != nullptr && RegistryNameIs(message->GetUnscopedName(), name))
+	if (message != nullptr && RegistryNameIs(message->GetName(), name))
 	{
 		*how = "through the partial lookup (the registry key carries an id suffix)";
 		return message;

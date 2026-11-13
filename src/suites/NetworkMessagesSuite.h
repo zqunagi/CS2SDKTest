@@ -7,7 +7,7 @@
 // type in its own declaration. The interface pointer is stored as the
 // forward-declared class below; every other SDK type lives in the .cpp.
 class INetworkMessages;
-class INetworkMessageInternal;
+struct NetMessageInfo_t;
 class CNetMessage;
 
 namespace cs2st
@@ -49,8 +49,7 @@ private:
 
 	/** The round trip's one exit-shared free path; see the .cpp for why. */
 	void message_free_section(TestContext& context, CNetMessage* message,
-	                          CNetMessage* typed_target, CNetMessage* from_stream,
-	                          CNetMessage* forwarded_target);
+	                          CNetMessage* typed_target, CNetMessage* from_stream);
 
 	INetworkMessages* messages_ = nullptr;
 
@@ -64,7 +63,7 @@ private:
 	 * the sweep, but each sweep re-resolves rather than caching across runs -
 	 * a pointer held from a previous run says nothing about this one.
 	 */
-	INetworkMessageInternal* tick_message_ = nullptr;
+	NetMessageInfo_t* tick_message_ = nullptr;
 
 	/**
 	 * Whether AsProto() - the engine's own pointer to the protobuf

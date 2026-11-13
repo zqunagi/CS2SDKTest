@@ -75,16 +75,6 @@ constexpr const char* kPartialPrefix = "CNETMsg_Ti";
 /** The value planted in CNETMsg_Tick::tick before serialising. */
 constexpr std::uint32_t kRoundTripTickValue = 0x12345678u;
 
-/** kRoundTripTickValue as protobuf text format renders it: decimal. */
-constexpr const char* kRoundTripTickDecimal = "305419896";
-
-/**
- * Bytes the engine's CNetMessage header takes before the protobuf object.
- * IProtobufBinding::GetSize reports header + protobuf (120 for CNETMsg_Tick,
- * whose protobuf is 72), and ToString reads the protobuf at pData + this.
- */
-constexpr std::size_t kNetMessageHeaderSize = 0x30;
-
 // ---- bitbuf availability -----------------------------------------------------
 //
 // The round trip needs bf_write/bf_read. Their constructors live in
@@ -104,6 +94,22 @@ constexpr std::size_t kNetMessageHeaderSize = 0x30;
 constexpr const char* kBitbufSkipReason =
 	"needs bf_write/bf_read; tier1/bitbuf.cpp is not in this build "
 	"(CS2SDKTEST_TIER1_BITBUF is off)";
+
+/**
+ * Returns an engine-allocated message to the engine through its virtual
+ * destructor. INetworkMessages::DeallocateNetMessageAbstract is gone from the
+ * SDK, so this is the only way to free one. `delete` on a polymorphic pointer
+ * runs the deleting destructor out of the message's own vtable, so the memory
+ * goes back through the allocator the engine's code allocated it with.
+ */
+void FreeNetMessage(TestContext& context, const char* what, CNetMessage* message)
+{
+	CS2ST_CALL(context, what, {
+		void* freed = static_cast<void*>(message);
+		delete message;
+		context.Detail("-> deleted %p", freed);
+	});
+}
 
 } // namespace
 
@@ -186,12 +192,12 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 			// falls back to the id and the partial lookup, and checks the name
 			// of whatever they hand back.
 			const char* how = "";
-			INetworkMessageInternal* message =
+			NetMessageInfo_t* message =
 				FindRegisteredMessage(messages_, probe.name, probe.id, &how);
 			context.Detail("-> %p  (%s)", static_cast<void*>(message), probe.what);
 			if (message != nullptr && std::strcmp(how, "by name") != 0)
 			{
-				context.Detail("   found %s as \"%s\"", how, message->GetUnscopedName());
+				context.Detail("   found %s as \"%s\"", how, message->GetName());
 			}
 
 			if (message == nullptr)
@@ -221,7 +227,7 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 		// The negative half. A registry that only ever says yes is as broken
 		// as one that only ever says no, and this is the half that costs
 		// nothing to check.
-		INetworkMessageInternal* message = messages_->FindNetworkMessage(kNoSuchMessage);
+		NetMessageInfo_t* message = messages_->FindNetworkMessage(kNoSuchMessage);
 		context.Detail("-> %p for \"%s\"", static_cast<void*>(message), kNoSuchMessage);
 		if (message != nullptr)
 		{
@@ -230,7 +236,7 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "INetworkMessages::FindNetworkMessagePartial", {
-		INetworkMessageInternal* message = messages_->FindNetworkMessagePartial(kPartialPrefix);
+		NetMessageInfo_t* message = messages_->FindNetworkMessagePartial(kPartialPrefix);
 		context.Detail("-> %p for \"%s\"", static_cast<void*>(message), kPartialPrefix);
 
 		if (message == nullptr)
@@ -249,7 +255,7 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 		{
 			// "CNETMsg_Ti" prefixes exactly one registered name, whichever way
 			// partial matching is defined, so the answer is checkable.
-			const char* name = message->GetUnscopedName();
+			const char* name = message->GetName();
 			context.Detail("   resolves to \"%s\"", name != nullptr ? name : "(null)");
 			if (!RegistryNameIs(name, "CNETMsg_Tick"))
 			{
@@ -269,36 +275,25 @@ void NetworkMessagesSuite::ResolveMessages(TestContext& context)
 
 void NetworkMessagesSuite::ExerciseRegistryLookups(TestContext& context)
 {
-	context.Note("[registry] the id half: id lookup and the no-create form of the "
-	             "creating method, both checked against the name lookup's answer");
+	context.Note("[registry] the id half: id lookup and the registry's descriptor "
+	             "accessor, both checked against the name lookup's answer");
 
 	if (tick_message_ == nullptr)
 	{
 		context.UnavailableCall("INetworkMessages::FindNetworkMessageById",
 			"no CNETMsg_Tick entry to take the id from");
-		context.UnavailableCall("INetworkMessages::FindOrCreateNetMessage",
-			"no CNETMsg_Tick binding to ask with");
+		context.UnavailableCall("INetworkMessages::GetNetMessageInfo",
+			"no CNETMsg_Tick entry to ask about");
 		return;
 	}
 
-	NetMessageInfo_t* info = nullptr;
-
-	CS2ST_CALL(context, "INetworkMessageInternal::GetNetMessageInfo", {
-		info = tick_message_->GetNetMessageInfo();
-		context.Detail("-> %p", static_cast<void*>(info));
-	});
-
-	if (info == nullptr)
-	{
-		context.UnavailableCall("INetworkMessages::FindNetworkMessageById",
-			"GetNetMessageInfo returned no descriptor, so there is no id to look up");
-		return;
-	}
-
+	// The registry entry is the descriptor itself: NetMessageInfo_t replaced
+	// INetworkMessageInternal, so there is no separate descriptor fetch to make.
+	NetMessageInfo_t* info = tick_message_;
 	const int message_id = static_cast<int>(info->m_MessageId);
 
 	CS2ST_CALL(context, "INetworkMessages::FindNetworkMessageById", {
-		INetworkMessageInternal* by_id = messages_->FindNetworkMessageById(message_id);
+		NetMessageInfo_t* by_id = messages_->FindNetworkMessageById(message_id);
 		context.Detail("-> %p for id %d (the descriptor's own id)",
 			static_cast<void*>(by_id), message_id);
 		if (by_id == nullptr)
@@ -316,7 +311,7 @@ void NetworkMessagesSuite::ExerciseRegistryLookups(TestContext& context)
 		// Sounding the id space from the top: the SDK promises no count API
 		// and no bound, and 40000 is far above any plausible message count.
 		const int unused_id = 40000;
-		INetworkMessageInternal* by_id = messages_->FindNetworkMessageById(unused_id);
+		NetMessageInfo_t* by_id = messages_->FindNetworkMessageById(unused_id);
 		context.Detail("-> %p for id %d", static_cast<void*>(by_id), unused_id);
 		if (by_id != nullptr)
 		{
@@ -326,151 +321,115 @@ void NetworkMessagesSuite::ExerciseRegistryLookups(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "INetworkMessages::FindOrCreateNetMessage (lookup, no create)", {
-		// The creating method with bCreateIfNotFound=false is a fourth
-		// read-only path to the table, and the only one that takes the
-		// binding and the size alongside the id. Passing the exact
-		// descriptor-reported id (not -1, which auto-assigns by name hash)
-		// asks whether the creating path agrees with the lookups about which
-		// entry an id means.
-		INetworkMessageInternal* found = messages_->FindOrCreateNetMessage(
-			message_id, info->m_pBinding, sizeof(CNETMsg_Tick), nullptr, false, false);
-		context.Detail("-> %p for id %d with bCreateIfNotFound=false",
-			static_cast<void*>(found), message_id);
-		if (found != nullptr && found != tick_message_)
-		{
-			context.Fail("the creating path and the name lookup disagree on id %d",
-				message_id);
-		}
-		if (found == nullptr)
-		{
-			// Suspect: the SDK never says the no-create form must return an
-			// existing entry rather than null; printed because four paths to
-			// one table agreeing is the point of this section.
-			context.Suspect("the no-create lookup returned null for an id the "
-			                "descriptor reports");
-		}
-	});
+	// FindOrCreateNetMessage used to have a bCreateIfNotFound=false form that
+	// served as a fourth read-only path to this table. The SDK dropped the
+	// parameter, so the method always creates; see NoteSkippedWrites.
 
 	CS2ST_CALL(context, "INetworkMessages::GetNetMessageInfo", {
 		NetMessageInfo_t* via_registry = messages_->GetNetMessageInfo(tick_message_);
-		context.Detail("-> %p (GetNetMessageInfo on the entry said %p)",
+		context.Detail("-> %p (asked about the entry at %p)",
 			static_cast<void*>(via_registry), static_cast<void*>(info));
 		if (via_registry != nullptr && via_registry != info)
 		{
-			context.Fail("two vtables, one descriptor: they returned different "
-			             "addresses for the same message");
+			context.Fail("the registry's descriptor accessor returned a different "
+			             "address than the entry it was handed");
 		}
 	});
 }
 
 // -----------------------------------------------------------------------------
-//  ExerciseBindingMatrix - IProtobufBinding, and the group tables
+//  ExerciseBindingMatrix - NetMessageInfo_t's accessors, and the group tables
+//
+//  IProtobufBinding is gone: the descriptor carries its own name and allocator
+//  and answers through inline getters. What is left to cross-check is the
+//  descriptor against the registry's other tables - the group table, the
+//  buffer-type enum, the id the .proto assigns - and the protobuf the SDK ships.
 // -----------------------------------------------------------------------------
 
 void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 {
-	context.Note("[bindings] the descriptor points at a binding; the binding answers "
-	             "the same questions through a vtable, and the protobuf the SDK ships "
-	             "answers them a third way");
+	context.Note("[descriptor] NetMessageInfo_t's accessors, read against the registry's "
+	             "group table, the .proto's message id and the protobuf the SDK ships");
 
 	if (tick_message_ == nullptr)
 	{
-		context.UnavailableCall("IProtobufBinding",
-			"no CNETMsg_Tick entry to read a binding from");
+		context.UnavailableCall("NetMessageInfo_t",
+			"no CNETMsg_Tick entry to read");
 		return;
 	}
 
-	NetMessageInfo_t* info = nullptr;
-
-	CS2ST_CALL(context, "INetworkMessageInternal::GetNetMessageInfo (binding fetch)", {
-		info = tick_message_->GetNetMessageInfo();
-		context.Detail("-> %p", static_cast<void*>(info));
-	});
-
-	if (info == nullptr || !LooksLikeObjectPointer(info->m_pBinding))
-	{
-		context.UnavailableCall("IProtobufBinding",
-			"no descriptor or no binding to call anything on");
-		return;
-	}
-
-	IProtobufBinding* binding = info->m_pBinding;
+	NetMessageInfo_t* info = tick_message_;
 
 	// NetMessageInfo_t's layout is registered by GameEventSuite (see
 	// scripts/list-struct-coverage.sh); it is read here, not re-inspected.
 
-	CS2ST_CALL(context, "INetworkMessageInternal::GetUnscopedName", {
-		const char* unscoped = tick_message_->GetUnscopedName();
+	CS2ST_CALL(context, "NetMessageInfo_t::GetName", {
+		const char* name = info->GetName();
 		context.Detail("-> \"%s\" (the registry's key for this entry)",
-			unscoped != nullptr ? unscoped : "(null)");
-		if (unscoped == nullptr)
+			name != nullptr ? name : "(null)");
+		if (name == nullptr)
 		{
 			context.Fail("a registered message with no name cannot be looked up");
 		}
-	});
-
-	CS2ST_CALL(context, "IProtobufBinding::GetName", {
-		const char* name = binding->GetName();
-		context.Detail("-> \"%s\"", name != nullptr ? name : "(null)");
-		if (name == nullptr)
-		{
-			context.Fail("the binding a registered message points at has no name");
-		}
 		else if (!RegistryNameIs(name, "CNETMsg_Tick"))
 		{
-			// The binding's name is the protobuf's, the unscoped name is the
-			// registry's, and neither is defined to be the other - so Suspect,
-			// printed, because the day they diverge is the day a lookup by
-			// one name stops finding a message known by the other.
-			context.Suspect("the binding's name is not CNETMsg_Tick");
+			context.Suspect("the entry resolved as CNETMsg_Tick is named differently");
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::GetSize", {
-		const int size = binding->GetSize();
-		context.Detail("-> %d (sizeof(CNETMsg_Tick) as compiled here = %zu, plus the %zu-byte "
-		               "CNetMessage header = %zu)",
-			size, sizeof(CNETMsg_Tick), kNetMessageHeaderSize,
-			sizeof(CNETMsg_Tick) + kNetMessageHeaderSize);
-		if (size <= 0)
+	CS2ST_CALL(context, "NetMessageInfo_t::GetMessageId", {
+		// The id the .proto assigns (net_Tick = 4) against the id the engine
+		// registered the entry under: two sources that share no code.
+		const int id = static_cast<int>(info->GetMessageId());
+		context.Detail("-> %d (the probe table expects %d)", id, kProbeMessages[0].id);
+		if (id != kProbeMessages[0].id)
 		{
-			context.Fail("a protobuf C++ object cannot have size %d", size);
+			context.Suspect("CNETMsg_Tick is registered under a different id than "
+			                "the .proto assigns it");
 		}
-		else if (static_cast<std::size_t>(size) != sizeof(CNETMsg_Tick) &&
-		         static_cast<std::size_t>(size) != sizeof(CNETMsg_Tick) + kNetMessageHeaderSize)
+	});
+
+	CS2ST_CALL(context, "NetMessageInfo_t::GetGroupName", {
+		// Two paths to the group's name: the copy the descriptor keeps, and the
+		// registry's group table indexed by the descriptor's own group id.
+		const char* stored = info->GetGroupName();
+		const NetworkGroupId group_id = info->GetGroupId();
+		const char* from_table = messages_->GetNetworkGroupName(group_id);
+		context.Detail("-> \"%s\" (group id %d; the group table names that id \"%s\")",
+			stored != nullptr ? stored : "(null)", static_cast<int>(group_id),
+			from_table != nullptr ? from_table : "(null)");
+		if (stored != nullptr && from_table != nullptr && std::strcmp(stored, from_table) != 0)
 		{
-			// The engine reports the whole CNetMessagePB (header + protobuf);
-			// either that or the bare protobuf size is the expected answer.
-			// The engine's protobuf runtime laid this object out; this build
-			// compiles the same .proto with the SDK's own protoc. A mismatch
-			// means the descriptor or the runtime moved - the thing target #8
-			// exists to catch. Suspect rather than Fail because one ABI knob
-			// (which CRT owns the internal arena) legitimately differs.
-			context.Suspect("the engine's CNETMsg_Tick is %d bytes; ours is %zu",
-				size, sizeof(CNETMsg_Tick));
+			context.Suspect("the descriptor and the group table disagree on the "
+			                "name of the descriptor's group");
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::GetGroup", {
-		const char* group = binding->GetGroup();
-		const char* stored = info->m_szGroup.Get();
-		context.Detail("-> \"%s\" vs NetMessageInfo_t::m_szGroup \"%s\"",
-			group != nullptr ? group : "(null)",
-			stored != nullptr ? stored : "(null)");
-		if (group != nullptr && stored != nullptr && std::strcmp(group, stored) != 0)
+	CS2ST_CALL(context, "NetMessageInfo_t::GetGroupId", {
+		const int group_count = messages_->GetNetworkGroupCount();
+		const int group_id = static_cast<int>(info->GetGroupId());
+		context.Detail("-> %d (the registry has %d groups)", group_id, group_count);
+		if (group_id >= group_count && group_id != 255)
 		{
-			context.Suspect("the binding and the descriptor disagree on the group");
+			context.Suspect("the descriptor's group id is past the group table");
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::GetGroupColor", {
-		const Color color = binding->GetGroupColor();
-		context.Detail("-> r=%d g=%d b=%d a=%d", color.r(), color.g(), color.b(), color.a());
+	CS2ST_CALL(context, "NetMessageInfo_t::GetCategoryMask", {
+		const int categories = info->GetCategoryMask();
+		const int required = info->m_nRequiredHandlerCategories;
+		context.Detail("-> 0x%x (required-handler categories 0x%x)", categories, required);
+		if ((required & ~categories) != 0)
+		{
+			// The SDK's own note: associating a category with bRequireHandler
+			// ORs it into both fields, so the second is a subset of the first.
+			context.Suspect("a category requires a handler but is not in the "
+			                "message's category mask");
+		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::GetBufType", {
-		const NetChannelBufType_t buf_type = binding->GetBufType();
+	CS2ST_CALL(context, "NetMessageInfo_t::GetBufType", {
+		const NetChannelBufType_t buf_type = info->GetBufType();
 		context.Detail("-> %d", static_cast<int>(buf_type));
 		if (buf_type < BUF_DEFAULT || buf_type > BUF_VOICE)
 		{
@@ -478,22 +437,22 @@ void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::OkToRedispatch", {
-		// The sharpest binding oracle, same as GameEventSuite runs on the
-		// event message: one bool read two ways that share no code. A bool
-		// and its descriptor copy disagreeing on CNETMsg_Tick is a different
-		// message's finding than the event suite's, not a duplicate of it.
-		const bool from_binding = binding->OkToRedispatch();
-		const bool from_descriptor = info->m_bOkayToRedispatch;
-		context.Detail("-> %s vs NetMessageInfo_t::m_bOkayToRedispatch %s",
-			from_binding ? "true" : "false", from_descriptor ? "true" : "false");
-		if (from_binding != from_descriptor)
+	CS2ST_CALL(context, "NetMessageInfo_t::CannotBeNetworked", {
+		const bool cannot = info->CannotBeNetworked();
+		context.Detail("-> %s", cannot ? "true" : "false");
+		if (cannot)
 		{
-			context.Suspect("the binding and the descriptor disagree on redispatch");
+			// The per-tick message is sent to every client; one marked never
+			// networked has been read at the wrong offset or the flag moved.
+			context.Suspect("CNETMsg_Tick is marked as never sent over the network");
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::descriptor (generated header)", {
+	CS2ST_CALL(context, "NetMessageInfo_t::OkayToRedispatch", {
+		context.Detail("-> %s", info->OkayToRedispatch() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "CNETMsg_Tick::descriptor (generated header)", {
 		// The third, protobuf-side reading: what the SDK's .proto says, as
 		// this build compiled it. Read through the generated code's own
 		// Reflection surface so the row is computed from the same header the
@@ -602,13 +561,13 @@ void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 
 void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 {
-	context.Note("[allocation] the engine's allocator for CNetMessage: allocate, copy "
-	             "two ways, read the inline probes - and measure the stub-class offset "
-	             "before anything writes through it");
+	context.Note("[allocation] the engine's allocator for CNetMessage: allocate, copy, "
+	             "read the inline probes, free through the virtual destructor - and "
+	             "measure the stub-class offset before anything writes through it");
 
 	if (tick_message_ == nullptr)
 	{
-		context.UnavailableCall("INetworkMessages::AllocateNetMessageAbstract",
+		context.UnavailableCall("NetMessageInfo_t::AllocateMessage",
 			"no CNETMsg_Tick entry to allocate through");
 		return;
 	}
@@ -616,7 +575,14 @@ void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 	CNetMessage* allocated = nullptr;
 	CNetMessage* copy = nullptr;
 
-	CS2ST_CALL(context, "INetworkMessageInternal::AllocateMessage", {
+	CS2ST_CALL(context, "NetMessageInfo_t::AllocateMessage", {
+		// The descriptor calls its own function pointer; a null one is a
+		// crash waiting for the caller, so it is checked first.
+		if (tick_message_->m_pfnAllocateMessage == nullptr)
+		{
+			context.Fail("the registry entry has no allocator function");
+			return;
+		}
 		allocated = tick_message_->AllocateMessage();
 		context.Detail("-> %p", static_cast<void*>(allocated));
 		if (allocated == nullptr)
@@ -672,7 +638,7 @@ void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 		// The registry entry an allocated message carries, against the entry
 		// it was allocated through: an oracle the engine cannot get wrong
 		// twice, because both sides of it come out of the engine.
-		INetworkMessageInternal* entry = allocated->GetNetMessage();
+		NetMessageInfo_t* entry = allocated->GetNetMessage();
 		context.Detail("-> %p (allocated through %p)",
 			static_cast<void*>(entry), static_cast<void*>(tick_message_));
 		if (entry == nullptr)
@@ -687,28 +653,14 @@ void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "CNetMessage::GetMessageId", {
-		// Slot the SDK named in the Oct 2026 rework (it used to sit inside the
-		// old CopyConstruct(other) signature). Two routes to the same id: the
-		// message's own vtable and the descriptor the registry hands out.
+		// Two routes to the same id: the message's own vtable and the
+		// descriptor the registry handed out.
 		const NetworkMessageId id = allocated->GetMessageId();
-		context.Detail("-> %u (descriptor says %u)",
-			static_cast<unsigned>(id),
-			static_cast<unsigned>(tick_message_->GetNetMessageInfo()->m_MessageId));
-		if (tick_message_->GetNetMessageInfo() != nullptr
-			&& id != tick_message_->GetNetMessageInfo()->m_MessageId)
+		context.Detail("-> %d (descriptor says %d)", static_cast<int>(id),
+			static_cast<int>(tick_message_->GetMessageId()));
+		if (id != tick_message_->GetMessageId())
 		{
 			context.Fail("the message and its registry descriptor report different ids");
-		}
-	});
-
-	CS2ST_CALL(context, "CNetMessage::GetName", {
-		// Same rework, same shape of oracle: the message's name against the
-		// binding's own GetName, reached down two different vtables.
-		const char* name = allocated->GetName();
-		context.Detail("-> \"%s\"", name != nullptr ? name : "(null)");
-		if (!RegistryNameIs(name, "CNETMsg_Tick"))
-		{
-			context.Fail("a CNETMsg_Tick allocation reports a different name");
 		}
 	});
 
@@ -721,43 +673,31 @@ void NetworkMessagesSuite::ExerciseAllocation(TestContext& context)
 		context.Detail("-> %.3f", static_cast<double>(allocated->GetMargin()));
 	});
 
-	CS2ST_CALL(context, "INetworkMessages::AllocateAndCopyConstructNetMessageAbstract", {
-		copy = messages_->AllocateAndCopyConstructNetMessageAbstract(
-			tick_message_, allocated);
+	CS2ST_CALL(context, "CNetMessage::CopyConstruct", {
+		// The message's own copy path: a nullary copy, the source being the
+		// object it is called on. INetworkMessages used to offer a registry
+		// helper for the same job; it is gone, so this is the only copy route.
+		copy = allocated->CopyConstruct();
 		context.Detail("-> %p (copy of %p)", static_cast<void*>(copy),
 			static_cast<void*>(allocated));
 		if (copy == nullptr)
 		{
-			context.Fail("copy-constructing an engine-allocated message returned null");
+			context.Fail("copying an engine-allocated message returned null");
 		}
-	});
-
-	CS2ST_CALL(context, "CNetMessage::CopyConstruct", {
-		// The message's own copy path, on the same object - the vtable slot
-		// the registry helper presumably ends up inside. The SDK reworked this
-		// slot from CopyConstruct(const CNetMessage*) to a nullary copy: the
-		// source is the object it is called on.
-		CNetMessage* via_message = allocated->CopyConstruct();
-		context.Detail("-> %p", static_cast<void*>(via_message));
-		if (via_message != nullptr)
+		else if (copy->GetNetMessage() != tick_message_)
 		{
-			messages_->DeallocateNetMessageAbstract(tick_message_, via_message);
+			context.Fail("the copy carries a different registry entry than the "
+			             "message it was copied from");
 		}
 	});
 
 	if (copy != nullptr)
 	{
-		CS2ST_CALL(context, "INetworkMessages::DeallocateNetMessageAbstract (copy)", {
-			messages_->DeallocateNetMessageAbstract(tick_message_, copy);
-			context.Detail("-> freed %p", static_cast<void*>(copy));
-		});
+		FreeNetMessage(context, "CNetMessage::~CNetMessage (copy)", copy);
 		copy = nullptr;
 	}
 
-	CS2ST_CALL(context, "INetworkMessages::DeallocateNetMessageAbstract", {
-		messages_->DeallocateNetMessageAbstract(tick_message_, allocated);
-		context.Detail("-> freed %p", static_cast<void*>(allocated));
-	});
+	FreeNetMessage(context, "CNetMessage::~CNetMessage", allocated);
 	allocated = nullptr;
 }
 
@@ -789,11 +729,10 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 	CNetMessage* message = nullptr;
 	CNetMessage* typed_target = nullptr;
 	CNetMessage* from_stream = nullptr;
-	CNetMessage* forwarded_target = nullptr;
 
 	// ---- allocate and fill --------------------------------------------------
 
-	CS2ST_CALL(context, "INetworkMessageInternal::AllocateMessage (round trip)", {
+	CS2ST_CALL(context, "NetMessageInfo_t::AllocateMessage (round trip)", {
 		message = tick_message_->AllocateMessage();
 		context.Detail("-> %p", static_cast<void*>(message));
 	});
@@ -815,8 +754,7 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 			"so a write through the stub cannot be aimed");
 		context.SkipCall("INetworkMessages::SerializeMessageInternal",
 			"no filled message: the set_tick above was refused");
-		message_free_section(context, message, typed_target, from_stream,
-			forwarded_target);
+			message_free_section(context, message, typed_target, from_stream);
 		return;
 	}
 
@@ -855,8 +793,7 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 			"the serializer wrote nothing to read back");
 		context.SkipCall("INetworkMessages::UnserializeFromStream",
 			"the serializer wrote nothing to read back");
-		message_free_section(context, message, typed_target, from_stream,
-			forwarded_target);
+			message_free_section(context, message, typed_target, from_stream);
 		return;
 	}
 
@@ -875,9 +812,14 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 				context.Detail("-> no target message to read into");
 				return;
 			}
-			const bool ok = messages_->UnserializeMessageInternal(reader, typed_target);
-			context.Detail("-> %s into %p", ok ? "true" : "false",
-				static_cast<void*>(typed_target));
+			// err_reason is the new third parameter: the engine writes why a
+			// read failed into it, and a stack CUtlString of ours frees through
+			// the same tier0 allocator the engine allocated with.
+			CUtlString err_reason;
+			const bool ok = messages_->UnserializeMessageInternal(
+				reader, typed_target, &err_reason);
+			context.Detail("-> %s into %p, err \"%s\"", ok ? "true" : "false",
+				static_cast<void*>(typed_target), err_reason.Get());
 			if (!ok)
 			{
 				// Suspect: whether the internal serialize/unserialize pair is
@@ -931,7 +873,7 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 			// checks itself!", says the SDK), so the entry is verified before
 			// the payload is touched: the message the stream produced has to
 			// belong to the same registry entry the planted one did.
-			INetworkMessageInternal* entry = from_stream->GetNetMessage();
+			NetMessageInfo_t* entry = from_stream->GetNetMessage();
 			context.Detail("-> entry %p (planted through %p)",
 				static_cast<void*>(entry), static_cast<void*>(tick_message_));
 			if (entry != tick_message_)
@@ -949,39 +891,7 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 		});
 	}
 
-	// ---- the entry's forwarding pair ------------------------------------------
-
-	{
-		bf_read reader(buffer, written);
-		CS2ST_CALL(context, "INetworkMessageInternal::Unserialize", {
-			// The SDK's own comment: this forwards to
-			// INetworkMessages::UnserializeMessageInternal. Called on the
-			// entry so the forwarding vtable slot itself is exercised.
-			forwarded_target = tick_message_->AllocateMessage();
-			if (forwarded_target == nullptr)
-			{
-				context.Detail("-> no target message to read into");
-				return;
-			}
-			const bool ok = tick_message_->Unserialize(reader, forwarded_target);
-			context.Detail("-> %s into %p", ok ? "true" : "false",
-				static_cast<void*>(forwarded_target));
-		});
-	}
-
-	if (forwarded_target != nullptr)
-	{
-		CS2ST_CALL(context, "CNetMessagePB<CNETMsg_Tick>::tick (forwarded read)", {
-			const std::uint32_t value = forwarded_target->ToPB<CNETMsg_Tick>()->tick();
-			context.Detail("-> 0x%08x (planted 0x%08x)", value, kRoundTripTickValue);
-			if (value != kRoundTripTickValue)
-			{
-				context.Fail("the tick value did not survive the forwarded round trip");
-			}
-		});
-	}
-
-	// ---- the two remaining writers, and the binding's renderer ----------------
+	// ---- the public writer ---------------------------------------------------
 
 	{
 		unsigned char sink[512] = {};
@@ -993,56 +903,7 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 		});
 	}
 
-	{
-		unsigned char sink[512] = {};
-		bf_write writer(sink, static_cast<int>(sizeof(sink)));
-		CS2ST_CALL(context, "INetworkMessages::SerializeAbstract", {
-			const bool ok = messages_->SerializeAbstract(writer, tick_message_, message);
-			context.Detail("-> %s, %d bytes", ok ? "true" : "false",
-				writer.GetNumBytesWritten());
-		});
-	}
-
-	{
-		unsigned char sink[512] = {};
-		bf_write writer(sink, static_cast<int>(sizeof(sink)));
-		CS2ST_CALL(context, "INetworkMessageInternal::Serialize", {
-			const bool ok = tick_message_->Serialize(writer, message);
-			context.Detail("-> %s, %d bytes", ok ? "true" : "false",
-				writer.GetNumBytesWritten());
-		});
-	}
-
-	{
-		CUtlString rendered;
-		CS2ST_CALL(context, "IProtobufBinding::ToString", {
-			// The fourth reading of the payload: the engine's own renderer.
-			// Its pData is the CNetMessage itself, not the protobuf inside it:
-			// the engine reads the protobuf at pData + 0x30 (the stub header's
-			// size, the same 0x30 AsProto sits at). Handing it AsProto()'s
-			// address, as the first version did, adds 0x30 twice and faults
-			// at a small offset off a wild pointer.
-			// CUtlString's heap lives in tier0 on both platforms, so the
-			// engine writing into a stack CUtlString of ours frees through
-			// the same allocator it allocated with.
-			NetMessageInfo_t* info = tick_message_->GetNetMessageInfo();
-			const char* text = info->m_pBinding->ToString(message, rendered);
-			const char* shown = text != nullptr ? text : rendered.Get();
-			context.Detail("-> %.96s", shown != nullptr ? shown : "(null)");
-			if (shown != nullptr && std::strstr(shown, kRoundTripTickDecimal) == nullptr)
-			{
-				// Suspect: the engine may render protobuf text format with
-				// hex or field-number prefixes, so absence of the decimal is
-				// not proof - but presence is the oracle, and its absence
-				// after three successful readers above is worth a row.
-				context.Suspect("the engine's rendering does not contain the "
-				                "planted tick value");
-			}
-		});
-	}
-
-	message_free_section(context, message, typed_target, from_stream,
-		forwarded_target);
+	message_free_section(context, message, typed_target, from_stream);
 
 #else  // !CS2ST_NETMSG_BITBUF
 
@@ -1051,13 +912,8 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 	context.SkipCall("INetworkMessages::UnserializeMessageInternal", "%s", kBitbufSkipReason);
 	context.SkipCall("INetworkMessages::UnserializeFromStream", "%s", kBitbufSkipReason);
 	context.SkipCall("INetworkMessages::Serialize (public)", "%s", kBitbufSkipReason);
-	context.SkipCall("INetworkMessages::SerializeAbstract", "%s", kBitbufSkipReason);
-	context.SkipCall("INetworkMessageInternal::Serialize", "%s", kBitbufSkipReason);
-	context.SkipCall("INetworkMessageInternal::Unserialize", "%s", kBitbufSkipReason);
 	context.SkipCall("CNetMessagePB<CNETMsg_Tick>::set_tick / tick",
 		"no message is allocated without the round trip to put it through");
-	context.SkipCall("IProtobufBinding::ToString",
-		"the filled message only exists inside the round trip");
 
 #endif  // CS2ST_NETMSG_BITBUF
 }
@@ -1318,9 +1174,10 @@ void NetworkMessagesSuite::NoteSkippedWrites(TestContext& context)
 		"which has already happened by plugin load");
 	context.SkipCall("INetworkMessages::AssociateNetMessageWithChannelCategoryAbstract",
 		"binds a message into a category the engine routes by");
-	context.SkipCall("INetworkMessages::FindOrCreateNetMessage (create)",
-		"with bCreateIfNotFound=true it inserts a registry entry the engine never "
-		"unregisters; the lookup form is covered above");
+	context.SkipCall("INetworkMessages::FindOrCreateNetMessage",
+		"inserts a registry entry the engine never unregisters when the id is not "
+		"found, and the SDK no longer has a lookup-only form; the id and name "
+		"lookups above cover the read side");
 	context.SkipCall("INetworkMessages::RegisterNetworkFieldSerializer",
 		"twelve function pointers into engine-owned serializer tables");
 	context.SkipCall("INetworkMessages::RegisterNetworkArrayFieldSerializer",
@@ -1350,20 +1207,6 @@ void NetworkMessagesSuite::NoteSkippedWrites(TestContext& context)
 		"getter is exercised above");
 	context.SkipCall("INetworkMessages::~INetworkMessages",
 		"would destroy the registry every message on the server depends on");
-	context.SkipCall("INetworkMessageInternal::SetMessageId",
-		"renumbers a message the engine has already handed to clients");
-	context.SkipCall("INetworkMessageInternal::AddCategoryMask",
-		"changes how the engine routes every message of this type");
-	context.SkipCall("INetworkMessageInternal::SwitchMode",
-		"flips the registry entry between server and client serialisation");
-	context.SkipCall("INetworkMessageInternal::~INetworkMessageInternal",
-		"would destroy a registry entry the engine still owns");
-	context.SkipCall("CNetMessage::~CNetMessage",
-		"would destroy a message only DeallocateNetMessageAbstract may free");
-	context.SkipCall("IProtobufBinding::AllocateMessage",
-		"allocates an engine-owned CNetMessage with no matching free on this "
-		"interface; INetworkMessageInternal::AllocateMessage is the covered pair");
-	context.SkipCall("IProtobufBinding::unk001", "unidentified in the SDK");
 }
 
 // -----------------------------------------------------------------------------
@@ -1378,37 +1221,19 @@ void NetworkMessagesSuite::NoteSkippedWrites(TestContext& context)
 void NetworkMessagesSuite::message_free_section(TestContext& context,
                                                 CNetMessage* message,
                                                 CNetMessage* typed_target,
-                                                CNetMessage* from_stream,
-                                                CNetMessage* forwarded_target)
+                                                CNetMessage* from_stream)
 {
 	if (typed_target != nullptr)
 	{
-		CS2ST_CALL(context, "INetworkMessages::DeallocateNetMessageAbstract (typed)", {
-			messages_->DeallocateNetMessageAbstract(tick_message_, typed_target);
-			context.Detail("-> freed %p", static_cast<void*>(typed_target));
-		});
+		FreeNetMessage(context, "CNetMessage::~CNetMessage (typed)", typed_target);
 	}
 	if (from_stream != nullptr)
 	{
-		CS2ST_CALL(context, "INetworkMessages::DeallocateNetMessageAbstract (stream)", {
-			messages_->DeallocateNetMessageAbstract(tick_message_, from_stream);
-			context.Detail("-> freed %p", static_cast<void*>(from_stream));
-		});
-	}
-	if (forwarded_target != nullptr)
-	{
-		CS2ST_CALL(context,
-			"INetworkMessages::DeallocateNetMessageAbstract (forwarded)", {
-			messages_->DeallocateNetMessageAbstract(tick_message_, forwarded_target);
-			context.Detail("-> freed %p", static_cast<void*>(forwarded_target));
-		});
+		FreeNetMessage(context, "CNetMessage::~CNetMessage (stream)", from_stream);
 	}
 	if (message != nullptr)
 	{
-		CS2ST_CALL(context, "INetworkMessages::DeallocateNetMessageAbstract (filled)", {
-			messages_->DeallocateNetMessageAbstract(tick_message_, message);
-			context.Detail("-> freed %p", static_cast<void*>(message));
-		});
+		FreeNetMessage(context, "CNetMessage::~CNetMessage (filled)", message);
 	}
 }
 

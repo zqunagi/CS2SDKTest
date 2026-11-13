@@ -490,17 +490,19 @@ void Source2GameClientsSuite::ExerciseMessageCalls(TestContext& context, CPlayer
 		return;
 	}
 
-	INetworkMessageInternal* binding = nullptr;
+	// The registry entry is the NetMessageInfo_t itself now; the two calls
+	// below that want a descriptor take it as it comes.
+	NetMessageInfo_t* info = nullptr;
 	CNetMessage* allocated = nullptr;
-	CS2ST_CALL(context, "INetworkMessageInternal::AllocateMessage (CCLCMsg_Move)", {
+	CS2ST_CALL(context, "NetMessageInfo_t::AllocateMessage (CCLCMsg_Move)", {
 		const char* how = nullptr;
-		binding = FindRegisteredMessage(messages, "CCLCMsg_Move", -1, &how);
-		if (binding == nullptr)
+		info = FindRegisteredMessage(messages, "CCLCMsg_Move", -1, &how);
+		if (info == nullptr)
 		{
 			context.Detail("CCLCMsg_Move is not registered");
 			return;
 		}
-		allocated = binding->AllocateMessage();
+		allocated = info->AllocateMessage();
 		context.Detail("-> %p (found %s)", static_cast<void*>(allocated), how);
 	});
 
@@ -523,26 +525,12 @@ void Source2GameClientsSuite::ExerciseMessageCalls(TestContext& context, CPlayer
 		context.Detail("returned for the empty slot (empty CCLCMsg_Move, not paused)");
 	});
 
-	NetMessageInfo_t* info = binding->GetNetMessageInfo();
-
 	CS2ST_CALL(context, "ISource2GameClients::ShouldSendMessageDuringHltvReplay", {
-		if (info == nullptr)
-		{
-			context.SkipCall("ISource2GameClients::ShouldSendMessageDuringHltvReplay",
-				"the binding has no NetMessageInfo_t");
-			return;
-		}
 		context.Detail("-> %s for CCLCMsg_Move",
 			clients_->ShouldSendMessageDuringHltvReplay(info, allocated) ? "true" : "false");
 	});
 
 	CS2ST_CALL(context, "ISource2GameClients::GetMessageEncryptionKey", {
-		if (info == nullptr)
-		{
-			context.SkipCall("ISource2GameClients::GetMessageEncryptionKey",
-				"the binding has no NetMessageInfo_t");
-			return;
-		}
 		const int key = static_cast<int>(clients_->GetMessageEncryptionKey(info, allocated));
 		context.Detail("-> %d for CCLCMsg_Move", key);
 		if (key < kEncryptedMessageKeyType_None || key > kEncryptedMessageKeyType_Public)
@@ -551,9 +539,12 @@ void Source2GameClientsSuite::ExerciseMessageCalls(TestContext& context, CPlayer
 		}
 	});
 
-	CS2ST_CALL(context, "INetworkMessages::DeallocateNetMessageAbstract (CCLCMsg_Move)", {
-		messages->DeallocateNetMessageAbstract(binding, allocated);
-		context.Detail("-> freed %p", static_cast<void*>(allocated));
+	CS2ST_CALL(context, "CNetMessage::~CNetMessage (CCLCMsg_Move)", {
+		// DeallocateNetMessageAbstract is gone from the SDK; the virtual
+		// destructor frees through the engine's own allocator.
+		void* freed = static_cast<void*>(allocated);
+		delete allocated;
+		context.Detail("-> deleted %p", freed);
 	});
 }
 

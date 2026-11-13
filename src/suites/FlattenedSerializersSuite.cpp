@@ -763,6 +763,9 @@ void FlattenedSerializersSuite::NoteSkippedCalls(TestContext& context)
 		"builds and registers serializers from class introspection; changes engine state");
 	context.SkipCall("IFlattenedSerializers::Decode",
 		"writes the decoded fields into a live entity object");
+	context.SkipCall("IFlattenedSerializers::ReadFieldsAndDecode",
+		"ReadFields and Decode in one call, so it writes the decoded fields into a "
+		"live entity object the same way Decode does");
 	context.SkipCall("IFlattenedSerializers::BuildMergedSerializedEntity",
 		"the SDK does not say whether pBase and the packed delta are consumed");
 	context.SkipCall("IFlattenedSerializers::SpewSerializer",

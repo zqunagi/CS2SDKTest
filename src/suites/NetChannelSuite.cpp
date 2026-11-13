@@ -629,6 +629,16 @@ void NetChannelSuite::ExerciseChannel(TestContext& context)
 		}
 	});
 
+	CS2ST_CALL(context, "INetChannel::GetRecvLimitMode", {
+		// Reported, not judged: the SDK says 1 applies the net_limit_sv_recv_*
+		// convars and any other value uses the defaults, so every int is a
+		// legal answer. A fresh channel nobody configured is expected to read
+		// a non-1 default; the number is what a diff across updates compares.
+		const int mode = channel->GetRecvLimitMode();
+		context.Detail("-> %d (%s)", mode,
+			mode == 1 ? "convar limits" : "default limits");
+	});
+
 	CS2ST_CALL(context, "INetChannel::IsSuppressingTransmit", {
 		context.Detail("-> %s", channel->IsSuppressingTransmit() ? "true" : "false");
 	});
@@ -831,7 +841,8 @@ void NetChannelSuite::NoteSideEffectingCalls(TestContext& context)
 		"destroys the channel; the destructor may take two vtable slots");
 	context.SkipCall("INetChannel::Shutdown",
 		"runs the shutdown notifications the game registered and may free the "
-		"channel, which RemoveNetChannel then frees again");
+		"channel, which RemoveNetChannel then frees again; it now also takes a "
+		"pszInternalReason string");
 	context.SkipCall("INetChannel::SendNetMessage",
 		"sends through a Steam connection that does not exist on this channel");
 	context.SkipCall("INetChannel::SendData",
@@ -879,8 +890,9 @@ void NetChannelSuite::NoteSideEffectingCalls(TestContext& context)
 		"needs an InstantReplayMessage_t the engine built");
 	context.SkipCall("INetChannel::WriteFrameQualityToTick",
 		"writes into a CNetMessagePB<CNETMsg_Tick> built by a different protobuf runtime");
-	context.SkipCall("INetChannel::SetQueuedMessageLimitConVar",
-		"the channel keeps the pointer and reads it later; the only convars are the engine's");
+	context.SkipCall("INetChannel::SetRecvLimitMode",
+		"applies the receive limits to the channel's Steam connection, which this "
+		"channel does not have; GetRecvLimitMode is covered above");
 }
 
 } // namespace cs2st

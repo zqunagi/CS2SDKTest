@@ -1191,8 +1191,7 @@ void Source2EngineSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("IVEngineServer2::StopRecordingDemo",
 		"needs a CGameInfo the SDK gives no way to construct");
 	context.SkipCall("IVEngineServer2::BroadcastEvent",
-		"needs an INetworkMessageInternal and a matching CNetMessage; would be "
-		"sent to every client");
+		"needs a CNetMessage the engine allocated; would be sent to every client");
 	context.SkipCall("IVEngineServer2::SendReserveCheckResponse",
 		"extends matchmaking reservation timeouts and sends packets to reserved clients");
 }

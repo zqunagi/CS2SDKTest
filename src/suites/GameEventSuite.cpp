@@ -512,7 +512,7 @@ void GameEventSuite::ExerciseEventSystem(TestContext& context)
 // -----------------------------------------------------------------------------
 //  The message registry, reached through INetworkMessages
 //
-//  Everything IGameEventSystem takes is an INetworkMessageInternal*, and the
+//  Everything IGameEventSystem takes is a NetMessageInfo_t*, and the
 //  only read-only way to obtain one by name is INetworkMessages. It is used
 //  here the way the clients suite uses IVEngineServer2 for maxClients: as a
 //  tool. Its own coverage is docs/TEST_TARGETS.md #8 and is not attempted.
@@ -543,12 +543,12 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 			// The registry key is "Name [id]" on this build, so the bare name
 			// can miss; the helper falls back to the id and the partial lookup.
 			const char* how = "";
-			INetworkMessageInternal* message =
+			NetMessageInfo_t* message =
 				FindRegisteredMessage(messages, probe.name, probe.id, &how);
 			context.Detail("-> %p  (%s)", static_cast<void*>(message), probe.what);
 			if (message != nullptr && std::strcmp(how, "by name") != 0)
 			{
-				context.Detail("   found %s as \"%s\"", how, message->GetUnscopedName());
+				context.Detail("   found %s as \"%s\"", how, message->GetName());
 			}
 			if (probe.primary)
 			{
@@ -560,7 +560,7 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 	CS2ST_CALL(context, "INetworkMessages::FindNetworkMessage (nonexistent name)", {
 		// A matcher that only ever says yes is as broken as one that only ever
 		// says no, and this is the half that costs nothing to check.
-		INetworkMessageInternal* message = messages->FindNetworkMessage(kNoSuchMessage);
+		NetMessageInfo_t* message = messages->FindNetworkMessage(kNoSuchMessage);
 		context.Detail("-> %p for \"%s\"", static_cast<void*>(message), kNoSuchMessage);
 		if (message != nullptr)
 		{
@@ -572,7 +572,7 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 		// The second entry point to the same registry. It is allowed to return
 		// any of the three Source1Legacy messages, so the check is that it
 		// returns one of them at all - not which.
-		INetworkMessageInternal* message = messages->FindNetworkMessagePartial(kEventMessagePartial);
+		NetMessageInfo_t* message = messages->FindNetworkMessagePartial(kEventMessagePartial);
 		context.Detail("-> %p for \"%s\"", static_cast<void*>(message), kEventMessagePartial);
 		if (message == nullptr && legacy_event_message_ != nullptr)
 		{
@@ -587,16 +587,19 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 
 	if (legacy_event_message_ == nullptr)
 	{
-		context.UnavailableCall("INetworkMessageInternal",
+		context.UnavailableCall("NetMessageInfo_t",
 			"no Source1Legacy game event message is registered, so there is no "
-			"engine-built instance to call anything on");
+			"engine-built descriptor to read");
 		return;
 	}
 
-	context.Note("[INetworkMessageInternal] on the CMsgSource1LegacyGameEvent registry entry");
+	// The registry entry is the descriptor itself since the SDK replaced
+	// INetworkMessageInternal with NetMessageInfo_t, so the entry's own rows
+	// live with the descriptor's in InspectNetMessageInfo below.
+	context.Note("[NetMessageInfo_t] on the CMsgSource1LegacyGameEvent registry entry");
 
-	CS2ST_CALL(context, "INetworkMessageInternal::GetUnscopedName", {
-		const char* name = legacy_event_message_->GetUnscopedName();
+	CS2ST_CALL(context, "NetMessageInfo_t::GetName", {
+		const char* name = legacy_event_message_->GetName();
 		context.Detail("-> %s", name != nullptr ? name : "(null)");
 		if (name == nullptr)
 		{
@@ -604,40 +607,9 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "INetworkMessageInternal::GetNetMessageInfo", {
-		// The oracle: the same descriptor asked for down two vtables that share
-		// no code - the message's own, and the registry's. Disagreement means
-		// one of the two slots is not the method its name says.
-		NetMessageInfo_t* direct = legacy_event_message_->GetNetMessageInfo();
-		NetMessageInfo_t* via_registry = messages->GetNetMessageInfo(legacy_event_message_);
-		context.Detail("-> %p, INetworkMessages says %p", static_cast<void*>(direct),
-			static_cast<void*>(via_registry));
-		if (direct == nullptr)
-		{
-			context.Fail("a registered message with no descriptor cannot be serialised");
-		}
-		else if (via_registry != nullptr && via_registry != direct)
-		{
-			context.Fail("two routes to one descriptor returned different addresses");
-		}
-	});
-
-	context.SkipCall("INetworkMessageInternal::SetMessageId",
-		"renumbers a message the engine has already handed to clients");
-	context.SkipCall("INetworkMessageInternal::AddCategoryMask",
-		"changes how the engine routes every message of this type");
-	context.SkipCall("INetworkMessageInternal::SwitchMode",
-		"flips the registry between server and client serialisation");
-	context.SkipCall("INetworkMessageInternal::AllocateMessage",
-		"allocates an engine-owned CNetMessage that only "
-		"INetworkMessages::DeallocateNetMessageAbstract can return");
-	context.SkipCall("INetworkMessageInternal::Serialize",
-		"needs a bf_write and a filled CNetMessage; tier1/bitbuf.cpp is not in "
-		"this build (CS2SDKTEST_TIER1_BITBUF is off)");
-	context.SkipCall("INetworkMessageInternal::Unserialize",
-		"the same buffer, plus a message to write the result into");
-	context.SkipCall("INetworkMessageInternal::~INetworkMessageInternal",
-		"would destroy a registry entry the engine still owns");
+	context.SkipCall("NetMessageInfo_t::AllocateMessage",
+		"allocates an engine-owned CNetMessage this suite would then have to free; "
+		"NetworkMessagesSuite covers the allocate-and-delete pair");
 }
 
 // -----------------------------------------------------------------------------
@@ -645,9 +617,9 @@ void GameEventSuite::ResolveEventMessages(TestContext& context)
 //
 //  This is the "event description structure" worth looking at: it is what the
 //  engine consults to decide a game event's id, group, channel and reliability.
-//  It is also a good shape for the inspector - one pointer, one string, one
-//  bool - and it comes with three independent readings of its own contents,
-//  because IProtobufBinding answers the same questions through a vtable.
+//  The SDK folded IProtobufBinding into it, so there is no second vtable to
+//  read the same facts down any more; the oracles are the registry's group
+//  table and the buffer-type enum instead.
 // -----------------------------------------------------------------------------
 
 void GameEventSuite::InspectNetMessageInfo(TestContext& context)
@@ -659,19 +631,11 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 		return;
 	}
 
-	NetMessageInfo_t* info = nullptr;
+	// The registry entry is the descriptor.
+	NetMessageInfo_t* info = legacy_event_message_;
 
-	CS2ST_CALL(context, "NetMessageInfo_t (fetch)", {
-		info = legacy_event_message_->GetNetMessageInfo();
-		context.Detail("-> %p, %zu bytes as the SDK declares it",
-			static_cast<void*>(info), sizeof(NetMessageInfo_t));
-	});
-
-	if (info == nullptr)
-	{
-		context.SkipCall("NetMessageInfo_t", "GetNetMessageInfo did not return an instance");
-		return;
-	}
+	context.Note("[NetMessageInfo_t] struct layout - %p, %zu bytes as the SDK declares it",
+		static_cast<void*>(info), sizeof(NetMessageInfo_t));
 
 	// One inspector, one declaring struct. NetMessageInfo_t has no base, so
 	// there is only this pass. Offsets come from offsetof() on purpose - the
@@ -679,95 +643,98 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 	// engine handed over, so the assumption has to be computed from the header.
 	StructInspector inspect(context, "NetMessageInfo_t", info, sizeof(NetMessageInfo_t));
 
-	inspect.Int32  ("m_nCategories",       offsetof(NetMessageInfo_t, m_nCategories));
-	inspect.Pointer("m_pBinding",          offsetof(NetMessageInfo_t, m_pBinding));
-	// CUtlString's whole representation is one char*, so the string check
-	// applies to the member directly: plausible pointer, printable, terminated.
+	// Declaration order. CUtlString's whole representation is one char*, so the
+	// string check applies to the member directly: plausible pointer, printable,
+	// terminated.
+	inspect.String ("m_szName",            offsetof(NetMessageInfo_t, m_szName));
+	// A function pointer into the engine's code. Pointer() demands alignment,
+	// which code addresses do not promise, so it is recorded as raw bytes; the
+	// allocation row in NetworkMessagesSuite calls through it.
+	inspect.Raw    ("m_pfnAllocateMessage",
+	                                       offsetof(NetMessageInfo_t, m_pfnAllocateMessage),
+	                                       sizeof(NetMessageAllocateFn));
 	inspect.String ("m_szGroup",           offsetof(NetMessageInfo_t, m_szGroup));
-	// uint16 / uint8 fields: the inspector has no judgement to offer on an
-	// integer, so they are reported as raw bytes at their declared widths.
+	// int / uint8 fields: the inspector has no judgement to offer on a plain
+	// integer id, so they are reported as raw bytes at their declared widths.
 	inspect.Raw    ("m_MessageId",         offsetof(NetMessageInfo_t, m_MessageId),
 	                                       sizeof(NetworkMessageId));
-	inspect.Raw    ("m_GroupId",           offsetof(NetMessageInfo_t, m_GroupId),
-	                                       sizeof(NetworkGroupId));
-	// The 2026-10 SDK replaced this byte's m_nFlags/m_unk001 with a named
-	// bitfield triple - m_nBufType:6, m_bCannotBeNetworked:1, m_unk001:1.
-	// offsetof() cannot name a bitfield (C2618), so the byte is addressed
-	// relative to m_GroupId, the last ordinary member before it.
-	inspect.Raw    ("m_nBufType/m_bCannotBeNetworked/m_unk001 (packed byte)",
-	                                       offsetof(NetMessageInfo_t, m_GroupId) + 1,
-	                                       sizeof(uint8));
+	inspect.Int32  ("m_nCategories",       offsetof(NetMessageInfo_t, m_nCategories));
 	inspect.Int32  ("m_nRequiredHandlerCategories",
 	                                       offsetof(NetMessageInfo_t, m_nRequiredHandlerCategories));
-	// The sharpest probe in the struct: one byte with two legal values, sitting
-	// past every field above it.
-	inspect.Bool   ("m_bOkayToRedispatch", offsetof(NetMessageInfo_t, m_bOkayToRedispatch));
+	inspect.Raw    ("m_GroupId",           offsetof(NetMessageInfo_t, m_GroupId),
+	                                       sizeof(NetworkGroupId));
+	// m_nBufType:5, m_bCannotBeNetworked:1, m_bOkayToRedispatch:1 and m_unk001:1
+	// share one byte. offsetof() cannot name a bitfield (C2618), so the byte is
+	// addressed relative to m_GroupId, the last ordinary member before it. The
+	// redispatch flag used to be a plain bool with a 0-or-1 probe of its own; as
+	// a bit it is read through the accessor below instead.
+	inspect.Raw    ("m_nBufType/m_bCannotBeNetworked/m_bOkayToRedispatch/m_unk001 (packed byte)",
+	                                       offsetof(NetMessageInfo_t, m_GroupId) + 1,
+	                                       sizeof(uint8));
 
 	inspect.Summarize();
 	inspect.HexDump();
 
-	// ---- IProtobufBinding, and the three oracles it gives ------------------
+	// ---- the accessors, against the registry's own tables ----------------------
 
-	IProtobufBinding* binding = info->m_pBinding;
+	INetworkMessages* messages = static_cast<INetworkMessages*>(
+		context.QueryInterface("networksystem", NETWORKMESSAGES_INTERFACE_VERSION));
 
-	if (!LooksLikeObjectPointer(binding))
+	context.Note("[NetMessageInfo_t] accessors - the descriptor read against the group "
+	             "table and the enum, where the two disagree one of them is wrong");
+
+	if (messages == nullptr)
 	{
-		context.UnavailableCall("IProtobufBinding",
-			"m_pBinding is %p, which is not an object pointer",
-			static_cast<void*>(binding));
-		return;
+		context.UnavailableCall("NetMessageInfo_t::GetGroupName",
+			"networksystem does not answer '%s', so there is no group table to "
+			"compare against", NETWORKMESSAGES_INTERFACE_VERSION);
+	}
+	else
+	{
+		CS2ST_CALL(context, "NetMessageInfo_t::GetGroupName", {
+			// The group name the descriptor stores by value against the group
+			// table indexed by the descriptor's own group id: two descriptions of
+			// one fact that share no code. Suspect rather than Fail on a mismatch
+			// - the SDK never says the descriptor's copy comes from the table,
+			// and inventing that contract is how this project has produced false
+			// alarms before.
+			const char* stored = info->GetGroupName();
+			const NetworkGroupId group_id = info->GetGroupId();
+			const char* from_table = messages->GetNetworkGroupName(group_id);
+			context.Detail("-> \"%s\" (group id %d; the group table names that id \"%s\")",
+				stored != nullptr ? stored : "(null)", static_cast<int>(group_id),
+				from_table != nullptr ? from_table : "(null)");
+			if (stored != nullptr && from_table != nullptr && std::strcmp(stored, from_table) != 0)
+			{
+				context.Suspect("the descriptor and the group table disagree on the "
+				                "name of the descriptor's group");
+			}
+		});
 	}
 
-	context.Note("[IProtobufBinding] the same descriptor read down a vtable instead of "
-	             "by offset - where the two disagree, one of them is wrong");
+	CS2ST_CALL(context, "NetMessageInfo_t::GetMessageId", {
+		context.Detail("-> %d", static_cast<int>(info->GetMessageId()));
+	});
 
-	CS2ST_CALL(context, "IProtobufBinding::GetName", {
-		const char* binding_name = binding->GetName();
-		const char* message_name = legacy_event_message_->GetUnscopedName();
-		context.Detail("-> \"%s\" vs INetworkMessageInternal::GetUnscopedName \"%s\"",
-			binding_name != nullptr ? binding_name : "(null)",
-			message_name != nullptr ? message_name : "(null)");
-		if (binding_name == nullptr)
+	CS2ST_CALL(context, "NetMessageInfo_t::GetGroupId", {
+		context.Detail("-> %d", static_cast<int>(info->GetGroupId()));
+	});
+
+	CS2ST_CALL(context, "NetMessageInfo_t::GetCategoryMask", {
+		const int categories = info->GetCategoryMask();
+		const int required = info->m_nRequiredHandlerCategories;
+		context.Detail("-> 0x%x (required-handler categories 0x%x)", categories, required);
+		if ((required & ~categories) != 0)
 		{
-			context.Fail("the binding a registered message points at has no name");
+			// The SDK's own note: associating a category with bRequireHandler
+			// ORs it into both fields, so the second is a subset of the first.
+			context.Suspect("a category requires a handler but is not in the "
+			                "message's category mask");
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::GetSize", {
-		const int size = binding->GetSize();
-		context.Detail("-> %d", size);
-		// A negative size is impossible whatever the number means; zero is not,
-		// because the SDK never says whether this is the C++ object or the
-		// serialised payload, and an empty message has an empty payload.
-		if (size < 0)
-		{
-			context.Fail("a size cannot be negative");
-		}
-	});
-
-	CS2ST_CALL(context, "IProtobufBinding::GetGroup", {
-		// The group name down the binding's vtable against the m_szGroup the
-		// descriptor stores by value: two descriptions of one fact that share
-		// no code. Recorded as Suspect rather than Fail on a mismatch - the SDK
-		// never says the descriptor's copy comes from the binding, and inventing
-		// that contract is how this project has produced false alarms before.
-		const char* group = binding->GetGroup();
-		const char* stored = info->m_szGroup.Get();
-		context.Detail("-> \"%s\" vs NetMessageInfo_t::m_szGroup \"%s\"",
-			group != nullptr ? group : "(null)", stored != nullptr ? stored : "(null)");
-		if (group != nullptr && stored != nullptr && std::strcmp(group, stored) != 0)
-		{
-			context.Suspect("the binding and the descriptor disagree on the group");
-		}
-	});
-
-	CS2ST_CALL(context, "IProtobufBinding::GetGroupColor", {
-		const Color color = binding->GetGroupColor();
-		context.Detail("-> r=%d g=%d b=%d a=%d", color.r(), color.g(), color.b(), color.a());
-	});
-
-	CS2ST_CALL(context, "IProtobufBinding::GetBufType", {
-		const NetChannelBufType_t buf_type = binding->GetBufType();
+	CS2ST_CALL(context, "NetMessageInfo_t::GetBufType", {
+		const NetChannelBufType_t buf_type = info->GetBufType();
 		context.Detail("-> %s (%d)", BufTypeName(buf_type), static_cast<int>(buf_type));
 		if (buf_type < BUF_DEFAULT || buf_type > BUF_VOICE)
 		{
@@ -775,31 +742,21 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 		}
 	});
 
-	CS2ST_CALL(context, "IProtobufBinding::OkToRedispatch", {
-		// The sharpest of the three: a bool read two ways, and the descriptor's
-		// byte was already checked for being 0 or 1 above, so this asks whether
-		// it is the *same* 0 or 1 the binding reports.
-		//
-		// Still Suspect and not Fail. These are two objects, not a getter and
-		// the field behind it: the names line up exactly and the engine almost
-		// certainly copies one into the other at registration, but "almost
-		// certainly" is not something the SDK states, and a FAIL that turns out
-		// to be our inference teaches people to skip the column.
-		const bool from_binding = binding->OkToRedispatch();
-		const bool from_descriptor = info->m_bOkayToRedispatch;
-		context.Detail("-> %s vs NetMessageInfo_t::m_bOkayToRedispatch %s",
-			from_binding ? "true" : "false", from_descriptor ? "true" : "false");
-		if (from_binding != from_descriptor)
+	CS2ST_CALL(context, "NetMessageInfo_t::CannotBeNetworked", {
+		const bool cannot = info->CannotBeNetworked();
+		context.Detail("-> %s", cannot ? "true" : "false");
+		if (cannot)
 		{
-			context.Suspect("the binding and the descriptor disagree on redispatch");
+			// A game event exists to be sent to clients; one marked never
+			// networked has been read at the wrong offset or the flag moved.
+			context.Suspect("the game event message is marked as never sent over "
+			                "the network");
 		}
 	});
 
-	context.SkipCall("IProtobufBinding::ToString",
-		"needs a filled message to render, and this suite never allocates one");
-	context.SkipCall("IProtobufBinding::AllocateMessage",
-		"allocates an engine-owned CNetMessage with no matching free on this interface");
-	context.SkipCall("IProtobufBinding::unk001", "unidentified in the SDK");
+	CS2ST_CALL(context, "NetMessageInfo_t::OkayToRedispatch", {
+		context.Detail("-> %s", info->OkayToRedispatch() ? "true" : "false");
+	});
 }
 
 // -----------------------------------------------------------------------------
@@ -813,7 +770,7 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 
 void GameEventSuite::ReportObservedMessages(TestContext& context)
 {
-	context.Note("[hooks] %zu distinct INetworkMessageInternal pointer(s) seen so far%s",
+	context.Note("[hooks] %zu distinct NetMessageInfo_t pointer(s) seen so far%s",
 		observed_message_count_,
 		observed_message_overflow_ > 0 ? " (further ones dropped; the cap is deliberate)" : "");
 
@@ -826,12 +783,12 @@ void GameEventSuite::ReportObservedMessages(TestContext& context)
 
 	for (std::size_t i = 0; i < observed_message_count_; ++i)
 	{
-		INetworkMessageInternal* message = observed_messages_[i];
+		NetMessageInfo_t* message = observed_messages_[i];
 
 		char index_text[24];
 		std::snprintf(index_text, sizeof(index_text), " (observed #%zu)", i);
 		const std::string target =
-			std::string("INetworkMessageInternal::GetUnscopedName") + index_text;
+			std::string("NetMessageInfo_t::GetName") + index_text;
 
 		CS2ST_CALL(context, target, {
 			// Re-vetted even though the hook vetted it: these have sat in a
@@ -842,7 +799,7 @@ void GameEventSuite::ReportObservedMessages(TestContext& context)
 				context.Fail("a hook recorded something that is not a message");
 				return;
 			}
-			const char* name = message->GetUnscopedName();
+			const char* name = message->GetName();
 			context.Detail("%p -> %s", static_cast<void*>(message),
 				name != nullptr ? name : "(null)");
 		});
@@ -1049,7 +1006,7 @@ void GameEventSuite::RemoveHooks(TestContext& context)
 //  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED.
 // -----------------------------------------------------------------------------
 
-void GameEventSuite::NoteObservedMessage(INetworkMessageInternal* message)
+void GameEventSuite::NoteObservedMessage(NetMessageInfo_t* message)
 {
 	if (!LooksLikeObjectPointer(message))
 	{
@@ -1073,7 +1030,7 @@ void GameEventSuite::NoteObservedMessage(INetworkMessageInternal* message)
 	observed_messages_[observed_message_count_++] = message;
 }
 
-KHook::Return<void> GameEventSuite::Pre_RegisterGameEvent(IGameEventSystem*, INetworkMessageInternal* pEvent)
+KHook::Return<void> GameEventSuite::Pre_RegisterGameEvent(IGameEventSystem*, NetMessageInfo_t* pEvent)
 {
 	// Fires while the engine builds its event registry, which on a server this
 	// plugin loads late into has usually already happened. A count of zero here
@@ -1084,7 +1041,7 @@ KHook::Return<void> GameEventSuite::Pre_RegisterGameEvent(IGameEventSystem*, INe
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> GameEventSuite::Post_RegisterGameEvent(IGameEventSystem*, INetworkMessageInternal*)
+KHook::Return<void> GameEventSuite::Post_RegisterGameEvent(IGameEventSystem*, NetMessageInfo_t*)
 {
 	CS2ST_HOOK_LEAVE(kRegisterGameEvent);
 	return { KHook::Action::Ignore };
@@ -1092,7 +1049,7 @@ KHook::Return<void> GameEventSuite::Post_RegisterGameEvent(IGameEventSystem*, IN
 
 KHook::Return<void> GameEventSuite::Pre_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
                                                                          const CUtlAbstractDelegate& delegate,
-                                                                         INetworkMessageInternal* pEvent,
+                                                                         NetMessageInfo_t* pEvent,
                                                                          int nPriority)
 {
 	// The delegate is passed by reference and its members are private, so only
@@ -1108,7 +1065,7 @@ KHook::Return<void> GameEventSuite::Pre_RegisterGameEventHandlerAbstract(IGameEv
 
 KHook::Return<void> GameEventSuite::Post_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot*,
                                                                           const CUtlAbstractDelegate&,
-                                                                          INetworkMessageInternal*, int)
+                                                                          NetMessageInfo_t*, int)
 {
 	CS2ST_HOOK_LEAVE(kRegisterGameEventHandlerAbstract);
 	return { KHook::Action::Ignore };
@@ -1116,7 +1073,7 @@ KHook::Return<void> GameEventSuite::Post_RegisterGameEventHandlerAbstract(IGameE
 
 KHook::Return<void> GameEventSuite::Pre_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
                                                                            const CUtlAbstractDelegate& delegate,
-                                                                           INetworkMessageInternal* pEvent)
+                                                                           NetMessageInfo_t* pEvent)
 {
 	NoteObservedMessage(pEvent);
 	CS2ST_HOOK_ENTER_ARGS(kUnregisterGameEventHandlerAbstract,
@@ -1128,14 +1085,14 @@ KHook::Return<void> GameEventSuite::Pre_UnregisterGameEventHandlerAbstract(IGame
 
 KHook::Return<void> GameEventSuite::Post_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot*,
                                                                             const CUtlAbstractDelegate&,
-                                                                            INetworkMessageInternal*)
+                                                                            NetMessageInfo_t*)
 {
 	CS2ST_HOOK_LEAVE(kUnregisterGameEventHandlerAbstract);
 	return { KHook::Action::Ignore };
 }
 
 KHook::Return<void> GameEventSuite::Pre_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot,
-                                                                INetworkMessageInternal* pEvent,
+                                                                NetMessageInfo_t* pEvent,
                                                                 const CNetMessage* pData, unsigned long nSize)
 {
 	NoteObservedMessage(pEvent);
@@ -1148,7 +1105,7 @@ KHook::Return<void> GameEventSuite::Pre_PostEventAbstract_Local(IGameEventSystem
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> GameEventSuite::Post_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot, INetworkMessageInternal*,
+KHook::Return<void> GameEventSuite::Post_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot, NetMessageInfo_t*,
                                                                  const CNetMessage*, unsigned long)
 {
 	CS2ST_HOOK_LEAVE(kPostEventAbstractLocal);
@@ -1157,7 +1114,7 @@ KHook::Return<void> GameEventSuite::Post_PostEventAbstract_Local(IGameEventSyste
 
 KHook::Return<void> GameEventSuite::Pre_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
                                                           int nClientCount, const uint64* clients,
-                                                          INetworkMessageInternal* pEvent,
+                                                          NetMessageInfo_t* pEvent,
                                                           const CNetMessage* pData, unsigned long nSize,
                                                           NetChannelBufType_t bufType)
 {
@@ -1182,7 +1139,7 @@ KHook::Return<void> GameEventSuite::Pre_PostEventAbstract(IGameEventSystem*, CSp
 }
 
 KHook::Return<void> GameEventSuite::Post_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot, bool, int, const uint64*,
-                                                           INetworkMessageInternal*, const CNetMessage*,
+                                                           NetMessageInfo_t*, const CNetMessage*,
                                                            unsigned long, NetChannelBufType_t)
 {
 	CS2ST_HOOK_LEAVE(kPostEventAbstract);
@@ -1191,7 +1148,7 @@ KHook::Return<void> GameEventSuite::Post_PostEventAbstract(IGameEventSystem*, CS
 
 KHook::Return<void> GameEventSuite::Pre_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
                                                                   IRecipientFilter* pFilter,
-                                                                  INetworkMessageInternal* pEvent,
+                                                                  NetMessageInfo_t* pEvent,
                                                                   const CNetMessage* pData, unsigned long nSize)
 {
 	NoteObservedMessage(pEvent);
@@ -1211,7 +1168,7 @@ KHook::Return<void> GameEventSuite::Pre_PostEventAbstractFiltered(IGameEventSyst
 }
 
 KHook::Return<void> GameEventSuite::Post_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot, bool, IRecipientFilter*,
-                                                                   INetworkMessageInternal*,
+                                                                   NetMessageInfo_t*,
                                                                    const CNetMessage*, unsigned long)
 {
 	CS2ST_HOOK_LEAVE(kPostEventAbstractFiltered);
@@ -1219,7 +1176,7 @@ KHook::Return<void> GameEventSuite::Post_PostEventAbstractFiltered(IGameEventSys
 }
 
 KHook::Return<void> GameEventSuite::Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl,
-                                                                INetworkMessageInternal* pEvent,
+                                                                NetMessageInfo_t* pEvent,
                                                                 const CNetMessage* pData, unsigned long nSize,
                                                                 NetChannelBufType_t bufType, bool bAllClients)
 {
@@ -1242,7 +1199,7 @@ KHook::Return<void> GameEventSuite::Pre_PostEntityEventAbstract(IGameEventSystem
 	return { KHook::Action::Ignore };
 }
 
-KHook::Return<void> GameEventSuite::Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle&, INetworkMessageInternal*,
+KHook::Return<void> GameEventSuite::Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle&, NetMessageInfo_t*,
                                                                  const CNetMessage*, unsigned long,
                                                                  NetChannelBufType_t, bool)
 {
@@ -1308,13 +1265,13 @@ GameEventSuite::GameEventSuite() :
 		&GameEventSuite::Pre_PostEventAbstract_Local,
 		&GameEventSuite::Post_PostEventAbstract_Local),
 	hook_PostEventAbstract_(static_cast<void (IGameEventSystem::*)(
-		CSplitScreenSlot, bool, int, const uint64*, INetworkMessageInternal*,
+		CSplitScreenSlot, bool, int, const uint64*, NetMessageInfo_t*,
 		const CNetMessage*, unsigned long, NetChannelBufType_t)>(
 		&IGameEventSystem::PostEventAbstract), this,
 		&GameEventSuite::Pre_PostEventAbstract,
 		&GameEventSuite::Post_PostEventAbstract),
 	hook_PostEventAbstractFiltered_(static_cast<void (IGameEventSystem::*)(
-		CSplitScreenSlot, bool, IRecipientFilter*, INetworkMessageInternal*,
+		CSplitScreenSlot, bool, IRecipientFilter*, NetMessageInfo_t*,
 		const CNetMessage*, unsigned long)>(
 		&IGameEventSystem::PostEventAbstract), this,
 		&GameEventSuite::Pre_PostEventAbstractFiltered,
