@@ -31,6 +31,7 @@ header explains its oracles; this page is only the map.
 | GamedataSuite | `configs/gamedata.toml`: signatures, slots, offsets; 2 hooks | none of its own |
 | MetamodListenerSuite | ISmmAPI / IMetamodListener (Metamod, not s2sdk) | metamod-source `ISmmPlugin.h` |
 | Tier0ContainerSuite | CUtlVector, CUtlString, CUtlBuffer, CBufferString read from engine objects | tier0/utl*.h, buffer_string.h |
+| Tier0PlatformSuite | Plat_RelativeTicks, Plat_TicksAfterMicroSecs, CLimitTimer; tick clock checked against Plat_USTime | tier0/platform.h, reliabletimer.h |
 | KeyValues3Suite | KeyValues3 filled by the engine; needs `CS2SDKTEST_TIER1_KEYVALUES3` | tier0/keyvalues3.h |
 
 ## Suites that differ from the rest

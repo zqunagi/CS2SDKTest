@@ -203,6 +203,7 @@ set(CS2SDKTEST_SOURCES
   src/suites/FileSystemSuite.cpp
   src/suites/GamedataSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
+  src/suites/Tier0PlatformSuite.cpp
   src/suites/KeyValues3Suite.cpp
   src/suites/LocalizeSuite.cpp
   src/suites/GameTypesSuite.cpp
@@ -258,6 +259,7 @@ set(CS2SDKTEST_HEADERS
   src/suites/FileSystemSuite.h
   src/suites/GamedataSuite.h
   src/suites/Tier0ContainerSuite.h
+  src/suites/Tier0PlatformSuite.h
   src/suites/KeyValues3Suite.h
   src/suites/LocalizeSuite.h
   src/suites/GameTypesSuite.h

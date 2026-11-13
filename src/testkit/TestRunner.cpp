@@ -20,6 +20,7 @@
 #include "suites/ResourceSystemSuite.h"
 #include "suites/ServerConfigSuite.h"
 #include "suites/Tier0ContainerSuite.h"
+#include "suites/Tier0PlatformSuite.h"
 #include "suites/KeyValues3Suite.h"
 #include "suites/LocalizeSuite.h"
 #include "suites/GameTypesSuite.h"
