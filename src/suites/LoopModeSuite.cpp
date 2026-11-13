@@ -114,7 +114,8 @@ bool LoopModeSuite::FindRegistrations(TestContext& context)
 		{
 			context.Detail("%zu-byte pattern matches %zu time(s) in %s", pattern.size(),
 				scan.matches, server.name().c_str());
-			context.Suspect("the registry function moved or changed; no loop mode can be reached");
+			context.Fail("signature %s; it must match exactly once, so no loop mode can be reached",
+				scan.matches == 0 ? "matches nothing" : "matches more than once");
 			return;
 		}
 
