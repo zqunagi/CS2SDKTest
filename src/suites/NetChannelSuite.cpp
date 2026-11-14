@@ -630,13 +630,25 @@ void NetChannelSuite::ExerciseChannel(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "INetChannel::GetRecvLimitMode", {
-		// Reported, not judged: the SDK says 1 applies the net_limit_sv_recv_*
-		// convars and any other value uses the defaults, so every int is a
-		// legal answer. A fresh channel nobody configured is expected to read
-		// a non-1 default; the number is what a diff across updates compares.
-		const int mode = channel->GetRecvLimitMode();
-		context.Detail("-> %d (%s)", mode,
-			mode == 1 ? "convar limits" : "default limits");
+		// Reported, not judged: a fresh channel nobody configured is expected
+		// to read NET_RECV_LIMIT_MODE_DEFAULT (the server sets _CLIENT only on
+		// the channels of real clients); the number is what a diff across
+		// updates compares. Anything outside the five enumerators is a fault.
+		const NetRecvLimitMode_t mode = channel->GetRecvLimitMode();
+		const char* name = "?";
+		switch (mode)
+		{
+		case NET_RECV_LIMIT_MODE_DEFAULT: name = "NET_RECV_LIMIT_MODE_DEFAULT"; break;
+		case NET_RECV_LIMIT_MODE_CLIENT:  name = "NET_RECV_LIMIT_MODE_CLIENT";  break;
+		case NET_RECV_LIMIT_MODE_SERVER:  name = "NET_RECV_LIMIT_MODE_SERVER";  break;
+		case NET_RECV_LIMIT_MODE_P2P:     name = "NET_RECV_LIMIT_MODE_P2P";     break;
+		case NET_RECV_LIMIT_MODE_DEMO:    name = "NET_RECV_LIMIT_MODE_DEMO";    break;
+		}
+		context.Detail("-> %d (%s)", static_cast<int>(mode), name);
+		if (mode < NET_RECV_LIMIT_MODE_DEFAULT || mode > NET_RECV_LIMIT_MODE_DEMO)
+		{
+			context.Fail("outside NetRecvLimitMode_t's five enumerators");
+		}
 	});
 
 	CS2ST_CALL(context, "INetChannel::IsSuppressingTransmit", {

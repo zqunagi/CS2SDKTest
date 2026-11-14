@@ -452,6 +452,12 @@ void NetworkMessagesSuite::ExerciseBindingMatrix(TestContext& context)
 		context.Detail("-> %s", info->OkayToRedispatch() ? "true" : "false");
 	});
 
+	CS2ST_CALL(context, "NetMessageInfo_t::ExcludeFromMessageStats", {
+		// Set when the message was registered without a signon group; reported,
+		// not judged, since either value is legal.
+		context.Detail("-> %s", info->ExcludeFromMessageStats() ? "true" : "false");
+	});
+
 	CS2ST_CALL(context, "CNETMsg_Tick::descriptor (generated header)", {
 		// The third, protobuf-side reading: what the SDK's .proto says, as
 		// this build compiled it. Read through the generated code's own
@@ -812,12 +818,14 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 				context.Detail("-> no target message to read into");
 				return;
 			}
-			// err_reason is the new third parameter: the engine writes why a
-			// read failed into it, and a stack CUtlString of ours frees through
-			// the same tier0 allocator the engine allocated with.
+			// nRecvLimitMode says where the data came from; only _CLIENT applies
+			// the server's size limits, and this is neither, so _DEFAULT.
+			// err_reason: the engine writes why a read failed into it, and a
+			// stack CUtlString of ours frees through the same tier0 allocator
+			// the engine allocated with.
 			CUtlString err_reason;
 			const bool ok = messages_->UnserializeMessageInternal(
-				reader, typed_target, &err_reason);
+				reader, typed_target, NET_RECV_LIMIT_MODE_DEFAULT, &err_reason);
 			context.Detail("-> %s into %p, err \"%s\"", ok ? "true" : "false",
 				static_cast<void*>(typed_target), err_reason.Get());
 			if (!ok)
@@ -851,7 +859,8 @@ void NetworkMessagesSuite::ExerciseRoundTrip(TestContext& context)
 		CUtlString err_reason;
 		bf_read reader(buffer, written);
 		CS2ST_CALL(context, "INetworkMessages::UnserializeFromStream", {
-			from_stream = messages_->UnserializeFromStream(reader, err_reason);
+			from_stream = messages_->UnserializeFromStream(
+				reader, NET_RECV_LIMIT_MODE_DEFAULT, err_reason);
 			context.Detail("-> %p, err \"%s\"", static_cast<void*>(from_stream),
 				err_reason.Get());
 		});

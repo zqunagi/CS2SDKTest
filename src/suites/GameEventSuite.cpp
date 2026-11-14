@@ -663,12 +663,12 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 	                                       offsetof(NetMessageInfo_t, m_nRequiredHandlerCategories));
 	inspect.Raw    ("m_GroupId",           offsetof(NetMessageInfo_t, m_GroupId),
 	                                       sizeof(NetworkGroupId));
-	// m_nBufType:5, m_bCannotBeNetworked:1, m_bOkayToRedispatch:1 and m_unk001:1
+	// m_nBufType:5, m_bCannotBeNetworked:1, m_bOkayToRedispatch:1 and m_bExcludeFromMessageStats:1
 	// share one byte. offsetof() cannot name a bitfield (C2618), so the byte is
 	// addressed relative to m_GroupId, the last ordinary member before it. The
 	// redispatch flag used to be a plain bool with a 0-or-1 probe of its own; as
 	// a bit it is read through the accessor below instead.
-	inspect.Raw    ("m_nBufType/m_bCannotBeNetworked/m_bOkayToRedispatch/m_unk001 (packed byte)",
+	inspect.Raw    ("m_nBufType/m_bCannotBeNetworked/m_bOkayToRedispatch/m_bExcludeFromMessageStats (packed byte)",
 	                                       offsetof(NetMessageInfo_t, m_GroupId) + 1,
 	                                       sizeof(uint8));
 
@@ -756,6 +756,12 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 
 	CS2ST_CALL(context, "NetMessageInfo_t::OkayToRedispatch", {
 		context.Detail("-> %s", info->OkayToRedispatch() ? "true" : "false");
+	});
+
+	CS2ST_CALL(context, "NetMessageInfo_t::ExcludeFromMessageStats", {
+		// Set when the message was registered without a signon group; reported,
+		// not judged, since either value is legal.
+		context.Detail("-> %s", info->ExcludeFromMessageStats() ? "true" : "false");
 	});
 }
 
