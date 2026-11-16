@@ -2,8 +2,6 @@
 
 # CS2SDKTest
 
-**A full-interface test plugin for s2sdk.**
-
 [![Release](https://img.shields.io/github/v/release/zqunagi/CS2SDKTest?sort=semver)](https://github.com/zqunagi/CS2SDKTest/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -18,7 +16,7 @@
 
 ## Overview
 
-CS2SDKTest is a [Metamod:Source](https://www.sourcemm.net/) plugin for testing [s2sdk](https://github.com/alliedmodders/s2sdk) as a whole. It runs inside a real CS2 server process and, for each interface exposed by s2sdk, performs calls, hooks, and struct layout checks, then records the results to a log.
+CS2SDKTest is a [Metamod:Source](https://www.sourcemm.net/) plugin that verifies the usability and compatibility of [s2sdk](https://github.com/alliedmodders/s2sdk) in a real game server environment.
 
 Tests are organized into suites, one per interface, and cover three kinds of checks:
 
@@ -27,8 +25,6 @@ Tests are organized into suites, one per interface, and cover three kinds of che
 | **Call** | Calls the interface methods and validates return values | `OK` / `FAIL` / `CRASHED` / `SKIP` |
 | **Hook** | Installs hooks; counts callback invocations and samples arguments | Invocation count; `never` if not triggered |
 | **Layout** | Reads real struct memory and verifies field offsets and sizes | `OK` / `FAIL` |
-
-Checking interface version strings alone cannot detect changed vtable slots or changed parameters, so this project verifies interfaces by actually calling them. The same approach works as a regression check after a game update: if a result changes from `OK` to `CRASHED` or `FAIL`, or a hook goes from having a count to `never`, the corresponding interface needs to be adapted.
 
 > [!WARNING]
 > **Results are not guaranteed to be fully accurate.** Some interface behavior has no reference to compare against, or depends on runtime state, so results may contain false positives or false negatives. A `FAIL` / `CRASHED` does not necessarily mean s2sdk is defective; it may come from a bug in the test case itself, an unmet precondition, or differences in the test environment. Likewise, `OK` does not prove an interface is fully correct. When a result looks abnormal, confirm the root cause **manually** against the disassembly or the engine binary before drawing conclusions.
