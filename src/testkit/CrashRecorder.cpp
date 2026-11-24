@@ -403,6 +403,113 @@ void AddFrame(int index, const void* pc)
 	frame.resolved = false;
 }
 
+struct ExecRange
+{
+	unsigned long long start;
+	unsigned long long end;
+};
+ExecRange g_exec[768];
+
+/** Executable mappings, so a stack word can be tested for "could be a return address". */
+int CollectExecRanges()
+{
+	const int fd = ::open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+	{
+		return 0;
+	}
+	int count = 0;
+	char chunk[4096];
+	char line[640];
+	std::size_t length = 0;
+	for (;;)
+	{
+		const ssize_t got = ::read(fd, chunk, sizeof(chunk));
+		if (got < 0 && errno == EINTR)
+		{
+			continue;
+		}
+		if (got <= 0)
+		{
+			break;
+		}
+		for (ssize_t i = 0; i < got; ++i)
+		{
+			if (chunk[i] != '
+')
+			{
+				if (length + 1 < sizeof(line))
+				{
+					line[length++] = chunk[i];
+				}
+				continue;
+			}
+			line[length] = ' ';
+			length = 0;
+			const char* p = line;
+			const unsigned long long start = ParseHex(p);
+			if (*p != '-')
+			{
+				continue;
+			}
+			++p;
+			const unsigned long long end = ParseHex(p);
+			while (*p == ' ')
+			{
+				++p;
+			}
+			// perms are "rwxp": the third character
+			if (p[0] != ' ' && p[1] != ' ' && p[2] == 'x' && count < 768)
+			{
+				g_exec[count].start = start;
+				g_exec[count].end = end;
+				++count;
+			}
+		}
+	}
+	::close(fd);
+	return count;
+}
+
+/**
+ * Fallback for code without frame pointers or unwind data, where backtrace()
+ * stops at the faulting function: look through the words just above the stack
+ * pointer for values that point into executable memory. Those are mostly real
+ * return addresses, with some stale ones mixed in, so it is a lead and not a proof.
+ */
+void ScanStack(void* context, int* frame_count)
+{
+#if defined(__linux__) && defined(__x86_64__)
+	if (context == nullptr)
+	{
+		return;
+	}
+	const unsigned long long sp = static_cast<unsigned long long>(
+		static_cast<const ucontext_t*>(context)->uc_mcontext.gregs[REG_RSP]);
+	if (sp == 0 || (sp & 7) != 0)
+	{
+		return;
+	}
+	const int ranges = CollectExecRanges();
+	const unsigned long long* words = reinterpret_cast<const unsigned long long*>(sp);
+	for (int i = 0; i < 192 && *frame_count < 16; ++i)
+	{
+		const unsigned long long value = words[i];
+		for (int r = 0; r < ranges; ++r)
+		{
+			if (value >= g_exec[r].start && value < g_exec[r].end)
+			{
+				AddFrame((*frame_count)++, reinterpret_cast<const void*>(value));
+				break;
+			}
+		}
+	}
+#else
+	(void)context;
+	(void)frame_count;
+#endif
+}
+
 void WriteAll(int fd, const char* data, std::size_t size)
 {
 	while (size > 0)
@@ -469,6 +576,10 @@ void WriteReport(int signal_number, const siginfo_t* info, void* context)
 		{
 			AddFrame(frame_count++, raw[i]);
 		}
+	}
+	if (frame_count < 4)
+	{
+		ScanStack(context, &frame_count);
 	}
 	ResolveFrames(frame_count);
 
