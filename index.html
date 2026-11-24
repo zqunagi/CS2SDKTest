@@ -747,12 +747,10 @@ function crashCard(info,suspect){
   if(!info||!info.call)if(suspect)rows.push(row('lastCall',`<code>${esc(suspect)}</code>`));
   let h=`<div class="card crash sec">${head}${rows.length?`<dl class="crash-kv">${rows.join('')}</dl>`:''}`;
   if(info&&info.frames&&info.frames.length){
-    const txt=info.frames.map((f,i)=>`#${i}  ${f.m||'?'}+${f.o}`).join('
-');
+    const txt=info.frames.map((f,i)=>`#${i}  ${f.m||'?'}+${f.o}`).join('\n');
     h+=`<details open><summary>${esc(t('crStack'))}</summary>${codeBlock(txt)}</details>`}
   if(info&&info.console_tail&&info.console_tail.length)
-    h+=`<details open><summary>${esc(t('crTail'))}</summary>${codeBlock(info.console_tail.join('
-'))}</details>`;
+    h+=`<details open><summary>${esc(t('crTail'))}</summary>${codeBlock(info.console_tail.join('\n'))}</details>`;
   return h+'</div>'}
 function skeleton(){
   return `<div class="skel sk-meta"></div><div class="stats">${'<div class="skel sk-card"></div>'.repeat(6)}</div><div class="card sec stable">${'<div class="skel sk-row"></div>'.repeat(5)}</div>`}
