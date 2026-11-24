@@ -9,6 +9,7 @@
 #include "hook/HookRecorder.h"
 #include "plugin/Autorun.h"
 #include "testkit/CallGuard.h"
+#include "testkit/CrashRecorder.h"
 
 namespace cs2st
 {
@@ -53,11 +54,22 @@ bool CS2SDKTestPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxl
 	// console that cannot do colour gets plain text rather than escapes.
 	InitLogging();
 
+	// Only for an unattended run: it replaces the process's fatal-signal
+	// handlers (chaining to the old ones), which nobody asked for in a server
+	// someone is just playing on. Installed this early so a fault anywhere from
+	// here on - including the rest of Load - leaves a crash.json behind.
+	CrashRecorder::SetPhase("plugin_load");
+	if (Autorun::RequestedByEnvironment())
+	{
+		CrashRecorder::Install();
+	}
+
 	tests_ = TestRunner::CreateDefault();
 
 	META_CONVAR_REGISTER(FCVAR_RELEASE | FCVAR_GAMEDLL);
 
 	ready_ = true;
+	CrashRecorder::SetPhase("plugin_loaded");
 
 	CS2ST_LOG_INFO("%s %s loaded%s\n",
 		PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION, late ? " (late)" : "");
@@ -74,6 +86,7 @@ bool CS2SDKTestPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxl
 bool CS2SDKTestPlugin::Unload(char* error, size_t maxlen)
 {
 	ready_ = false;
+	CrashRecorder::SetPhase("plugin_unload");
 
 	// Hooks must come out before the plugin's code is unmapped, or the next
 	// call through one of them lands in freed memory.
@@ -89,6 +102,7 @@ bool CS2SDKTestPlugin::Unload(char* error, size_t maxlen)
 
 	UnregisterCommands();
 	CloseSessionLog();
+	CrashRecorder::Uninstall();
 
 	(void)error;
 	(void)maxlen;

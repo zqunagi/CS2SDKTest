@@ -4,6 +4,7 @@
 
 #include "core/FileSystemUtil.h"
 #include "core/Log.h"
+#include "testkit/CrashRecorder.h"
 #include "version_gen.h"
 
 namespace cs2st
@@ -220,6 +221,10 @@ void ResultSink::WriteLine(const std::string& line)
 
 void ResultSink::Begin(const std::string& suite, const std::string& call)
 {
+	// Before the file check: the crash report names the call in flight even when
+	// there is no results.jsonl to write the begin line to.
+	CrashRecorder::SetCall(suite.c_str(), call.c_str());
+
 	if (file_ == nullptr)
 	{
 		return;
@@ -239,6 +244,8 @@ void ResultSink::Begin(const std::string& suite, const std::string& call)
 void ResultSink::Result(const std::string& suite, const std::string& call,
 	CallOutcome outcome, const std::string& detail, int source_line)
 {
+	CrashRecorder::ClearCall();
+
 	if (file_ == nullptr)
 	{
 		return;

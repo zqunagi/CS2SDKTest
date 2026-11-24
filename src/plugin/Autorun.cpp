@@ -10,6 +10,7 @@
 #include "core/Log.h"
 #include "plugin/Commands.h"
 #include "plugin/Plugin.h"
+#include "testkit/CrashRecorder.h"
 #include "testkit/TestContext.h"
 #include "testkit/TestRunner.h"
 
@@ -68,6 +69,7 @@ bool Autorun::Start()
 	hook_GameFrame_.Add(server_);
 	hooked_ = true;
 	state_ = State::kWaiting;
+	CrashRecorder::SetPhase("autorun_armed");
 
 	CS2ST_LOG_INFO("autorun: armed (suite=%s, delay=%ds, quit=%s)\n",
 		only_.empty() ? "all" : only_.c_str(), delay_seconds_, quit_when_done_ ? "yes" : "no");
@@ -96,6 +98,7 @@ void Autorun::OnFrame(bool simulating)
 	{
 		clock_started_ = true;
 		clock_start_ = now;
+		CrashRecorder::SetPhase("map_simulating");
 		CS2ST_LOG_INFO("autorun: map is simulating, sweeping in %ds\n", delay_seconds_);
 	}
 
@@ -107,8 +110,10 @@ void Autorun::OnFrame(bool simulating)
 	// Set first: the sweep runs inside this frame and may take a while, and a
 	// second GameFrame must never get here while it does.
 	state_ = State::kRunning;
+	CrashRecorder::SetPhase("sweep");
 	Execute();
 	state_ = State::kDone;
+	CrashRecorder::SetPhase("sweep_done");
 
 	if (quit_when_done_)
 	{
@@ -142,6 +147,7 @@ void Autorun::Quit()
 	{
 		return;
 	}
+	CrashRecorder::SetPhase("quitting");
 	CS2ST_LOG_INFO("autorun: quitting\n");
 	engine_->ServerCommand("quit\n");
 }

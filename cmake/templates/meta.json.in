@@ -1,0 +1,10 @@
+{
+  "plugin": "@CS2SDKTEST_PROJECT_NAME@",
+  "version": "@CS2SDKTEST_FULL_VERSION@",
+  "git": "@CS2SDKTEST_GIT_REVISION@",
+  "commit": "@CS2SDKTEST_GIT_COMMIT@",
+  "platform": "@CS2SDKTEST_PLATFORM@",
+  "build_type": "@CS2SDKTEST_BUILD_TYPE@",
+  "sdk": "@S2SDK_ENGINE_NAME@",
+  "s2sdk": "@CS2SDKTEST_SDK_REVISION@"
+}

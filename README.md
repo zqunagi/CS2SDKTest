@@ -65,6 +65,10 @@ When the environment variables below are set, the plugin runs all tests automati
 | `CST_AUTORUN_DELAY=<seconds>` | Delay before running (0–600) |
 | `CST_AUTORUN_QUIT=0` | Keep the server running after the tests finish (it exits by default) |
 
+With autorun enabled the plugin also installs a fatal-signal handler (Linux). If the process dies on SIGSEGV, SIGBUS, SIGILL, SIGFPE or SIGABRT, it writes `crash.json` next to `results.json` (`CST_RESULT_DIR`, or the log directory) with the signal, the fault address, how far the plugin had got, the call in flight and a backtrace, then lets the signal continue to the engine's own handler, so exit codes and dumps are unchanged. Faults inside a test call are still caught and reported as `CRASHED`; this covers everything outside one, such as a hook callback, another thread or a crash while the map loads.
+
+The package also carries `addons/cs2sdktest/meta.json` (version, s2sdk commit, platform), so whoever runs it can identify the build even if the plugin never loaded.
+
 Server launch parameters used for testing:
 
 ```

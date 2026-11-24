@@ -125,6 +125,21 @@ configure_file(
   "${CS2SDKTEST_REVISION_HEADER}"
   @ONLY
 )
+
+# meta.json travels in the package next to the plugin. Whoever runs the package
+# (the runner) can then say which build it was even when the process died before
+# the plugin loaded and wrote anything itself: Metamod failing, or the engine
+# going down first, leaves no results file to take the version from.
+set(CS2SDKTEST_PROJECT_NAME "${PROJECT_NAME}")
+set(CS2SDKTEST_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+set(CS2SDKTEST_META_FILE
+  "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/meta.json")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/meta.json.in"
+  "${CS2SDKTEST_META_FILE}"
+  @ONLY
+)
+
 add_custom_target(cs2sdktest_revision
   COMMAND ${CMAKE_COMMAND}
     -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
@@ -132,8 +147,14 @@ add_custom_target(cs2sdktest_revision
     -DPROJECT_VERSION=${PROJECT_VERSION}
     -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/revision_gen.h.in
     -DOUTPUT=${CS2SDKTEST_REVISION_HEADER}
+    -DMETA_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/meta.json.in
+    -DMETA_OUTPUT=${CS2SDKTEST_META_FILE}
+    -DCS2SDKTEST_PROJECT_NAME=${CS2SDKTEST_PROJECT_NAME}
+    -DCS2SDKTEST_PLATFORM=${CS2SDKTEST_PLATFORM}
+    -DCS2SDKTEST_BUILD_TYPE=$<CONFIG>
+    -DS2SDK_ENGINE_NAME=${S2SDK_ENGINE_NAME}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateRevision.cmake
-  BYPRODUCTS "${CS2SDKTEST_REVISION_HEADER}"
+  BYPRODUCTS "${CS2SDKTEST_REVISION_HEADER}" "${CS2SDKTEST_META_FILE}"
   COMMENT "Refreshing the version header"
   VERBATIM
 )
@@ -174,6 +195,7 @@ set(CS2SDKTEST_SOURCES
   src/data/GameModules.cpp
 
   src/testkit/CallGuard.cpp
+  src/testkit/CrashRecorder.cpp
   src/testkit/StructInspector.cpp
   src/testkit/TestContext.cpp
   src/testkit/TestRunner.cpp
