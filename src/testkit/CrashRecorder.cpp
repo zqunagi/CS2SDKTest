@@ -435,8 +435,7 @@ int CollectExecRanges()
 		}
 		for (ssize_t i = 0; i < got; ++i)
 		{
-			if (chunk[i] != '
-')
+			if (chunk[i] != 0x0A)
 			{
 				if (length + 1 < sizeof(line))
 				{
@@ -444,7 +443,7 @@ int CollectExecRanges()
 				}
 				continue;
 			}
-			line[length] = ' ';
+			line[length] = 0;
 			length = 0;
 			const char* p = line;
 			const unsigned long long start = ParseHex(p);
@@ -459,7 +458,7 @@ int CollectExecRanges()
 				++p;
 			}
 			// perms are "rwxp": the third character
-			if (p[0] != ' ' && p[1] != ' ' && p[2] == 'x' && count < 768)
+			if (p[0] != 0 && p[1] != 0 && p[2] == 'x' && count < 768)
 			{
 				g_exec[count].start = start;
 				g_exec[count].end = end;
