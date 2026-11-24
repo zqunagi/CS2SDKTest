@@ -1,0 +1,34 @@
+{
+    "status":  "crashed",
+    "reason":  "release",
+    "release":  "v0.5.7",
+    "game_buildid":  "26879581",
+    "game_version":  "1.42.0.1",
+    "duration_s":  "4",
+    "finished":  "2026-11-24T02:32:35Z",
+    "suspect":  "",
+    "platform":  "linux",
+    "s2sdk":  "58bebeb6 (2026-11-13)",
+    "plugin_version":  "v0.5.7",
+    "build_type":  "RelWithDebInfo",
+    "crash":  {
+                  "stage":  "map_load",
+                  "how":  "signal",
+                  "signal":  "SIGSEGV",
+                  "signal_source":  "recorder",
+                  "phase":  "map_simulating",
+                  "fault_address":  "0x28",
+                  "si_code":  1,
+                  "si_code_name":  "unmapped",
+                  "frames":  [
+                                 {
+                                     "m":  "libtier0.so",
+                                     "o":  "0x19a850",
+                                     "k":  "engine"
+                                 }
+                             ],
+                  "plugin_in_stack":  false,
+                  "fault_in":  "engine",
+                  "has_dump":  false
+              }
+}
