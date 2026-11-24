@@ -17,6 +17,7 @@
 #include "core/Module.h"
 #include "data/GameModules.h"
 #include "hook/HookRecorder.h"
+#include "plugin/Autorun.h"
 #include "plugin/Commands.h"
 #include "plugin/Plugin.h"
 #include "testkit/CallGuard.h"
@@ -388,6 +389,11 @@ void Dispatch(const CCommand& args)
 	else if (IsEqual(command, "run"))
 	{
 		CommandRun(args);
+	}
+	else if (IsEqual(command, "autorun-fire"))
+	{
+		// Queued by the autorun timer; not in the help text on purpose.
+		FireAutorun();
 	}
 	else if (IsEqual(command, "hooks"))
 	{

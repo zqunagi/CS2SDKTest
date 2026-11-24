@@ -6,15 +6,16 @@
  *
  *   CST_AUTORUN=1          enable
  *   CST_AUTORUN_SUITE=id   one suite instead of all of them
- *   CST_AUTORUN_DELAY=n    seconds of simulated game time to wait after the
- *                          map is up before sweeping (default 10)
+ *   CST_AUTORUN_DELAY=n    seconds after the plugin is armed before sweeping
+ *                          (default 30). It has to cover the map load.
  *   CST_AUTORUN_QUIT=0     leave the server running afterwards
  *   CST_RESULT_DIR=path    where results.json(l) go (see ResultSink)
  *
- * Timing: the sweep needs a map that is actually running (the entity system,
- * game rules, a bot to poke), so it is triggered from ISource2Server::GameFrame
- * rather than from a load callback. The first frame with `simulating` set
- * starts the clock; the sweep runs on the first frame after the delay.
+ * Timing: no engine vtable is hooked. A timer thread sleeps for the delay and
+ * then queues `cst autorun-fire` on the engine's command buffer, which runs the
+ * sweep on the main thread. The delay is counted from when the plugin is armed,
+ * so it must be long enough for the map to finish loading; nothing checks that
+ * the map is actually simulating.
  *
  * This is not a watchdog. A hang or a crash the fault guard cannot catch takes
  * the process with it, and only something outside the process can notice -
@@ -24,12 +25,11 @@
 #ifndef CS2SDKTEST_PLUGIN_AUTORUN_H_
 #define CS2SDKTEST_PLUGIN_AUTORUN_H_
 
-#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <string>
+#include <thread>
 
-#include <khook.hpp>
-
-class ISource2Server;
 class IVEngineServer2;
 
 namespace cs2st
@@ -47,42 +47,43 @@ public:
 	/** True when CST_AUTORUN=1 is set. Cheap; call before constructing. */
 	static bool RequestedByEnvironment();
 
-	/** Reads the settings, resolves the interfaces, installs the frame hook. */
+	/** Reads the settings, resolves the engine interface, starts the timer. */
 	bool Start();
 
-	/** Removes the frame hook. Safe to call twice. */
+	/** Runs the sweep. Main thread only; reached through `cst autorun-fire`. */
+	void Fire();
+
+	/** Cancels the timer and joins its thread. Safe to call twice. */
 	void Stop();
 
 private:
 	enum class State
 	{
 		kIdle,
-		kWaiting,   ///< hooked, waiting for the map and the delay
+		kWaiting,   ///< timer running, waiting for the delay
 		kRunning,
 		kDone,
 	};
 
-	KHook::Return<void> Pre_GameFrame(ISource2Server*, bool simulating, bool first_tick, bool last_tick);
-	KHook::Return<void> Post_GameFrame(ISource2Server*, bool simulating, bool first_tick, bool last_tick);
-
-	void OnFrame(bool simulating);
+	void TimerMain();
 	void Execute();
 	void Quit();
 
-	KHook::Virtual<ISource2Server, void, bool, bool, bool> hook_GameFrame_;
-
-	ISource2Server* server_ = nullptr;
 	IVEngineServer2* engine_ = nullptr;
-	bool hooked_ = false;
+
+	std::thread timer_;
+	std::mutex mutex_;
+	std::condition_variable cv_;
+	bool cancel_ = false;
 
 	State state_ = State::kIdle;
 	std::string only_;
-	int delay_seconds_ = 10;
+	int delay_seconds_ = 30;
 	bool quit_when_done_ = true;
-
-	bool clock_started_ = false;
-	std::chrono::steady_clock::time_point clock_start_;
 };
+
+/** Entry point for the `cst autorun-fire` command; no-op when autorun is not armed. */
+void FireAutorun();
 
 } // namespace cs2st
 
