@@ -1,0 +1,10 @@
+{
+    "status":  "crashed",
+    "reason":  "gameupdate",
+    "release":  "v0.5.6",
+    "game_buildid":  "26879581",
+    "game_version":  "1.42.0.1",
+    "duration_s":  "2",
+    "finished":  "2026-11-24T00:12:09Z",
+    "suspect":  ""
+}
