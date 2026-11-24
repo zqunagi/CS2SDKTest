@@ -1,0 +1,109 @@
+{
+    "status":  "crashed",
+    "reason":  "release",
+    "release":  "v0.5.8",
+    "game_buildid":  "26879581",
+    "game_version":  "1.42.0.1",
+    "duration_s":  "3",
+    "finished":  "2026-11-24T03:02:13Z",
+    "suspect":  "",
+    "platform":  "linux",
+    "s2sdk":  "58bebeb6 (2026-11-13)",
+    "plugin_version":  "v0.5.8",
+    "build_type":  "RelWithDebInfo",
+    "crash":  {
+                  "stage":  "before_sweep",
+                  "how":  "signal",
+                  "signal":  "SIGSEGV",
+                  "signal_source":  "recorder",
+                  "phase":  "map_simulating",
+                  "fault_address":  "0xf8",
+                  "si_code":  1,
+                  "si_code_name":  "unmapped",
+                  "frames":  [
+                                 {
+                                     "m":  "libtier0.so",
+                                     "o":  "0x19a850",
+                                     "k":  "engine"
+                                 },
+                                 {
+                                     "m":  "libtier0.so",
+                                     "o":  "0x19a9b1",
+                                     "k":  "engine"
+                                 },
+                                 {
+                                     "m":  "libtier0.so",
+                                     "o":  "0x19aa37",
+                                     "k":  "engine"
+                                 },
+                                 {
+                                     "m":  "libtier0.so",
+                                     "o":  "0x1a4a75",
+                                     "k":  "engine"
+                                 },
+                                 {
+                                     "m":  "libserver.so",
+                                     "o":  "0xaa6e4d",
+                                     "k":  "game"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x80c35",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x80c13",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x802c5",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x80256",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x800a7",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x80feb",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x7fe00",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x808d4",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x804a8",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x8070f",
+                                     "k":  "metamod"
+                                 },
+                                 {
+                                     "m":  "metamod.2.cs2.so",
+                                     "o":  "0x8054a",
+                                     "k":  "metamod"
+                                 }
+                             ],
+                  "plugin_in_stack":  false,
+                  "fault_in":  "engine",
+                  "has_dump":  false
+              }
+}

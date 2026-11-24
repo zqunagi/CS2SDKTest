@@ -1,6 +1,25 @@
 {
     "runs":  [
                  {
+                     "id":  "20261124-030213_v0.5.8_b26879581",
+                     "status":  "crashed",
+                     "reason":  "release",
+                     "release":  "v0.5.8",
+                     "game_buildid":  "26879581",
+                     "game_version":  "1.42.0.1",
+                     "s2sdk":  "58bebeb6 (2026-11-13)",
+                     "platform":  "linux",
+                     "stage":  "before_sweep",
+                     "finished":  "2026-11-24T03:02:13Z",
+                     "failed":  null,
+                     "crashed":  null,
+                     "total":  null,
+                     "ok":  null,
+                     "suspect":  null,
+                     "skipped":  null,
+                     "unavailable":  null
+                 },
+                 {
                      "id":  "20261124-023235_v0.5.7_b26879581",
                      "status":  "crashed",
                      "reason":  "release",
