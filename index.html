@@ -472,8 +472,8 @@ en:{
   st_before_sweep:'Crashed after the map loaded, before the sweep started',st_before_sweep_s:'The map was running and the plugin was waiting out its settle delay when the process ended.',
   st_sweep:'The process ended during the test sweep',st_sweep_s:'The sweep started but never finished. The call that was in flight is listed below.',
   st_shutdown:'The sweep finished, but the results were never written',st_shutdown_s:'Every test ran, then the process ended before results.json was written, or while shutting down.',
-  crHow:'How it ended',crAt:'Fault in',crAddr:'Fault address',crPhase:'Plugin phase',crCall:'Call in flight',crStack:'Call stack',crTail:'Last console lines',crDump:'Crash dump',
-  hSignal:(s,d)=>`Killed by ${s}${d?` (${d})`:''}`,hTimeout:'Timed out: still running when the time limit was reached',hClean:'Exited normally without writing results',hExit:c=>`Exited with code ${c}`,
+  crHow:'How it ended',crAt:'Died at',crAddr:'Fault address',crPhase:'Plugin phase',crCall:'Call in flight',crStack:'Call stack',crTail:'Last console lines',crDump:'Crash dump',
+  hSignal:s=>`Crashed with ${s}`,hTimeout:'Timed out: still running when the time limit was reached',hClean:'Exited normally without writing results',hExit:c=>`Exited with code ${c}`,
   viaExit:'inferred from the exit status; the plugin recorded nothing',
   sig_SIGSEGV:'invalid memory access',sig_SIGABRT:'abort() or a failed assertion',sig_SIGILL:'illegal instruction',sig_SIGBUS:'bus error',sig_SIGFPE:'arithmetic fault',sig_SIGKILL:'force-killed, possibly out of memory',sig_SIGTERM:'terminated',
   codeUnmapped:'address not mapped',codeProtection:'protection violation',
@@ -529,8 +529,8 @@ zh:{
   st_before_sweep:'地图加载后、测试开始前崩溃',st_before_sweep_s:'地图已经在运行，插件正在等待稳定延迟时进程结束。',
   st_sweep:'进程在测试过程中结束',st_sweep_s:'测试已经开始但没有跑完。下面列出了当时正在执行的调用。',
   st_shutdown:'测试已跑完，但结果没有写出',st_shutdown_s:'所有测试都执行了，进程却在写出 results.json 之前，或在关闭过程中结束。',
-  crHow:'结束方式',crAt:'出错位置',crAddr:'出错地址',crPhase:'插件阶段',crCall:'正在执行的调用',crStack:'调用栈',crTail:'控制台最后几行',crDump:'崩溃转储',
-  hSignal:(s,d)=>`被信号 ${s} 终止${d?`（${d}）`:''}`,hTimeout:'超时：到达时间上限时仍在运行',hClean:'正常退出，但没有写出结果',hExit:c=>`以退出码 ${c} 结束`,
+  crHow:'结束方式',crAt:'崩溃位置',crAddr:'出错地址',crPhase:'插件阶段',crCall:'正在执行的调用',crStack:'调用栈',crTail:'控制台最后几行',crDump:'崩溃转储',
+  hSignal:s=>`崩溃，信号 ${s}`,hTimeout:'超时：到达时间上限时仍在运行',hClean:'正常退出，但没有写出结果',hExit:c=>`以退出码 ${c} 结束`,
   viaExit:'由退出码推断，插件没有留下记录',
   sig_SIGSEGV:'非法内存访问',sig_SIGABRT:'abort() 或断言失败',sig_SIGILL:'非法指令',sig_SIGBUS:'总线错误',sig_SIGFPE:'算术错误',sig_SIGKILL:'被强制终止，可能是内存不足',sig_SIGTERM:'被终止',
   codeUnmapped:'地址未映射',codeProtection:'访问权限错误',
@@ -732,33 +732,27 @@ const errCard=(title,sub,retry)=>`<div class="card empty">${I.warn}<b>${esc(titl
 const CR_STAGES=['no_output','engine_start','metamod_init','plugin_load','plugin_init','map_load','before_sweep','sweep','shutdown'];
 function crashCard(info,suspect){
   const known=info&&CR_STAGES.includes(info.stage);
-  const head=`<div class="crash-h">${I.warn}<div><b>${esc(known?t('st_'+info.stage):t('noRes'))}</b><span>${esc(known?t('st_'+info.stage+'_s'):t('noResSub'))}</span></div></div>`;
-  if(!info){
-    return `<div class="card crash sec">${head}${suspect?`<dl class="crash-kv"><dt>${esc(t('lastCall'))}</dt><dd><code>${esc(suspect)}</code></dd></dl>`:''}</div>`}
+  const head=`<div class="crash-h">${I.warn}<div><b>${esc(known?t('st_'+info.stage):t('noRes'))}</b>${known?'':`<span>${esc(t('noResSub'))}</span>`}</div></div>`;
   const row=(k,v)=>`<dt>${esc(t(k))}</dt><dd>${v}</dd>`;
   const rows=[];
-  // 结束方式
-  const sigDesc=info.signal&&L.en['sig_'+info.signal]!==undefined?t('sig_'+info.signal):'';
-  const how=info.how==='signal'?t('hSignal',info.signal,sigDesc):info.how==='timeout'?t('hTimeout'):info.how==='clean_exit'?t('hClean'):t('hExit',info.exit_code);
-  rows.push(row('crHow',esc(how)+(info.signal_source==='exit_code'&&known&&CR_STAGES.indexOf(info.stage)>=CR_STAGES.indexOf('plugin_init')?` <em>· ${esc(t('viaExit'))}</em>`:'')));
-  if(info.fault_in){
-    const ff=(info.frames||[]).find(f=>f.k===info.fault_in&&f.m);
-    rows.push(row('crAt',esc(t('own_'+info.fault_in))+(ff?` <em>· <code>${esc(ff.m)}</code></em>`:'')))}
-  if(info.fault_address){
-    const c=info.si_code_name==='unmapped'?t('codeUnmapped'):info.si_code_name==='protection'?t('codeProtection'):'';
-    rows.push(row('crAddr',`<code>${esc(info.fault_address)}</code>${c?` <em>· ${esc(c)}</em>`:''}`))}
-  if(info.phase)rows.push(row('crPhase',`<code>${esc(info.phase)}</code>`));
-  if(info.call)rows.push(row('crCall',`<code>${esc(info.call.suite)} / ${esc(info.call.call)}</code>`));
-  else if(suspect)rows.push(row('lastCall',`<code>${esc(suspect)}</code>`));
-  if(info.has_dump)rows.push(row('crDump',esc(t('dumpYes'))));
-  let h=`<div class="card crash sec">${head}<dl class="crash-kv">${rows.join('')}</dl>`;
-  if(info.frames&&info.frames.length){
-    // 崩在引擎/游戏里时，有没有经过插件决定了是谁的问题，所以单独点明
-    if(info.fault_in!=='plugin')h+=`<div class="crash-note">${esc(info.plugin_in_stack?t('noteInStack'):t('noteNotInStack'))}</div>`;
-    h+=`<details open><summary>${esc(t('crStack'))} (${info.frames.length})</summary><div class="tw"><table><thead><tr><th>#</th><th>${esc(t('stCol'))}</th><th>${esc(t('offCol'))}</th><th>${esc(t('ownCol'))}</th></tr></thead><tbody>${
-      info.frames.map((f,i)=>`<tr><td>${i}</td><td class="mono ${esc(f.k)}">${esc(f.m||'?')}</td><td class="mono">${esc(f.o)}</td><td class="${esc(f.k)}">${esc(t('own_'+f.k))}</td></tr>`).join('')}</tbody></table></div></details>`}
-  if(info.console_tail&&info.console_tail.length)
-    h+=`<details open><summary>${esc(t('crTail'))}</summary>${codeBlock(info.console_tail.join('\n'))}</details>`;
+  if(info){
+    const how=info.how==='signal'?t('hSignal',info.signal,''):info.how==='timeout'?t('hTimeout'):info.how==='clean_exit'?t('hClean'):t('hExit',info.exit_code);
+    rows.push(row('crHow',esc(how)));
+    // 死在哪：第一个非系统库的帧，没有调用栈就不写
+    const fr=info.frames||[];
+    const at=fr.find(f=>f.k!=='system'&&f.m)||fr[0];
+    if(at)rows.push(row('crAt',`<code>${esc(at.m||'?')}+${esc(at.o)}</code>`+(info.fault_address?` <em>· ${esc(info.fault_address)}</em>`:'')));
+    if(info.call)rows.push(row('crCall',`<code>${esc(info.call.suite)} / ${esc(info.call.call)}</code>`));
+  }
+  if(!info||!info.call)if(suspect)rows.push(row('lastCall',`<code>${esc(suspect)}</code>`));
+  let h=`<div class="card crash sec">${head}${rows.length?`<dl class="crash-kv">${rows.join('')}</dl>`:''}`;
+  if(info&&info.frames&&info.frames.length){
+    const txt=info.frames.map((f,i)=>`#${i}  ${f.m||'?'}+${f.o}`).join('
+');
+    h+=`<details open><summary>${esc(t('crStack'))}</summary>${codeBlock(txt)}</details>`}
+  if(info&&info.console_tail&&info.console_tail.length)
+    h+=`<details open><summary>${esc(t('crTail'))}</summary>${codeBlock(info.console_tail.join('
+'))}</details>`;
   return h+'</div>'}
 function skeleton(){
   return `<div class="skel sk-meta"></div><div class="stats">${'<div class="skel sk-card"></div>'.repeat(6)}</div><div class="card sec stable">${'<div class="skel sk-row"></div>'.repeat(5)}</div>`}
