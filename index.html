@@ -844,7 +844,7 @@ function metaBar(run,res){
   const cell=(l,v)=>`<div><label>${esc(l)}</label><div class="v">${v}</div></div>`;
   return `<div class="card meta" style="--i:1">
     ${cell(t('cs2build'),`<code>${esc(ver)}</code>${run.game_version&&run.game_buildid?`<em>${esc(t('build'))} ${esc(run.game_buildid)}</em>`:''}`)}
-    ${cell(t('sdkcommit'),sdk?`<a href="${SDKREPO}/commit/${esc(sdk.h)}" target="_blank" rel="noopener"><code>${esc(sdk.h.slice(0,8))}</code></a>${sdk.d?`<em>${esc(sdk.d)}</em>`:''}`:'<code>—</code>')}
+    ${cell(t('sdkcommit'),sdk?`<a href="${SDKREPO}/tree/${esc(sdk.h)}" target="_blank" rel="noopener"><code>${esc(sdk.h.slice(0,8))}</code></a>${sdk.d?`<em>${esc(sdk.d)}</em>`:''}`:'<code>—</code>')}
     ${cell(t('testver'),`<a href="${REPO}/releases/tag/${encodeURIComponent(run.release)}" target="_blank" rel="noopener"><code>${esc(run.release)}</code></a>`)}
     ${cell(t('platform'),esc(plat))}
     ${cell(t('lasttested'),`<span title="${esc(when(run.finished)+' '+zone(run.finished))}">${esc(rel(run.finished))}</span><em>${esc(whenS(run.finished))} ${esc(zone(run.finished))}</em>`)}
