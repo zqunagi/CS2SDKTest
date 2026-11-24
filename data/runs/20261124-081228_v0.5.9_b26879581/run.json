@@ -1,0 +1,14 @@
+{
+    "status":  "completed",
+    "reason":  "release",
+    "release":  "v0.5.9",
+    "game_buildid":  "26879581",
+    "game_version":  "1.42.0.1",
+    "duration_s":  "20",
+    "finished":  "2026-11-24T08:12:28Z",
+    "suspect":  "",
+    "platform":  "linux",
+    "s2sdk":  "58bebeb6 (2026-11-13)",
+    "plugin_version":  "v0.5.9",
+    "build_type":  "RelWithDebInfo"
+}
