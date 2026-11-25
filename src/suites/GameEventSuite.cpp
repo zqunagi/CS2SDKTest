@@ -14,7 +14,6 @@
 
 #include "core/Log.h"
 #include "hook/HookArg.h"
-#include "hook/HookRecorder.h"
 #include "testkit/NetworkMessageLookup.h"
 #include "testkit/StructInspector.h"
 
@@ -22,32 +21,6 @@ namespace cs2st
 {
 namespace
 {
-
-// ---- hook ids ---------------------------------------------------------------
-//
-// Both the log label and the recorder key, so they are written once here.
-
-constexpr const char* kRegisterGameEvent =
-	"IGameEventSystem::RegisterGameEvent";
-constexpr const char* kRegisterGameEventHandlerAbstract =
-	"IGameEventSystem::RegisterGameEventHandlerAbstract";
-constexpr const char* kUnregisterGameEventHandlerAbstract =
-	"IGameEventSystem::UnregisterGameEventHandlerAbstract";
-constexpr const char* kPostEventAbstractLocal =
-	"IGameEventSystem::PostEventAbstract_Local";
-constexpr const char* kPostEventAbstract =
-	"IGameEventSystem::PostEventAbstract [clients]";
-constexpr const char* kPostEventAbstractFiltered =
-	"IGameEventSystem::PostEventAbstract [filter]";
-constexpr const char* kPostEntityEventAbstract =
-	"IGameEventSystem::PostEntityEventAbstract";
-constexpr const char* kProcessQueuedEvents =
-	"IGameEventSystem::ProcessQueuedEvents";
-constexpr const char* kPurgeQueuedEvents =
-	"IGameEventSystem::PurgeQueuedEvents";
-
-/** Nine of IGameEventSystem's ten methods; only GetEventSource is left alone. */
-constexpr int kHookedMethodCount = 9;
 
 // ---- the IGameEventManager2 hunt --------------------------------------------
 
@@ -339,8 +312,8 @@ bool GameEventSuite::Acquire(TestContext& context)
 	}
 
 	// Silent here; ReportManagerProbe prints a row per candidate under the fault
-	// guard. This pass exists so the hook-install path - which has no guard, and
-	// so does nothing but query - still knows whether a manager turned up.
+	// guard. This pass only queries, so Acquire stays free of engine calls that
+	// need one, and still knows whether a manager turned up.
 	manager_ = nullptr;
 	manager_version_ = nullptr;
 	manager_module_.clear();
@@ -376,12 +349,11 @@ void GameEventSuite::ExerciseCalls(TestContext& context)
 	}
 	else
 	{
-		context.Note("[IGameEventSystem] not acquired; its calls and hooks are skipped");
+		context.Note("[IGameEventSystem] not acquired; its calls are skipped");
 	}
 
 	ResolveEventMessages(context);
 	InspectNetMessageInfo(context);
-	ReportObservedMessages(context);
 
 	ReportManagerProbe(context);
 	ExerciseGameEventManager(context);
@@ -465,13 +437,12 @@ void GameEventSuite::ExerciseAppSystem(TestContext& context)
 //
 //  Ten methods, of which nine either send an event or edit the engine's
 //  registry. The one that only asks is called; the other nine are listed with
-//  what they would do, and hooked instead - which is where this suite's
-//  evidence actually comes from.
+//  what they would do.
 // -----------------------------------------------------------------------------
 
 void GameEventSuite::ExerciseEventSystem(TestContext& context)
 {
-	context.Note("[IGameEventSystem] one read-only method out of ten; the rest are hooked");
+	context.Note("[IGameEventSystem] one read-only method out of ten; the rest are listed, not called");
 
 	CS2ST_CALL(context, "IGameEventSystem::GetEventSource", {
 		const CEntityIndex source = event_system_->GetEventSource();
@@ -489,24 +460,24 @@ void GameEventSuite::ExerciseEventSystem(TestContext& context)
 	});
 
 	context.SkipCall("IGameEventSystem::RegisterGameEvent",
-		"adds a message to the engine's event registry; hooked instead");
+		"adds a message to the engine's event registry");
 	context.SkipCall("IGameEventSystem::RegisterGameEventHandlerAbstract",
 		"binds a delegate into engine-owned state, and CUtlSlot has no class "
-		"body in the SDK to build one against; hooked instead");
+		"body in the SDK to build one against");
 	context.SkipCall("IGameEventSystem::UnregisterGameEventHandlerAbstract",
 		"the inverse of the above; nothing of ours registered to remove");
 	context.SkipCall("IGameEventSystem::PostEventAbstract_Local",
-		"injects an event nobody raised; hooked instead");
+		"injects an event nobody raised");
 	context.SkipCall("IGameEventSystem::PostEventAbstract [clients]",
-		"broadcasts an event to connected clients; hooked instead");
+		"broadcasts an event to connected clients");
 	context.SkipCall("IGameEventSystem::PostEventAbstract [filter]",
-		"same, through a recipient filter; hooked instead");
+		"same, through a recipient filter");
 	context.SkipCall("IGameEventSystem::PostEntityEventAbstract",
-		"despite the name it posts to every client; hooked instead");
+		"despite the name it posts to every client");
 	context.SkipCall("IGameEventSystem::ProcessQueuedEvents",
-		"drains the engine's event queue outside its own frame; hooked instead");
+		"drains the engine's event queue outside its own frame");
 	context.SkipCall("IGameEventSystem::PurgeQueuedEvents",
-		"throws away events the engine has not delivered yet; hooked instead");
+		"throws away events the engine has not delivered yet");
 }
 
 // -----------------------------------------------------------------------------
@@ -766,53 +737,6 @@ void GameEventSuite::InspectNetMessageInfo(TestContext& context)
 }
 
 // -----------------------------------------------------------------------------
-//  What the hooks have seen
-//
-//  The hooks cannot resolve a name: they run in the engine's own frame, where
-//  the fault guard is not armed and walking an engine object is how a
-//  diagnostic becomes an outage. So they remember the distinct pointers, and
-//  the naming happens here, under the guard, on the next sweep.
-// -----------------------------------------------------------------------------
-
-void GameEventSuite::ReportObservedMessages(TestContext& context)
-{
-	context.Note("[hooks] %zu distinct NetMessageInfo_t pointer(s) seen so far%s",
-		observed_message_count_,
-		observed_message_overflow_ > 0 ? " (further ones dropped; the cap is deliberate)" : "");
-
-	if (observed_message_count_ == 0)
-	{
-		context.Note("nothing yet - 'cst hooks install event', let a round play, "
-		             "then sweep again; that is what turns hook counts into event names");
-		return;
-	}
-
-	for (std::size_t i = 0; i < observed_message_count_; ++i)
-	{
-		NetMessageInfo_t* message = observed_messages_[i];
-
-		char index_text[24];
-		std::snprintf(index_text, sizeof(index_text), " (observed #%zu)", i);
-		const std::string target =
-			std::string("NetMessageInfo_t::GetName") + index_text;
-
-		CS2ST_CALL(context, target, {
-			// Re-vetted even though the hook vetted it: these have sat in a
-			// member across an unknown amount of engine activity.
-			if (!LooksLikeObjectPointer(message))
-			{
-				context.Detail("-> %p is not an object pointer", static_cast<void*>(message));
-				context.Fail("a hook recorded something that is not a message");
-				return;
-			}
-			const char* name = message->GetName();
-			context.Detail("%p -> %s", static_cast<void*>(message),
-				name != nullptr ? name : "(null)");
-		});
-	}
-}
-
-// -----------------------------------------------------------------------------
 //  IGameEventManager2
 // -----------------------------------------------------------------------------
 
@@ -931,370 +855,5 @@ void GameEventSuite::AccountForGameEvent(TestContext& context)
 			"which needs the manager");
 	}
 }
-
-// -----------------------------------------------------------------------------
-//  Install / remove
-// -----------------------------------------------------------------------------
-
-int GameEventSuite::InstallHooks(TestContext& context)
-{
-	if (event_system_ == nullptr || hooks_installed_)
-	{
-		return 0;
-	}
-
-	HookRecorder& recorder = HookRecorder::Get();
-
-	// Declared before installing, so a hook that never fires still shows up in
-	// the dump as `never`. After a CS2 update that row is the finding, and a
-	// silently missing row would read like a hook nobody wrote.
-	recorder.Declare(kRegisterGameEvent, Id());
-	recorder.Declare(kRegisterGameEventHandlerAbstract, Id());
-	recorder.Declare(kUnregisterGameEventHandlerAbstract, Id());
-	recorder.Declare(kPostEventAbstractLocal, Id());
-	recorder.Declare(kPostEventAbstract, Id());
-	recorder.Declare(kPostEventAbstractFiltered, Id());
-	recorder.Declare(kPostEntityEventAbstract, Id());
-	recorder.Declare(kProcessQueuedEvents, Id());
-	recorder.Declare(kPurgeQueuedEvents, Id());
-
-	// Each hook object carries its pre and post handler from the constructor;
-	// Add installs the detour on the event system, Remove takes it off.
-	hook_RegisterGameEvent_.Add(event_system_);
-	hook_RegisterGameEventHandlerAbstract_.Add(event_system_);
-	hook_UnregisterGameEventHandlerAbstract_.Add(event_system_);
-	hook_PostEventAbstract_Local_.Add(event_system_);
-	hook_PostEventAbstract_.Add(event_system_);
-	hook_PostEventAbstractFiltered_.Add(event_system_);
-	hook_PostEntityEventAbstract_.Add(event_system_);
-	hook_ProcessQueuedEvents_.Add(event_system_);
-	hook_PurgeQueuedEvents_.Add(event_system_);
-
-	hooks_installed_ = true;
-
-	context.Note("ProcessQueuedEvents runs every frame, so a count of zero on it means "
-	             "the hooks did not attach at all - check that row first");
-	CS2ST_LOG_INFO("%s: sweep again after a round to resolve the message pointers these "
-	               "hooks collect into names\n", Id());
-	return kHookedMethodCount;
-}
-
-void GameEventSuite::RemoveHooks(TestContext& context)
-{
-	if (event_system_ == nullptr || !hooks_installed_)
-	{
-		return;
-	}
-
-	hook_RegisterGameEvent_.Remove(event_system_);
-	hook_RegisterGameEventHandlerAbstract_.Remove(event_system_);
-	hook_UnregisterGameEventHandlerAbstract_.Remove(event_system_);
-	hook_PostEventAbstract_Local_.Remove(event_system_);
-	hook_PostEventAbstract_.Remove(event_system_);
-	hook_PostEventAbstractFiltered_.Remove(event_system_);
-	hook_PostEntityEventAbstract_.Remove(event_system_);
-	hook_ProcessQueuedEvents_.Remove(event_system_);
-	hook_PurgeQueuedEvents_.Remove(event_system_);
-
-	hooks_installed_ = false;
-	(void)context;
-}
-
-// -----------------------------------------------------------------------------
-//  Hook handlers
-//
-//  These run in the engine's own frame, where CallGuard is not armed: a fault
-//  here kills the server rather than producing a CRASHED line. So every pointer
-//  is vetted before it is read, nothing virtual is called on an argument, and
-//  no structure is walked. Naming a message is deliberately deferred to the
-//  next call sweep, which does have a guard around it.
-//
-//  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED.
-// -----------------------------------------------------------------------------
-
-void GameEventSuite::NoteObservedMessage(NetMessageInfo_t* message)
-{
-	if (!LooksLikeObjectPointer(message))
-	{
-		return;
-	}
-
-	for (std::size_t i = 0; i < observed_message_count_; ++i)
-	{
-		if (observed_messages_[i] == message)
-		{
-			return;
-		}
-	}
-
-	if (observed_message_count_ >= kMaxObservedMessages)
-	{
-		++observed_message_overflow_;
-		return;
-	}
-
-	observed_messages_[observed_message_count_++] = message;
-}
-
-KHook::Return<void> GameEventSuite::Pre_RegisterGameEvent(IGameEventSystem*, NetMessageInfo_t* pEvent)
-{
-	// Fires while the engine builds its event registry, which on a server this
-	// plugin loads late into has usually already happened. A count of zero here
-	// is normal; a count above zero means an event type was registered after
-	// load, which is worth knowing on its own.
-	NoteObservedMessage(pEvent);
-	CS2ST_HOOK_ENTER_ARGS(kRegisterGameEvent, "event=%p", static_cast<void*>(pEvent));
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_RegisterGameEvent(IGameEventSystem*, NetMessageInfo_t*)
-{
-	CS2ST_HOOK_LEAVE(kRegisterGameEvent);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
-                                                                         const CUtlAbstractDelegate& delegate,
-                                                                         NetMessageInfo_t* pEvent,
-                                                                         int nPriority)
-{
-	// The delegate is passed by reference and its members are private, so only
-	// its address is recorded. CUtlSlot has no class body in the SDK at all,
-	// which is why nothing is read through that pointer either.
-	NoteObservedMessage(pEvent);
-	CS2ST_HOOK_ENTER_ARGS(kRegisterGameEventHandlerAbstract,
-		"slot=%p deleg=%p event=%p prio=%d",
-		static_cast<void*>(nSlot), static_cast<const void*>(&delegate),
-		static_cast<void*>(pEvent), nPriority);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_RegisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot*,
-                                                                          const CUtlAbstractDelegate&,
-                                                                          NetMessageInfo_t*, int)
-{
-	CS2ST_HOOK_LEAVE(kRegisterGameEventHandlerAbstract);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot* nSlot,
-                                                                           const CUtlAbstractDelegate& delegate,
-                                                                           NetMessageInfo_t* pEvent)
-{
-	NoteObservedMessage(pEvent);
-	CS2ST_HOOK_ENTER_ARGS(kUnregisterGameEventHandlerAbstract,
-		"slot=%p deleg=%p event=%p",
-		static_cast<void*>(nSlot), static_cast<const void*>(&delegate),
-		static_cast<void*>(pEvent));
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_UnregisterGameEventHandlerAbstract(IGameEventSystem*, CUtlSlot*,
-                                                                            const CUtlAbstractDelegate&,
-                                                                            NetMessageInfo_t*)
-{
-	CS2ST_HOOK_LEAVE(kUnregisterGameEventHandlerAbstract);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot nSlot,
-                                                                NetMessageInfo_t* pEvent,
-                                                                const CNetMessage* pData, unsigned long nSize)
-{
-	NoteObservedMessage(pEvent);
-
-	char payload[80];
-	DescribeNetMessage(pData, payload, sizeof(payload));
-
-	CS2ST_HOOK_ENTER_ARGS(kPostEventAbstractLocal, "slot=%d event=%p %s size=%lu",
-		nSlot.Get(), static_cast<void*>(pEvent), payload, nSize);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_PostEventAbstract_Local(IGameEventSystem*, CSplitScreenSlot, NetMessageInfo_t*,
-                                                                 const CNetMessage*, unsigned long)
-{
-	CS2ST_HOOK_LEAVE(kPostEventAbstractLocal);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
-                                                          int nClientCount, const uint64* clients,
-                                                          NetMessageInfo_t* pEvent,
-                                                          const CNetMessage* pData, unsigned long nSize,
-                                                          NetChannelBufType_t bufType)
-{
-	// The busiest and most valuable hook in this suite: this is the slot every
-	// user message and every networked game event goes through, and its
-	// argument list has grown before. Two of those arguments have a small legal
-	// set, so a shifted list shows up as a flagged sample instead of as a hook
-	// that keeps counting happily.
-	NoteObservedMessage(pEvent);
-
-	char recipients[64];
-	DescribeRecipients(nClientCount, clients, recipients, sizeof(recipients));
-
-	char payload[80];
-	DescribeNetMessage(pData, payload, sizeof(payload));
-
-	CS2ST_HOOK_ENTER_ARGS(kPostEventAbstract,
-		"slot=%d local=%d %s event=%p %s size=%lu buf=%s",
-		nSlot.Get(), bLocalOnly ? 1 : 0, recipients,
-		static_cast<void*>(pEvent), payload, nSize, BufTypeName(bufType));
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_PostEventAbstract(IGameEventSystem*, CSplitScreenSlot, bool, int, const uint64*,
-                                                           NetMessageInfo_t*, const CNetMessage*,
-                                                           unsigned long, NetChannelBufType_t)
-{
-	CS2ST_HOOK_LEAVE(kPostEventAbstract);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot nSlot, bool bLocalOnly,
-                                                                  IRecipientFilter* pFilter,
-                                                                  NetMessageInfo_t* pEvent,
-                                                                  const CNetMessage* pData, unsigned long nSize)
-{
-	NoteObservedMessage(pEvent);
-
-	char payload[80];
-	DescribeNetMessage(pData, payload, sizeof(payload));
-
-	// Only the filter's address. GetRecipients() would be the interesting part,
-	// but it is a virtual call on an object built by whoever sent the message,
-	// and a hook is not the place to make one.
-	CS2ST_HOOK_ENTER_ARGS(kPostEventAbstractFiltered,
-		"slot=%d local=%d filter=%p%s event=%p %s size=%lu",
-		nSlot.Get(), bLocalOnly ? 1 : 0, static_cast<void*>(pFilter),
-		LooksLikeObjectPointer(pFilter) ? "" : " NOT-A-POINTER",
-		static_cast<void*>(pEvent), payload, nSize);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_PostEventAbstractFiltered(IGameEventSystem*, CSplitScreenSlot, bool, IRecipientFilter*,
-                                                                   NetMessageInfo_t*,
-                                                                   const CNetMessage*, unsigned long)
-{
-	CS2ST_HOOK_LEAVE(kPostEventAbstractFiltered);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle& hndl,
-                                                                NetMessageInfo_t* pEvent,
-                                                                const CNetMessage* pData, unsigned long nSize,
-                                                                NetChannelBufType_t bufType, bool bAllClients)
-{
-	NoteObservedMessage(pEvent);
-
-	char payload[80];
-	DescribeNetMessage(pData, payload, sizeof(payload));
-
-	// CEntityHandle's accessors are inline bitfield reads, not calls into the
-	// entity system, so they are safe here - and an entry index outside
-	// [-1, MAX_EDICTS) says the handle argument is not a handle.
-	const int entry = hndl.GetEntryIndex();
-	const bool plausible = (entry >= -1) && (entry < MAX_EDICTS);
-
-	CS2ST_HOOK_ENTER_ARGS(kPostEntityEventAbstract,
-		"ent=%d%s serial=%d valid=%d event=%p %s size=%lu buf=%s all=%d",
-		entry, plausible ? "" : " IMPLAUSIBLE-INDEX", hndl.GetSerialNumber(),
-		hndl.IsValid() ? 1 : 0, static_cast<void*>(pEvent), payload, nSize,
-		BufTypeName(bufType), bAllClients ? 1 : 0);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_PostEntityEventAbstract(IGameEventSystem*, const CBaseHandle&, NetMessageInfo_t*,
-                                                                 const CNetMessage*, unsigned long,
-                                                                 NetChannelBufType_t, bool)
-{
-	CS2ST_HOOK_LEAVE(kPostEntityEventAbstract);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_ProcessQueuedEvents(IGameEventSystem*)
-{
-	// Runs every frame, which makes it this suite's liveness probe: if its
-	// count is zero, no hook here attached and every other row is meaningless.
-	// HookRecorder stops formatting once its sample quota is full, which is
-	// what keeps a per-frame hook affordable.
-	CS2ST_HOOK_ENTER(kProcessQueuedEvents);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_ProcessQueuedEvents(IGameEventSystem*)
-{
-	CS2ST_HOOK_LEAVE(kProcessQueuedEvents);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Pre_PurgeQueuedEvents(IGameEventSystem*)
-{
-	CS2ST_HOOK_ENTER(kPurgeQueuedEvents);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GameEventSuite::Post_PurgeQueuedEvents(IGameEventSystem*)
-{
-	CS2ST_HOOK_LEAVE(kPurgeQueuedEvents);
-	return { KHook::Action::Ignore };
-}
-
-// -----------------------------------------------------------------------------
-//  Hook binding
-//
-//  The KHook::Virtual constructor resolves the vtable slot from the member
-//  pointer. PostEventAbstract's two overloads share a name, so each member's
-//  constructor names its slot with a static_cast to the exact overload - the
-//  replacement for the overload index SH_DECL_HOOK used to carry.
-// -----------------------------------------------------------------------------
-
-// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
-// for the rest of the translation unit and overrides the /wd4355 on the command
-// line. Passing `this` as the hook context is intentional (stored, not used).
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4355)
-#endif
-GameEventSuite::GameEventSuite() :
-	hook_RegisterGameEvent_(&IGameEventSystem::RegisterGameEvent, this,
-		&GameEventSuite::Pre_RegisterGameEvent,
-		&GameEventSuite::Post_RegisterGameEvent),
-	hook_RegisterGameEventHandlerAbstract_(&IGameEventSystem::RegisterGameEventHandlerAbstract, this,
-		&GameEventSuite::Pre_RegisterGameEventHandlerAbstract,
-		&GameEventSuite::Post_RegisterGameEventHandlerAbstract),
-	hook_UnregisterGameEventHandlerAbstract_(&IGameEventSystem::UnregisterGameEventHandlerAbstract, this,
-		&GameEventSuite::Pre_UnregisterGameEventHandlerAbstract,
-		&GameEventSuite::Post_UnregisterGameEventHandlerAbstract),
-	hook_PostEventAbstract_Local_(&IGameEventSystem::PostEventAbstract_Local, this,
-		&GameEventSuite::Pre_PostEventAbstract_Local,
-		&GameEventSuite::Post_PostEventAbstract_Local),
-	hook_PostEventAbstract_(static_cast<void (IGameEventSystem::*)(
-		CSplitScreenSlot, bool, int, const uint64*, NetMessageInfo_t*,
-		const CNetMessage*, unsigned long, NetChannelBufType_t)>(
-		&IGameEventSystem::PostEventAbstract), this,
-		&GameEventSuite::Pre_PostEventAbstract,
-		&GameEventSuite::Post_PostEventAbstract),
-	hook_PostEventAbstractFiltered_(static_cast<void (IGameEventSystem::*)(
-		CSplitScreenSlot, bool, IRecipientFilter*, NetMessageInfo_t*,
-		const CNetMessage*, unsigned long)>(
-		&IGameEventSystem::PostEventAbstract), this,
-		&GameEventSuite::Pre_PostEventAbstractFiltered,
-		&GameEventSuite::Post_PostEventAbstractFiltered),
-	hook_PostEntityEventAbstract_(&IGameEventSystem::PostEntityEventAbstract, this,
-		&GameEventSuite::Pre_PostEntityEventAbstract,
-		&GameEventSuite::Post_PostEntityEventAbstract),
-	hook_ProcessQueuedEvents_(&IGameEventSystem::ProcessQueuedEvents, this,
-		&GameEventSuite::Pre_ProcessQueuedEvents,
-		&GameEventSuite::Post_ProcessQueuedEvents),
-	hook_PurgeQueuedEvents_(&IGameEventSystem::PurgeQueuedEvents, this,
-		&GameEventSuite::Pre_PurgeQueuedEvents,
-		&GameEventSuite::Post_PurgeQueuedEvents)
-{
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 } // namespace cs2st

@@ -27,6 +27,7 @@
 #include "suites/GamedataSuite.h"
 #include "suites/NetworkServerSuite.h"
 #include "suites/ConVarSuite.h"
+#include "suites/GameEventSuite.h"
 #else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
@@ -78,6 +79,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaDiffSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GameEventSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkServerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkMessagesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
