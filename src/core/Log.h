@@ -2,7 +2,7 @@
  * Logging.
  *
  * Everything this plugin produces is a log line - there is no other output
- * format. Lines go to the server console through Metamod and, while a session
+ * format. Lines go to the server console (stdout) and, while a session
  * log is open, to a file as well, so a run can be read after the fact (or after
  * the call that crashed the process).
  *

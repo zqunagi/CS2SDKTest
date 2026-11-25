@@ -1,8 +1,6 @@
 #include "testkit/TestRunner.h"
 
 #include "core/Log.h"
-#include "hook/HookRecorder.h"
-#ifdef CS2SDKTEST_PRELOAD
 #include "suites/Tier0ContainerSuite.h"
 #include "suites/Source2EngineSuite.h"
 #include "suites/SchemaSystemSuite.h"
@@ -30,36 +28,6 @@
 #include "suites/Source2ServerSuite.h"
 #include "suites/Source2GameClientsSuite.h"
 #include "suites/GameEventSuite.h"
-#else
-#include "suites/ConVarSuite.h"
-#include "suites/GameEntitySystemSuite.h"
-#include "suites/GameEventSuite.h"
-#include "suites/GamedataSuite.h"
-#include "suites/MetamodListenerSuite.h"
-#include "suites/NetworkMessagesSuite.h"
-#include "suites/NetworkServerSuite.h"
-#include "suites/SchemaDiffSuite.h"
-#include "suites/SchemaSystemSuite.h"
-#include "suites/EngineServiceMgrSuite.h"
-#include "suites/StringTableSuite.h"
-#include "suites/GameEntitiesSuite.h"
-#include "suites/HostStateMgrSuite.h"
-#include "suites/LoopModeSuite.h"
-#include "suites/NetChannelSuite.h"
-#include "suites/ResourceSystemSuite.h"
-#include "suites/ServerConfigSuite.h"
-#include "suites/Tier0ContainerSuite.h"
-#include "suites/Tier0PlatformSuite.h"
-#include "suites/KeyValues3Suite.h"
-#include "suites/LocalizeSuite.h"
-#include "suites/GameTypesSuite.h"
-#include "suites/SerializedEntitiesSuite.h"
-#include "suites/FlattenedSerializersSuite.h"
-#include "suites/FileSystemSuite.h"
-#include "suites/Source2EngineSuite.h"
-#include "suites/Source2GameClientsSuite.h"
-#include "suites/Source2ServerSuite.h"
-#endif
 #include "testkit/CallGuard.h"
 #include "testkit/ResultSink.h"
 
@@ -72,10 +40,6 @@ TestRunner TestRunner::CreateDefault()
 
 	// One line per suite. Nothing else in the pipeline needs to know they
 	// exist; registration order is the order they appear in a log.
-#ifdef CS2SDKTEST_PRELOAD
-	// The preload build carries every suite that has no hooks and needs no Metamod.
-	// Phase 2 batches 1 to 3, then the suites whose hooks were removed; the rest are added a batch at a time, each one run on
-	// a server before the next goes in. Same relative order as the full list.
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2GameClientsSuite()));
@@ -103,35 +67,6 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new KeyValues3Suite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GamedataSuite()));
-#else
-	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new Source2GameClientsSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new ConVarSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new SchemaDiffSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new GameEventSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new NetworkServerSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new NetworkMessagesSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new EngineServiceMgrSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new StringTableSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitiesSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new NetChannelSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new HostStateMgrSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new LoopModeSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new ResourceSystemSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new LocalizeSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new GameTypesSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new SerializedEntitiesSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new FlattenedSerializersSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new KeyValues3Suite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new GamedataSuite()));
-	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));
-#endif
 
 	return runner;
 }
@@ -204,59 +139,6 @@ RunTally TestRunner::RunCalls(TestContext& context, const std::string& only)
 
 	sink.Finish(context.tally());
 	return context.tally();
-}
-
-int TestRunner::InstallHooks(TestContext& context, const std::string& only)
-{
-	int installed = 0;
-
-	for (const auto& suite : suites_)
-	{
-		if (!only.empty() && only != suite->Id())
-		{
-			continue;
-		}
-		if (suite->HooksInstalled())
-		{
-			continue;
-		}
-		if (!suite->Acquire(context))
-		{
-			CS2ST_LOG_WARN("%s: cannot install hooks, interfaces unavailable\n", suite->Id());
-			continue;
-		}
-
-		const int count = suite->InstallHooks(context);
-		if (count > 0)
-		{
-			CS2ST_LOG_INFO("%s: %d hook(s) installed\n", suite->Id(), count);
-			installed += count;
-		}
-	}
-
-	return installed;
-}
-
-int TestRunner::RemoveHooks(TestContext& context, const std::string& only)
-{
-	int touched = 0;
-
-	for (const auto& suite : suites_)
-	{
-		if (!only.empty() && only != suite->Id())
-		{
-			continue;
-		}
-		if (!suite->HooksInstalled())
-		{
-			continue;
-		}
-
-		suite->RemoveHooks(context);
-		++touched;
-	}
-
-	return touched;
 }
 
 } // namespace cs2st

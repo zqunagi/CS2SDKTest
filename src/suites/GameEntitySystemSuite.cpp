@@ -2604,8 +2604,8 @@ void GameEntitySystemSuite::NoteSideEffectingCalls(TestContext& context)
 
 	context.SkipCall("CGameEntitySystem::~CGameEntitySystem", "would destroy the entity system");
 	context.SkipCall("CGameEntitySystem::AddListenerEntity",
-		"writes into the game's own listener vector; the Metamod build exercised it "
-		"from InstallHooks, which this build does not have");
+		"writes into the game's own listener vector, and nothing here would take the "
+		"entry back out before the entity system is replaced on a level change");
 	context.SkipCall("CGameEntitySystem::RemoveListenerEntity",
 		"the inverse of the above");
 }

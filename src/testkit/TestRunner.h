@@ -44,12 +44,6 @@ public:
 	 */
 	RunTally RunCalls(TestContext& context, const std::string& only = std::string());
 
-	/** Installs hooks for one suite, or all of them. Returns how many. */
-	int InstallHooks(TestContext& context, const std::string& only = std::string());
-
-	/** Removes hooks for one suite, or all of them. Returns how many suites. */
-	int RemoveHooks(TestContext& context, const std::string& only = std::string());
-
 private:
 	std::vector<std::unique_ptr<ITestSuite>> suites_;
 };

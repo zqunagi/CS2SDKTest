@@ -1,4 +1,4 @@
-/* Exports nothing. See cmake/Preload.cmake for why. */
+/* Exports nothing. See the cs2sdktest_preload target in CMakeLists.txt for why. */
 {
   local: *;
 };

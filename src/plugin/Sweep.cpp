@@ -48,14 +48,8 @@ void WriteLogHeader(const char* what)
 	LogToFile("=== %s %s ===\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION);
 	LogToFile("what      : %s\n", what);
 	LogToFile("time      : %s\n", fs::TimestampUtc().c_str());
-#ifdef CS2SDKTEST_PRELOAD
-	LogToFile("platform  : %s, SDK '%s' (SOURCE_ENGINE=%d), preload build, no Metamod\n",
+	LogToFile("platform  : %s, SDK '%s' (SOURCE_ENGINE=%d), LD_PRELOAD library\n",
 		PLUGIN_BUILD_PLATFORM, PLUGIN_SDK_ENGINE, PLUGIN_SDK_ENGINE_CODE);
-#else
-	LogToFile("platform  : %s, SDK '%s' (SOURCE_ENGINE=%d), Metamod PLAPI %d\n",
-		PLUGIN_BUILD_PLATFORM, PLUGIN_SDK_ENGINE,
-		PLUGIN_SDK_ENGINE_CODE, PLUGIN_MM_PLAPI_VERSION);
-#endif
 	LogToFile("build     : %s (%s)\n", PLUGIN_GIT_REVISION, PLUGIN_BUILD_TYPE);
 	LogToFile("guard     : %s\n", GuardDescription());
 	LogToFile("\n");

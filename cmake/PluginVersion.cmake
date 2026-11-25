@@ -69,7 +69,7 @@ function(cs2sdktest_resolve_git_revision source_dir out_var)
       set(_revision "${_described}")
 
       # Not describe --dirty: it also reports a submodule whose working tree
-      # differs, and s2sdk / metamod-source checked out under another
+      # differs, and s2sdk checked out under another
       # core.autocrlf (Windows and WSL share one tree) differ in every file.
       # --ignore-submodules=dirty still counts a submodule pointing at another
       # commit. The refresh first, so stale stat data is not read as a change.

@@ -2,7 +2,3 @@
 	path = s2sdk
 	url = https://github.com/alliedmodders/s2sdk.git
 	branch = cs2
-[submodule "metamod-source"]
-	path = metamod-source
-	url = https://github.com/alliedmodders/metamod-source.git
-	branch = master

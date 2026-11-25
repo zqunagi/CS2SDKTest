@@ -15,13 +15,9 @@
  *
  *     Acquire(ctx)         -> false: log why, skip the rest
  *     ExerciseCalls(ctx)   -> the simulated calls, one CS2ST_CALL each
- *     InstallHooks(ctx)    -> optional, stays installed after the run
- *     ...game runs, hooks record...
- *     RemoveHooks(ctx)     -> on unload or on request
  *
- * Calls and hooks are deliberately separate phases: a call sweep is a one-shot
- * thing you run and read, while hooks only tell you anything after the game has
- * been played for a while.
+ * A sweep is a one-shot thing you run and read. Nothing is hooked or left
+ * installed in the game afterwards.
  */
 
 #ifndef CS2SDKTEST_TESTKIT_ITESTSUITE_H_
@@ -54,22 +50,6 @@ public:
 
 	/** The simulated calls. One CS2ST_CALL per thing being exercised. */
 	virtual void ExerciseCalls(TestContext& context) = 0;
-
-	/**
-	 * Installs KHook hooks. Returns how many were installed.
-	 * Default is none, so a suite that only does calls implements nothing.
-	 */
-	virtual int InstallHooks(TestContext& context)
-	{
-		(void)context;
-		return 0;
-	}
-
-	/** Removes whatever InstallHooks installed. Must tolerate being called twice. */
-	virtual void RemoveHooks(TestContext& context) { (void)context; }
-
-	/** True while this suite's hooks are installed. */
-	virtual bool HooksInstalled() const { return false; }
 };
 
 } // namespace cs2st

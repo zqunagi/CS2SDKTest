@@ -4,9 +4,9 @@
 #  Generates the .pb.h/.pb.cc files the SDK headers expect.
 #
 #  This is not optional. public/eiface.h includes "network_connection.pb.h"
-#  unconditionally, and eiface.h is on the include path of ISmmAPI.h - so every
-#  translation unit that includes ISmmPlugin.h needs it. Any Source 2 plugin
-#  runs protoc, whether or not it ever touches a network message itself.
+#  unconditionally, so every translation unit that reaches eiface.h needs it.
+#  Anything built against these headers runs protoc, whether or not it ever
+#  touches a network message itself.
 #
 #  The compiler used is the one shipped inside s2sdk (devtools/bin), matching
 #  the manifest's protoc_path. A system protoc is deliberately not accepted:

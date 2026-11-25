@@ -144,8 +144,6 @@ std::string ResultSink::MetaJson() const
 	out += ',';
 	AppendNumber(out, "sdk_engine_code", PLUGIN_SDK_ENGINE_CODE);
 	out += ',';
-	AppendNumber(out, "metamod_plapi", PLUGIN_MM_PLAPI_VERSION);
-	out += ',';
 	AppendString(out, "scope", scope_);
 	out += ',';
 	AppendString(out, "started", started_utc_);

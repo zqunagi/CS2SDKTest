@@ -9,8 +9,7 @@
  *
  * GamedataSuite compares the slot a header declares with the slot gamedata
  * carries; two independent sources for one number is what makes the comparison
- * worth printing. It replaces KHook::GetVtableIndex, which did the same thing
- * but came with a header the project no longer carries.
+ * worth printing.
  *
  * Linux (Itanium) only. The Windows encoding is different - a pointer to a
  * thunk that has to be disassembled - and nothing here targets it any more.

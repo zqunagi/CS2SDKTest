@@ -6,8 +6,8 @@ header explains its oracles; this page is only the map.
 | Suite | Tests | Headers (under `s2sdk/public` unless noted) |
 |---|---|---|
 | Source2EngineSuite | IVEngineServer2, ISource2Engine, IAppSystem; CGlobalVars and AppSystemInfo_t layouts | engine2/isource2engine.h, ivengineserver2.h, gameshareddefs.h; appframework/iappsystem.h |
-| Source2ServerSuite | ISource2Server; 11 hooks | engine2/isource2server.h |
-| Source2GameClientsSuite | ISource2GameClients; 11 hooks | engine2/isource2server.h, ivengineserver2.h |
+| Source2ServerSuite | ISource2Server | engine2/isource2server.h |
+| Source2GameClientsSuite | ISource2GameClients | engine2/isource2server.h, ivengineserver2.h |
 | ServerConfigSuite | ISource2ServerConfig (the tick interval other suites use) | engine2/isource2serverconfig.h, steam/steamuniverse.h |
 | EngineServiceMgrSuite | IEngineServiceMgr: active loop, service probe, addons | engine2/iengineservicemgr.h |
 | StringTableSuite | INetworkStringTableContainer / INetworkStringTable; StringUserData_t layout | networkstringtabledefs.h |
@@ -20,27 +20,25 @@ header explains its oracles; this page is only the map.
 | GameTypesSuite | IGameTypes (GameTypes001 @ matchmaking): alias / name / int round trips, current mode, map group walk, per-map data; mode-changing calls skipped | matchmaking/igametypes.h |
 | SerializedEntitiesSuite | ISerializedEntities (SerializedEntitiesVersion001 @ networksystem), CFieldPathPacker, CFieldPath, CSerializedEntity and its list headers; entities taken from the instance baselines, blob/metadata calls checked against the lists | networksystem/serializedentity.h, tier2/fieldpath.h, tier2/fieldpathpacker.h |
 | FlattenedSerializersSuite | IFlattenedSerializers (FlattenedSerializersVersion001 @ networksystem): field names, validation, dumps, deltas, write/read round trip, against the serializer of an engine instance baseline | networksystem/iflattenedserializers.h |
-| ConVarSuite | ICvar, ConVar, ConCommand; 5 layouts, 6 hooks | tier0/icvar.h, convar.h |
+| ConVarSuite | ICvar, ConVar, ConCommand; 5 layouts | tier0/icvar.h, convar.h |
 | SchemaSystemSuite | ISchemaSystem, CSchemaSystemTypeScope; 9 layouts | schemasystem/ |
 | SchemaDiffSuite | The engine's schema dumped to `schema-dump.json` (local only), diffed against the 24 classes and 21 enums that both the schema and s2sdk declare: size, field offsets, enumerator values. `scripts/check-schema-overlap.py <dump>` keeps the tables in step with a dump | schemasystem/, entity2/, gametrace.h, const.h, shareddefs.h and others |
 | GameEntitySystemSuite | CGameEntitySystem / CEntitySystem; 8 layouts; CreateEntityKeyValues called for real, spawn helpers skipped | entity2/, engine2/igameresourceservice.h; `s2sdk/game/shared/gameentitysystem.h` |
-| GameEventSuite | IGameEventSystem, IGameEventManager2 (not reachable, reported as N/A); 9 hooks | engine2/igameeventsystem.h, igameevents.h |
-| NetworkServerSuite | INetworkServerService, INetworkGameServer; 15 cross-checks with other interfaces; 5 hooks | engine2/inetworkserverservice.h, inetworkgameserver.h, networkgameserverbase.h, tier0/netadr.h |
+| GameEventSuite | IGameEventSystem, IGameEventManager2 (not reachable, reported as N/A) | engine2/igameeventsystem.h, igameevents.h |
+| NetworkServerSuite | INetworkServerService, INetworkGameServer; 15 cross-checks with other interfaces | engine2/inetworkserverservice.h, inetworkgameserver.h, networkgameserverbase.h, tier0/netadr.h |
 | NetworkMessagesSuite | INetworkMessages, NetMessageInfo_t accessors, protobuf round trip | networksystem/inetworkmessages.h, inetworkserializer.h; tier0/logging.h |
 | FileSystemSuite | IFileSystem, read-only | filesystem/ifilesystem.h |
-| GamedataSuite | `configs/gamedata.toml`: signatures, slots, offsets; 2 hooks | none of its own |
-| MetamodListenerSuite | ISmmAPI / IMetamodListener (Metamod, not s2sdk) | metamod-source `ISmmPlugin.h` |
+| GamedataSuite | `configs/gamedata.toml`: signatures, slots, offsets | none of its own |
 | Tier0ContainerSuite | CUtlVector, CUtlString, CUtlBuffer, CBufferString read from engine objects | tier0/utl*.h, buffer_string.h |
 | Tier0PlatformSuite | Plat_RelativeTicks, Plat_TicksAfterMicroSecs, CLimitTimer; tick clock checked against Plat_USTime | tier0/platform.h, reliabletimer.h |
 | KeyValues3Suite | KeyValues3 filled by the engine; needs `CS2SDKTEST_TIER1_KEYVALUES3` | tier0/keyvalues3.h |
 
 ## Suites that differ from the rest
 
-- **MetamodListenerSuite** tests Metamod. Its "hooks" are listeners that cannot be removed, only silenced.
 - **ConVarSuite** registers its own convars and commands to have ground truth. Only POD types are used, because `CS2SDKTEST_USE_MEMOVERRIDE` is off and a string convar would put our heap buffer into engine-freed storage.
-- **GameEntitySystemSuite** has no interface to query. It finds the entity system at a byte offset inside IGameResourceService and measures that guess. It also writes into the game (`AddListenerEntity`) and compiles `s2sdk/entity2/*.cpp`.
+- **GameEntitySystemSuite** has no interface to query. It finds the entity system at a byte offset inside IGameResourceService and measures that guess. It compiles `s2sdk/entity2/*.cpp`.
 - **GameEventSuite** cannot reach IGameEventManager2 (no version string answers). It records that, and lists the interface's methods as N/A so the day it starts answering is noticed.
-- **NetworkServerSuite** is mostly cross-checks: tick, client limit, map name, etc. against IVEngineServer2 and CGlobalVars. Its hooks are on INetworkServerService only, because the engine rebuilds the game server on level change.
+- **NetworkServerSuite** is mostly cross-checks: tick, client limit, map name, etc. against IVEngineServer2 and CGlobalVars.
 - **NetworkMessagesSuite** tests that name, partial name, id and no-create lookups agree. It needs `netmessages.proto` in `CS2SDKTEST_PROTO_FILES` and `CS2SDKTEST_TIER1_BITBUF` (default ON); without bitbuf, serialization rows report SKIP.
 - **GamedataSuite** is driven by a file, not an SDK interface. A signature must match exactly one address; zero matches is the headline finding on update day.
 

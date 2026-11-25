@@ -1,5 +1,5 @@
 /**
- * The preload build's entry: no Metamod, no KHook, no gameinfo.gi.
+ * The library's entry: no Metamod, no KHook, no gameinfo.gi.
  *
  * The library is injected with LD_PRELOAD. Its constructor runs inside the
  * cs2 process before the engine has loaded anything, so all it does there is
@@ -170,16 +170,14 @@ void Execute()
  * Sets the SDK's g_pCVar and registers the convars and commands this build
  * declares at file scope (the ConVarSuite probe convars).
  *
- * Under Metamod, Plugin::Load did both: GET_V_IFACE_CURRENT filled g_pCVar and
- * META_CONVAR_REGISTER ran ConVar_Register. Both only touch the SDK's own queue
- * and ICvar - Metamod's RegisterConVar for Source 2 is a stub that returns true -
- * so nothing here needs Metamod. What it does need is a live ICvar, and a
+ * A plugin framework would do this at load time. Here it only touches the SDK's
+ * own registration queue and ICvar, so what it needs is a live ICvar and a
  * thread that is allowed to call it: this runs on the engine's main thread, in
  * the first simulating frame, which is the same context the sweep runs in.
  *
  * The callbacks are null on purpose. ConVar_Register's own RegisterAll already
- * hands every queued convar to ICvar::RegisterConVar; the callback is only the
- * hook Metamod used to learn about each one, and nothing here wants to know.
+ * hands every queued convar to ICvar::RegisterConVar; the callbacks are only a
+ * way for a framework to learn about each one, and nothing here wants to know.
  */
 bool InitCvarSystem()
 {

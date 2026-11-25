@@ -1,7 +1,6 @@
 /**
- * The call sweep, and the run log around it. Shared by the `cst` commands
- * (Metamod build) and autorun, and the only part of the old command file the
- * preload build keeps.
+ * The call sweep, and the run log around it: autorun's entry point into the
+ * test runner.
  */
 
 #ifndef CS2SDKTEST_PLUGIN_SWEEP_H_
@@ -16,7 +15,7 @@ namespace cs2st
 
 class TestRunner;
 
-/** Opens a log for the duration of one command when none is already open. */
+/** Opens a log for the duration of one sweep when none is already open. */
 class ScopedRunLog
 {
 public:
@@ -34,10 +33,8 @@ private:
 void WriteLogHeader(const char* what);
 
 /**
- * The call sweep behind `cst run`: opens a log (unless one is already open),
- * writes its header, runs the suites, prints the tally. The same entry point
- * serves the autorun path, so a CI run and a manual run produce identical
- * logs and results.json.
+ * The call sweep: opens a log (unless one is already open), writes its header,
+ * runs the suites, prints the tally.
  *
  * `only` limits it to one suite id, empty runs everything. The caller has
  * already checked that the id exists.
