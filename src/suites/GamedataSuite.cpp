@@ -25,7 +25,6 @@
 #include "core/Platform.h"
 #include "core/SignatureScan.h"
 #include "hook/HookArg.h"
-#include "hook/HookRecorder.h"
 
 #if !CS2ST_WINDOWS
 #include <elf.h>
@@ -48,13 +47,10 @@ namespace cs2st
 namespace
 {
 
-// ---- hook ids ---------------------------------------------------------------
+// ---- signature keys the sweep verifies --------------------------------------
 
 constexpr const char* kHostSay = "Host_Say";
 constexpr const char* kAcceptInput = "CEntityInstance_AcceptInput";
-
-/** Number of function hooks; InstallHooks reports it. */
-constexpr int kHookCount = 2;
 
 // ---- table prefixes in the TOML ----------------------------------------------
 
@@ -64,9 +60,6 @@ constexpr const char* kVtablesPrefix = "vtables.";
 /** Full TOML table paths for the two vtable keys an SDK declaration computes. */
 constexpr const char* kCheckTransmitTable = "vtables.ISource2GameEntities_CheckTransmit";
 constexpr const char* kAddResourceTable = "vtables.CEntityResourceManifest_AddResource";
-
-/** CCommand's own COMMAND_MAX_ARGC, which is private, so it is restated here. */
-constexpr int kMaxPlausibleArgC = 64;
 
 // ---- the ecosystem's function types ------------------------------------------
 
@@ -3450,157 +3443,5 @@ void GamedataSuite::ExerciseStructOffsets(TestContext& context)
 		VerifyTakeDamageHitGroup(context, entry->number);
 	});
 }
-
-// -----------------------------------------------------------------------------
-//  Hooks - Host_Say and CEntityInstance_AcceptInput, observation only
-// -----------------------------------------------------------------------------
-
-int GamedataSuite::InstallHooks(TestContext& context)
-{
-	(void)context;
-
-	if (hooks_installed_)
-	{
-		return 0;
-	}
-
-	// Same discipline as GameEntitySystemSuite: a detour writes a jump into
-	// code this plugin did not compile, so it only goes in once the sweep has
-	// said the address under it is the function the file names.
-	if (!signatures_verified_)
-	{
-		CS2ST_LOG_WARN("%s: refusing to install - run 'cst run %s' first so the "
-		               "signatures are resolved and verified\n",
-			Id(), Id());
-		return 0;
-	}
-
-	HookRecorder& recorder = HookRecorder::Get();
-
-	// Declared before installing, so a hook that never fires still appears in
-	// the dump as `never` - after a CS2 update that row is the finding.
-	recorder.Declare(kHostSay, Id());
-	recorder.Declare(kAcceptInput, Id());
-
-	// Re-attach first, then configure. RemoveContext took this suite's
-	// callbacks out; Configure on an address it has already detoured returns
-	// early without restoring them, so a re-install after a remove would leave
-	// a live detour that records nothing.
-	hook_host_say_.AddContext(this, &GamedataSuite::Pre_HostSay,
-		&GamedataSuite::Post_HostSay);
-	hook_accept_input_.AddContext(this, &GamedataSuite::Pre_AcceptInput,
-		&GamedataSuite::Post_AcceptInput);
-
-	hook_host_say_.Configure(Address(kHostSay));
-	hook_accept_input_.Configure(Address(kAcceptInput));
-
-	hooks_installed_ = true;
-	CS2ST_LOG_INFO("%s: Host_Say and CEntityInstance_AcceptInput detoured (observation "
-	               "only)\n", Id());
-
-	return kHookCount;
-}
-
-void GamedataSuite::RemoveHooks(TestContext& context)
-{
-	(void)context;
-
-	if (!hooks_installed_)
-	{
-		return;
-	}
-
-	// KHook::Function has no uninstall short of destruction: Configure puts the
-	// detour in, the destructor takes it out. RemoveContext detaches this
-	// suite's callbacks - recording stops immediately, the detour itself stays
-	// (harmlessly, forwarding to an empty context list) until the suite object
-	// is destroyed at plugin unload. MetamodListenerSuite documents the same
-	// no-inverse asymmetry.
-	hook_host_say_.RemoveContext(this);
-	hook_accept_input_.RemoveContext(this);
-
-	hooks_installed_ = false;
-}
-
-KHook::Return<void> GamedataSuite::Pre_HostSay(CEntityInstance* controller, CCommand& args,
-                                               bool teamonly, int unk1, const char* unk2)
-{
-	// No fault guard here. Reading ArgC() trusts the SDK's CCommand layout
-	// against an object the engine built, so the count is bounds-checked
-	// before anything indexes with it - the same discipline as
-	// Source2GameClientsSuite::Pre_ClientCommand.
-	const int argc = args.ArgC();
-	const bool plausible = argc > 0 && argc <= kMaxPlausibleArgC;
-
-	char arg0_scratch[48];
-	CS2ST_HOOK_ENTER_ARGS(kHostSay, "controller=%p argc=%d%s say=\"%.63s\" teamonly=%d",
-		static_cast<void*>(controller),
-		argc,
-		plausible ? "" : " IMPLAUSIBLE",
-		plausible ? SafeStringArg(args.Arg(0), arg0_scratch) : "<not read>",
-		teamonly ? 1 : 0);
-
-	// unk1 and unk2 are recorded nowhere: unknown semantics, and a hook that
-	// reads what it cannot vet is the crash this project exists to prevent.
-	(void)unk1;
-	(void)unk2;
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GamedataSuite::Post_HostSay(CEntityInstance*, CCommand&, bool, int,
-                                                const char*)
-{
-	CS2ST_HOOK_LEAVE(kHostSay);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GamedataSuite::Pre_AcceptInput(CEntityInstance* self, const char* input,
-                                                   CEntityInstance* activator,
-                                                   CEntityInstance* caller, void* value,
-                                                   int output_id, void* unk)
-{
-	char input_scratch[48];
-	CS2ST_HOOK_ENTER_ARGS(kAcceptInput,
-		"self=%p input=\"%.63s\" activator=%p caller=%p value=%p output_id=%d",
-		static_cast<void*>(self),
-		SafeStringArg(input, input_scratch),
-		static_cast<void*>(activator),
-		static_cast<void*>(caller),
-		value,
-		output_id);
-
-	// The value parameter is a variant_t* in the ecosystem's typedef; void*
-	// here because the payload is never read, only its address recorded.
-	(void)unk;
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> GamedataSuite::Post_AcceptInput(CEntityInstance*, const char*,
-                                                    CEntityInstance*, CEntityInstance*,
-                                                    void*, int, void*)
-{
-	CS2ST_HOOK_LEAVE(kAcceptInput);
-	return { KHook::Action::Ignore };
-}
-
-// -----------------------------------------------------------------------------
-//  Construction - the hook templates bind their callbacks here, the addresses
-//  they detour arrive later, from the sweep
-// -----------------------------------------------------------------------------
-
-// convar.h ends with `#pragma warning(default : 4355)`, which overrides the
-// /wd4355 on the command line. Passing `this` as the hook context is intentional.
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4355)
-#endif
-GamedataSuite::GamedataSuite()
-	: hook_host_say_(this, &GamedataSuite::Pre_HostSay, &GamedataSuite::Post_HostSay),
-	  hook_accept_input_(this, &GamedataSuite::Pre_AcceptInput, &GamedataSuite::Post_AcceptInput)
-{
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 } // namespace cs2st

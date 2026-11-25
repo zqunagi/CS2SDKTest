@@ -24,6 +24,7 @@
 #include "suites/FlattenedSerializersSuite.h"
 #include "suites/NetworkMessagesSuite.h"
 #include "suites/GameEntitySystemSuite.h"
+#include "suites/GamedataSuite.h"
 #else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
@@ -91,6 +92,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new KeyValues3Suite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GamedataSuite()));
 #else
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));

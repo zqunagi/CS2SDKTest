@@ -23,9 +23,6 @@ namespace cs2st
 class GamedataSuite : public ITestSuite
 {
 public:
-	/** Binds the hook callbacks; the addresses are attached in InstallHooks. */
-	GamedataSuite();
-
 	const char* Id() const override { return "gamedata"; }
 	const char* DisplayName() const override { return "gamedata / signatures / vtable slots"; }
 	const char* Description() const override
@@ -35,10 +32,6 @@ public:
 
 	bool Acquire(TestContext& context) override;
 	void ExerciseCalls(TestContext& context) override;
-
-	int InstallHooks(TestContext& context) override;
-	void RemoveHooks(TestContext& context) override;
-	bool HooksInstalled() const override { return hooks_installed_; }
 
 private:
 	/** Where one signature key's pattern landed, or why it did not. */
@@ -214,20 +207,6 @@ private:
 	void ExerciseStructOffsets(TestContext& context);
 	void VerifyTakeDamageHitGroup(TestContext& context, long long offset);
 
-	// ---- hook callbacks (observation only) ------------------------------
-
-	KHook::Return<void> Pre_HostSay(class CEntityInstance* controller, class CCommand& args,
-	                                bool teamonly, int unk1, const char* unk2);
-	KHook::Return<void> Post_HostSay(class CEntityInstance* controller, class CCommand& args,
-	                                 bool teamonly, int unk1, const char* unk2);
-
-	KHook::Return<void> Pre_AcceptInput(CEntityInstance* self, const char* input,
-	                                    CEntityInstance* activator, CEntityInstance* caller,
-	                                    void* value, int output_id, void* unk);
-	KHook::Return<void> Post_AcceptInput(CEntityInstance* self, const char* input,
-	                                     CEntityInstance* activator, CEntityInstance* caller,
-	                                     void* value, int output_id, void* unk);
-
 	// ---- state -----------------------------------------------------------
 
 	TomlData data_;
@@ -271,15 +250,8 @@ private:
 	/** Set when CommitSuicide's slot row killed the bot pawn. */
 	bool bot_pawn_dead_ = false;
 
-	/** Addresses verified by the sweep; InstallHooks refuses otherwise. */
+	/** Both addresses the old hooks used resolved and were verified by the sweep. */
 	bool signatures_verified_ = false;
-
-	bool hooks_installed_ = false;
-	KHook::Function<void, class CEntityInstance*, class CCommand&, bool, int, const char*>
-		hook_host_say_;
-	KHook::Function<void, CEntityInstance*, const char*, CEntityInstance*,
-	                CEntityInstance*, void*, int, void*>
-		hook_accept_input_;
 };
 
 } // namespace cs2st

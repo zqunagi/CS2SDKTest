@@ -60,6 +60,7 @@ set(CS2SDKTEST_PRELOAD_SOURCES
   src/suites/FlattenedSerializersSuite.cpp
   src/suites/NetworkMessagesSuite.cpp
   src/suites/GameEntitySystemSuite.cpp
+  src/suites/GamedataSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 
@@ -79,6 +80,17 @@ target_include_directories(cs2sdktest_preload PRIVATE
 if(CS2SDKTEST_WITH_PROTOBUF)
   target_include_directories(cs2sdktest_preload SYSTEM PRIVATE "${CS2SDKTEST_PROTO_OUT_DIR}")
 endif()
+
+# GamedataSuite compares the SDK's declared slots against gamedata with
+# KHook::GetVtableIndex, which is member-pointer arithmetic in a header. Only the
+# header is used: nothing from khook is linked or called at run time, and
+# KHook::__exported__khook (the pointer Metamod fills in) is never touched.
+set(CS2SDKTEST_KHOOK_INCLUDE "${CS2SDKTEST_METAMOD_DIR}/third_party/khook/include")
+if(NOT EXISTS "${CS2SDKTEST_KHOOK_INCLUDE}/khook.hpp")
+  message(FATAL_ERROR "khook.hpp not found at '${CS2SDKTEST_KHOOK_INCLUDE}'; "
+    "run: git submodule update --init --recursive metamod-source")
+endif()
+target_include_directories(cs2sdktest_preload SYSTEM PRIVATE "${CS2SDKTEST_KHOOK_INCLUDE}")
 
 target_compile_definitions(cs2sdktest_preload PRIVATE CS2SDKTEST_PRELOAD=1)
 if(CS2SDKTEST_TIER1_KEYVALUES3)
