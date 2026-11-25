@@ -11,18 +11,9 @@
 #include <tier0/buffer_string.h>
 
 #include "hook/HookArg.h"
-#include "hook/HookRecorder.h"
 #include "testkit/PrivateField.h"
 #include "testkit/StructInspector.h"
 #include "testkit/UtlVectorGuard.h"
-
-// The SH_DECL_HOOK block used to live here; under KHook the hook templates are
-// declared as members in the header instead, bound to the SDK member pointers
-// in the constructor at the bottom of this file. The signatures are icvar.h's
-// own, defaulted arguments included in the count: a defaulted parameter is
-// still a parameter as far as the ABI is concerned, so CallGlobalChangeCallbacks
-// is five and RegisterConCommand is two even though the last of each has a
-// default in the declaration.
 
 namespace cs2st
 {
@@ -170,57 +161,16 @@ void ProbeGlobalChanged(ConVarRefAbstract* ref, CSplitScreenSlot slot,
 		"%.63s", SafeStringArg(new_value, scratch));
 }
 
-/** Hook ids. Used as both the log label and the recorder key. */
-constexpr const char* kDispatchConCommand = "ICvar::DispatchConCommand";
-constexpr const char* kRegisterConVar     = "ICvar::RegisterConVar";
-constexpr const char* kRegisterConCommand = "ICvar::RegisterConCommand";
-constexpr const char* kCallGlobalChange   = "ICvar::CallGlobalChangeCallbacks";
-constexpr const char* kUnregisterConVar   = "ICvar::UnregisterConVarCallbacks";
-constexpr const char* kUnregisterConCmd   = "ICvar::UnregisterConCommandCallbacks";
-constexpr const char* kGlobalChangeCb     = "ICvar::<installed global change callback>";
-constexpr const char* kOnConVarCreated    = "IConVarListener::OnConVarCreated";
-constexpr const char* kOnConCommandCreated = "IConVarListener::OnConCommandCreated";
-
-/** Hooked methods plus the two native observation mechanisms. */
-constexpr int kHookedMethodCount = 8;
-
-/**
- * The persistent global change callback, installed by InstallHooks.
- *
- * A plain function rather than a member: FnChangeCallbackGlobal_t is a C
- * function pointer, so the engine has nowhere to put a `this`.
- */
-void PersistentGlobalChanged(ConVarRefAbstract* ref, CSplitScreenSlot slot,
-                             const char* new_value, const char* old_value,
-                             ConVarUserInfoSet_t* userinfo_data)
-{
-	(void)userinfo_data;
-
-	char name_scratch[48];
-	char new_scratch[48];
-	char old_scratch[48];
-
-	const char* name = LooksLikeObjectPointer(ref)
-		? SafeStringArg(ref->GetName(), name_scratch)
-		: "<bad ref>";
-
-	CS2ST_HOOK_ENTER_ARGS(kGlobalChangeCb, "slot=%d %.63s: \"%.31s\" -> \"%.31s\"",
-		slot.Get(), name,
-		SafeStringArg(old_value, old_scratch),
-		SafeStringArg(new_value, new_scratch));
-	CS2ST_HOOK_LEAVE(kGlobalChangeCb);
-}
-
 // -----------------------------------------------------------------------------
 //  The probe convars and commands
 // -----------------------------------------------------------------------------
 //
 // Declared at file scope so their constructors run when this shared object is
-// mapped, which queues them in tier1's registration list; Plugin::Load then
-// calls META_CONVAR_REGISTER, which drains that queue through
-// ICvar::RegisterConVar. That is the SDK's own path for a plugin to declare a
-// convar, and taking it means the rest of this file has values it chose itself
-// to compare the engine against.
+// mapped, which queues them in tier1's registration list; ConVar_Register then
+// drains that queue through ICvar::RegisterConVar (the preload entry calls it in
+// the first simulating frame). That is the SDK's own path for a plugin to
+// declare a convar, and taking it means the rest of this file has values it
+// chose itself to compare the engine against.
 //
 // Every one of them is a POD type. That is a deliberate constraint, not a
 // coincidence: CS2SDKTEST_USE_MEMOVERRIDE is off, so this module allocates
@@ -879,26 +829,6 @@ void ConVarSuite::ExerciseOwnRegistrations(TestContext& context)
 	context.Note("[ground truth] %zu convars and 2 commands this plugin registered "
 	             "at load, with values we chose", kProbeCvarCount);
 
-	// Two independent routes to the interface: the module's own
-	// CreateInterface, which is what Acquire used, and the pointer Metamod
-	// handed Plugin::Load through GetEngineFactory. They have to be the same
-	// object; if they are not, one of the two lookups is resolving to
-	// something else and every result in this section is suspect.
-	CS2ST_CALL(context, "ICvar <-> g_pCVar (module factory vs Metamod)", {
-		context.Detail("module factory -> %p, g_pCVar -> %p",
-			static_cast<void*>(cvar_), static_cast<void*>(g_pCVar));
-		if (g_pCVar == nullptr)
-		{
-			context.Fail("g_pCVar is null, but tier1 needs it for every "
-			             "ConVarRef and ConCommandRef method");
-		}
-		else if (g_pCVar != cvar_)
-		{
-			context.Fail("the two lookups disagree; tier1's helpers go through "
-			             "g_pCVar while this suite calls the other one");
-		}
-	});
-
 	// One line per probe convar. What is being checked is not that the engine
 	// has *some* answer but that it has *our* answer: the name we passed, the
 	// type our template argument translates to, the help text we wrote.
@@ -1369,9 +1299,9 @@ void ConVarSuite::ExerciseConVarRefApi(TestContext& context)
 			g_probe_int.IsFlagSet(FCVAR_RELEASE) ? "yes" : "no",
 			g_probe_int.IsFlagSet(FCVAR_DEFENSIVE) ? "yes" : "no");
 
-		// We passed these at registration and Metamod's META_CONVAR_REGISTER
-		// passes them again as the additional flags, so they cannot be absent
-		// unless the flag word moved.
+		// We passed these at registration and ConVar_Register passes them again
+		// as the additional flags, so they cannot be absent unless the flag word
+		// moved.
 		if (!g_probe_int.IsFlagSet(FCVAR_GAMEDLL))
 		{
 			context.Fail("registered with FCVAR_GAMEDLL");
@@ -5342,305 +5272,5 @@ void ConVarSuite::NoteSideEffectingCalls(TestContext& context)
 	             "GetMaxSplitScreenSlots is non-virtual and is read alongside "
 	             "ConVarData::GetMaxSplitScreenSlots");
 }
-
-// -----------------------------------------------------------------------------
-//  Hooks
-// -----------------------------------------------------------------------------
-
-int ConVarSuite::InstallHooks(TestContext& context)
-{
-	if (cvar_ == nullptr || hooks_installed_)
-	{
-		return 0;
-	}
-
-	HookRecorder& recorder = HookRecorder::Get();
-
-	// Declared before installing so a hook that never fires still shows up in
-	// the dump as "never". Half of these only fire when another plugin loads or
-	// unloads, so a dump taken right after installing says nothing.
-	recorder.Declare(kDispatchConCommand, Id());
-	recorder.Declare(kRegisterConVar, Id());
-	recorder.Declare(kRegisterConCommand, Id());
-	recorder.Declare(kCallGlobalChange, Id());
-	recorder.Declare(kUnregisterConVar, Id());
-	recorder.Declare(kUnregisterConCmd, Id());
-	recorder.Declare(kGlobalChangeCb, Id());
-	recorder.Declare(kOnConVarCreated, Id());
-	recorder.Declare(kOnConCommandCreated, Id());
-
-	// Each hook object carries its pre and post handler from the constructor;
-	// Add installs the detour on the cvar interface, Remove takes it off.
-	hook_DispatchConCommand_.Add(cvar_);
-	hook_RegisterConVar_.Add(cvar_);
-	hook_RegisterConCommand_.Add(cvar_);
-	hook_CallGlobalChangeCallbacks_.Add(cvar_);
-	hook_UnregisterConVarCallbacks_.Add(cvar_);
-	hook_UnregisterConCommandCallbacks_.Add(cvar_);
-
-	// The interface's own two observation mechanisms, which are not KHook
-	// detours at all. Both have a proper inverse, so unlike Metamod's AddListener
-	// these really do come back out in RemoveHooks.
-	cvar_->InstallGlobalChangeCallback(&PersistentGlobalChanged);
-	global_callback_installed_ = true;
-
-	cvar_->RegisterCreationListeners(this);
-	listener_registered_ = true;
-
-	hooks_installed_ = true;
-
-	context.Note("DispatchConCommand fires on every console command; the "
-	             "register and unregister hooks fire when a plugin loads or "
-	             "unloads; the global change callback fires on every convar "
-	             "change anywhere in the game");
-	return kHookedMethodCount;
-}
-
-void ConVarSuite::RemoveHooks(TestContext& context)
-{
-	if (cvar_ == nullptr || !hooks_installed_)
-	{
-		return;
-	}
-
-	hook_DispatchConCommand_.Remove(cvar_);
-	hook_RegisterConVar_.Remove(cvar_);
-	hook_RegisterConCommand_.Remove(cvar_);
-	hook_CallGlobalChangeCallbacks_.Remove(cvar_);
-	hook_UnregisterConVarCallbacks_.Remove(cvar_);
-	hook_UnregisterConCommandCallbacks_.Remove(cvar_);
-
-	// These two matter more than the KHook detours on unload: the engine
-	// holds a raw function pointer and a raw `this`, and both land in unmapped
-	// memory the moment this plugin goes away.
-	if (global_callback_installed_)
-	{
-		cvar_->RemoveGlobalChangeCallback(&PersistentGlobalChanged);
-		global_callback_installed_ = false;
-	}
-	if (listener_registered_)
-	{
-		cvar_->RemoveCreationListeners(this);
-		listener_registered_ = false;
-	}
-
-	hooks_installed_ = false;
-	(void)context;
-}
-
-// -----------------------------------------------------------------------------
-//  IConVarListener
-// -----------------------------------------------------------------------------
-
-void ConVarSuite::OnConVarCreated(ConVarRefAbstract* new_cvar)
-{
-	char scratch[48];
-	const char* name = LooksLikeObjectPointer(new_cvar)
-		? SafeStringArg(new_cvar->GetName(), scratch)
-		: "<bad ref>";
-
-	CS2ST_HOOK_ENTER_ARGS(kOnConVarCreated, "name=\"%.63s\"", name);
-	CS2ST_HOOK_LEAVE(kOnConVarCreated);
-}
-
-void ConVarSuite::OnConCommandCreated(ConCommand* new_command)
-{
-	// The SDK types this as ConCommand*, but a ConCommand is a ConCommandRef
-	// plus nothing, so what arrives is a handle-sized object rather than
-	// something with a vtable. Vetted as a pointer and not dereferenced beyond
-	// the accessor, because this callback has no fault guard.
-	CS2ST_HOOK_ENTER_ARGS(kOnConCommandCreated, "command=%p%s",
-		static_cast<void*>(new_command),
-		LooksLikeObjectPointer(new_command) ? "" : " (implausible)");
-	CS2ST_HOOK_LEAVE(kOnConCommandCreated);
-}
-
-// -----------------------------------------------------------------------------
-//  KHook handlers
-// -----------------------------------------------------------------------------
-//
-// Every one of these answers Action::Ignore: the cvar system is on the path of
-// every console command and every convar write, and a handler that supersedes
-// the original would stop being an observer.
-
-KHook::Return<void> ConVarSuite::Pre_DispatchConCommand(ICvar*, ConCommandRef cmd, const CCommandContext& ctx,
-                                                        const CCommand& args)
-{
-	char scratch[48];
-	// ArgC is read before any argument, and Arg() bounds-checks itself, so a
-	// nonsense count cannot turn into an out-of-range read here.
-	const int argc = args.ArgC();
-
-	CS2ST_HOOK_ENTER_ARGS(kDispatchConCommand,
-		"access=%u argc=%d target=%d slot=%d cmd=\"%.47s\"",
-		static_cast<unsigned>(cmd.GetAccessIndex()), argc,
-		static_cast<int>(ctx.GetTarget()), ctx.GetPlayerSlot().Get(),
-		SafeStringArg(argc > 0 ? args.Arg(0) : "", scratch));
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Post_DispatchConCommand(ICvar*, ConCommandRef cmd, const CCommandContext& ctx,
-                                                         const CCommand& args)
-{
-	(void)cmd;
-	(void)ctx;
-	(void)args;
-	CS2ST_HOOK_LEAVE(kDispatchConCommand);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Pre_RegisterConVar(ICvar*, const ConVarCreation_t& setup, uint64 flags,
-                                                    ConVarRef* cvar_ref, ConVarData** cvar_data)
-{
-	(void)cvar_ref;
-	(void)cvar_data;
-
-	char scratch[48];
-	CS2ST_HOOK_ENTER_ARGS(kRegisterConVar, "name=\"%.47s\" type=%d flags=0x%llx",
-		SafeStringArg(setup.m_pszName, scratch),
-		static_cast<int>(setup.m_valueInfo.m_eVarType),
-		static_cast<unsigned long long>(setup.m_nFlags | flags));
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Post_RegisterConVar(ICvar*, const ConVarCreation_t& setup, uint64 flags,
-                                                     ConVarRef* cvar_ref, ConVarData** cvar_data)
-{
-	(void)setup;
-	(void)flags;
-	(void)cvar_ref;
-	(void)cvar_data;
-	CS2ST_HOOK_LEAVE(kRegisterConVar);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<ConCommandRef> ConVarSuite::Pre_RegisterConCommand(ICvar*, const ConCommandCreation_t& setup,
-                                                                 uint64 flags)
-{
-	char scratch[48];
-	CS2ST_HOOK_ENTER_ARGS(kRegisterConCommand, "name=\"%.47s\" flags=0x%llx",
-		SafeStringArg(setup.m_pszName, scratch),
-		static_cast<unsigned long long>(setup.m_nFlags | flags));
-	// Action::Ignore discards this `ret`; the engine's own registration result
-	// is what the caller receives.
-	return { KHook::Action::Ignore, ConCommandRef() };
-}
-
-KHook::Return<ConCommandRef> ConVarSuite::Post_RegisterConCommand(ICvar*, const ConCommandCreation_t& setup,
-                                                                  uint64 flags)
-{
-	(void)setup;
-	(void)flags;
-	CS2ST_HOOK_LEAVE(kRegisterConCommand);
-	return { KHook::Action::Ignore, ConCommandRef() };
-}
-
-KHook::Return<void> ConVarSuite::Pre_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref,
-                                                               CSplitScreenSlot slot,
-                                                               const char* new_value,
-                                                               const char* old_value,
-                                                               ConVarUserInfoSet_t* userinfo_data)
-{
-	(void)userinfo_data;
-
-	char name_scratch[48];
-	char new_scratch[48];
-	char old_scratch[48];
-
-	const char* name = LooksLikeObjectPointer(ref)
-		? SafeStringArg(ref->GetName(), name_scratch)
-		: "<bad ref>";
-
-	CS2ST_HOOK_ENTER_ARGS(kCallGlobalChange, "slot=%d %.47s: \"%.23s\" -> \"%.23s\"",
-		slot.Get(), name,
-		SafeStringArg(old_value, old_scratch),
-		SafeStringArg(new_value, new_scratch));
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Post_CallGlobalChangeCallbacks(ICvar*, ConVarRefAbstract* ref,
-                                                                CSplitScreenSlot slot,
-                                                                const char* new_value,
-                                                                const char* old_value,
-                                                                ConVarUserInfoSet_t* userinfo_data)
-{
-	(void)ref;
-	(void)slot;
-	(void)new_value;
-	(void)old_value;
-	(void)userinfo_data;
-	CS2ST_HOOK_LEAVE(kCallGlobalChange);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Pre_UnregisterConVarCallbacks(ICvar*, ConVarRef cvar)
-{
-	// Deliberately does not resolve the name: this fires while a plugin is
-	// being torn down, and the ConVarData behind the handle may already be
-	// half-dismantled. The handle itself is a value, so printing it is safe.
-	CS2ST_HOOK_ENTER_ARGS(kUnregisterConVar, "access=%u registered=%d",
-		static_cast<unsigned>(cvar.GetAccessIndex()), cvar.GetRegisteredIndex());
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Post_UnregisterConVarCallbacks(ICvar*, ConVarRef cvar)
-{
-	(void)cvar;
-	CS2ST_HOOK_LEAVE(kUnregisterConVar);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Pre_UnregisterConCommandCallbacks(ICvar*, ConCommandRef cmd)
-{
-	CS2ST_HOOK_ENTER_ARGS(kUnregisterConCmd, "access=%u registered=%d",
-		static_cast<unsigned>(cmd.GetAccessIndex()), cmd.GetRegisteredIndex());
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> ConVarSuite::Post_UnregisterConCommandCallbacks(ICvar*, ConCommandRef cmd)
-{
-	(void)cmd;
-	CS2ST_HOOK_LEAVE(kUnregisterConCmd);
-	return { KHook::Action::Ignore };
-}
-
-// -----------------------------------------------------------------------------
-//  Hook binding
-//
-//  The KHook::Virtual constructor resolves the vtable slot from the member
-//  pointer, so this list is the plugin's ABI contract with the SDK.
-// -----------------------------------------------------------------------------
-
-// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
-// for the rest of the translation unit and overrides the /wd4355 on the command
-// line. Passing `this` as the hook context is intentional (stored, not used).
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4355)
-#endif
-ConVarSuite::ConVarSuite() :
-	hook_DispatchConCommand_(&ICvar::DispatchConCommand, this,
-		&ConVarSuite::Pre_DispatchConCommand,
-		&ConVarSuite::Post_DispatchConCommand),
-	hook_RegisterConVar_(&ICvar::RegisterConVar, this,
-		&ConVarSuite::Pre_RegisterConVar,
-		&ConVarSuite::Post_RegisterConVar),
-	hook_RegisterConCommand_(&ICvar::RegisterConCommand, this,
-		&ConVarSuite::Pre_RegisterConCommand,
-		&ConVarSuite::Post_RegisterConCommand),
-	hook_CallGlobalChangeCallbacks_(&ICvar::CallGlobalChangeCallbacks, this,
-		&ConVarSuite::Pre_CallGlobalChangeCallbacks,
-		&ConVarSuite::Post_CallGlobalChangeCallbacks),
-	hook_UnregisterConVarCallbacks_(&ICvar::UnregisterConVarCallbacks, this,
-		&ConVarSuite::Pre_UnregisterConVarCallbacks,
-		&ConVarSuite::Post_UnregisterConVarCallbacks),
-	hook_UnregisterConCommandCallbacks_(&ICvar::UnregisterConCommandCallbacks, this,
-		&ConVarSuite::Pre_UnregisterConCommandCallbacks,
-		&ConVarSuite::Post_UnregisterConCommandCallbacks)
-{
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 } // namespace cs2st

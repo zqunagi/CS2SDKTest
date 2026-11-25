@@ -35,6 +35,9 @@
 
 #include <appframework/iappsystem.h>
 #include <engine2/ivengineserver2.h>
+#include <interfaces/interfaces.h>
+#include <tier0/convar.h>
+#include <tier0/icvar.h>
 
 #include "core/Log.h"
 #include "plugin/Sweep.h"
@@ -84,6 +87,8 @@ std::chrono::steady_clock::time_point g_clock_start;
 
 std::atomic<bool> g_hook_placed{false};
 
+bool g_cvar_ready = false;
+
 [[noreturn]] void ExitNow(int code)
 {
 	std::fflush(stdout);
@@ -130,6 +135,53 @@ void Execute()
 	CS2ST_LOG_INFO("autorun: sweep finished\n");
 }
 
+// -----------------------------------------------------------------------------
+//  The SDK globals a Metamod plugin gets for free
+// -----------------------------------------------------------------------------
+
+/**
+ * Sets the SDK's g_pCVar and registers the convars and commands this build
+ * declares at file scope (the ConVarSuite probe convars).
+ *
+ * Under Metamod, Plugin::Load did both: GET_V_IFACE_CURRENT filled g_pCVar and
+ * META_CONVAR_REGISTER ran ConVar_Register. Both only touch the SDK's own queue
+ * and ICvar - Metamod's RegisterConVar for Source 2 is a stub that returns true -
+ * so nothing here needs Metamod. What it does need is a live ICvar, and a
+ * thread that is allowed to call it: this runs on the engine's main thread, in
+ * the first simulating frame, which is the same context the sweep runs in.
+ *
+ * The callbacks are null on purpose. ConVar_Register's own RegisterAll already
+ * hands every queued convar to ICvar::RegisterConVar; the callback is only the
+ * hook Metamod used to learn about each one, and nothing here wants to know.
+ */
+bool InitCvarSystem()
+{
+	if (g_cvar_ready)
+	{
+		return true;
+	}
+
+	TestContext context;
+	auto* icvar = static_cast<ICvar*>(context.QueryInterface("tier0", CVAR_INTERFACE_VERSION));
+	if (icvar == nullptr)
+	{
+		icvar = static_cast<ICvar*>(context.QueryInterfaceAnywhere(CVAR_INTERFACE_VERSION));
+	}
+	if (icvar == nullptr)
+	{
+		CS2ST_LOG_ERROR("autorun: ICvar (%s) not available; the probe convars cannot be registered\n",
+			CVAR_INTERFACE_VERSION);
+		return false;
+	}
+
+	g_pCVar = icvar;
+	ConVar_Register(FCVAR_RELEASE | FCVAR_GAMEDLL);
+	g_cvar_ready = true;
+	CS2ST_LOG_INFO("autorun: cvar system ready (ICvar at %p), probe convars registered\n",
+		static_cast<void*>(icvar));
+	return true;
+}
+
 void OnFrame(bool simulating)
 {
 	if (g_state.load() != State::kWaiting || !simulating)
@@ -142,6 +194,9 @@ void OnFrame(bool simulating)
 	{
 		g_clock_started = true;
 		g_clock_start = now;
+		// First simulating frame: the engine is as ready as it will get, and this is
+		// the main thread. The sweep is a delay away, so registration is long done.
+		InitCvarSystem();
 		CrashRecorder::SetPhase("map_simulating");
 		CS2ST_LOG_INFO("autorun: map is simulating, sweeping in %ds\n", g_delay_seconds);
 	}

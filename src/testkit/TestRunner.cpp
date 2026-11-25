@@ -26,6 +26,7 @@
 #include "suites/GameEntitySystemSuite.h"
 #include "suites/GamedataSuite.h"
 #include "suites/NetworkServerSuite.h"
+#include "suites/ConVarSuite.h"
 #else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
@@ -73,6 +74,7 @@ TestRunner TestRunner::CreateDefault()
 	// Phase 2 batches 1 to 3, then the suites whose hooks were removed; the rest are added a batch at a time, each one run on
 	// a server before the next goes in. Same relative order as the full list.
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new ConVarSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaDiffSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
