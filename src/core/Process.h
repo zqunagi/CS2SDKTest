@@ -8,6 +8,7 @@
 #define CS2SDKTEST_CORE_PROCESS_H_
 
 #include <cstddef>
+#include <vector>
 
 namespace cs2st
 {
@@ -29,11 +30,19 @@ bool IsExecutable(const char* stem);
 bool PatchPointerSlot(void** slot, void* value);
 
 /**
- * Size in bytes of the function that starts exactly at `fn`, taken from the
- * image's own unwind tables (.pdata on Windows x64), or 0 when it is not known.
- * Linux returns 0: its binaries carry no per-function size without symbols.
+ * Starts of every function that takes the address of the C string `text`
+ * (a `lea reg, [rip+disp32]` in executable code), for the image at
+ * [base, base + size). Found from the string outwards: locate the string in the
+ * image's readable data, find the instructions that point at it, and ask the
+ * image's unwind tables (.pdata) which function each one belongs to. Nothing has
+ * to guess where a function ends.
+ *
+ * Returns false when this platform cannot answer (Linux: no unwind lookup
+ * without symbols); `out` is untouched then and the caller needs another way.
+ * Returns true with an empty `out` when it can answer and nothing matched.
  */
-std::size_t FunctionSize(const void* fn);
+bool FunctionsReferencingString(const void* base, std::size_t size, const char* text,
+	std::vector<const void*>& out);
 
 /**
  * Ends the process now, without running DLL detach routines or static

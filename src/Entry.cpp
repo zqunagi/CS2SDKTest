@@ -273,23 +273,20 @@ bool InModule(const Module& module, const void* address)
 }
 
 /**
- * Does the function at `fn` take the address of the C string "GameFrame"?
+ * Does the code at `fn` take the address of the C string "GameFrame"?
  *
- * The scan has to stay inside the function. Functions sit back to back, so a
- * fixed-size window from the start of a small neighbour reaches into the next
- * function and finds ITS reference: in the Windows server.dll five other slots of
- * this vtable sit within 0x300 bytes before GameFrame and all matched. Where the
- * image says how long the function is (the unwind tables on Windows) that is the
- * limit; where it does not (Linux), the window is the fallback.
+ * Fallback for platforms that cannot say which function a reference belongs to
+ * (Linux): a fixed window from the start of the slot's function. It has no idea
+ * where the function ends, so a small function sitting just before GameFrame
+ * would match too; the caller insists on exactly one match for that reason.
+ * Windows does not use this: proc::FunctionsReferencingString works from the
+ * string outwards and needs no window.
  */
 bool ReferencesGameFrameString(const void* fn, const Module& module)
 {
-	constexpr std::size_t kFallbackWindow = 0x300;
-	const std::size_t known_size = proc::FunctionSize(fn);
-	const std::size_t limit = known_size != 0 ? known_size : kFallbackWindow;
-
+	constexpr std::size_t kWindow = 0x300;
 	const unsigned char* code = static_cast<const unsigned char*>(fn);
-	for (std::size_t i = 0; i + 7 <= limit; ++i)
+	for (std::size_t i = 0; i + 7 <= kWindow; ++i)
 	{
 		// lea r64, [rip+disp32]
 		if ((code[i] != 0x48 && code[i] != 0x4C) || code[i + 1] != 0x8D || (code[i + 2] & 0xC7) != 0x05)
@@ -359,6 +356,12 @@ HookResult TryPlaceHook()
 		return HookResult::kFailed;
 	}
 
+	// Windows: the functions that reference the string, then the slot that points at
+	// one of them. Elsewhere: look inside each slot's function.
+	std::vector<const void*> referencing;
+	const bool by_string = proc::FunctionsReferencingString(
+		server.base(), server.size(), "GameFrame", referencing);
+
 	int match = -1;
 	std::string matched;
 	int matches = 0;
@@ -368,7 +371,19 @@ HookResult TryPlaceHook()
 		{
 			break; // past the end of this class's table
 		}
-		if (ReferencesGameFrameString(vtable[i], server))
+		bool references = false;
+		if (by_string)
+		{
+			for (const void* start : referencing)
+			{
+				references = references || start == vtable[i];
+			}
+		}
+		else
+		{
+			references = ReferencesGameFrameString(vtable[i], server);
+		}
+		if (references)
 		{
 			match = i;
 			++matches;

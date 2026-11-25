@@ -87,36 +87,143 @@ bool PatchPointerSlot(void** slot, void* value)
 #endif
 }
 
-std::size_t FunctionSize(const void* fn)
-{
 #if CS2ST_WINDOWS && defined(_M_X64)
-	DWORD64 image_base = 0;
-	const RUNTIME_FUNCTION* entry =
-		::RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(fn), &image_base, nullptr);
-	if (entry != nullptr && image_base + entry->BeginAddress == reinterpret_cast<DWORD64>(fn))
-	{
-		return static_cast<std::size_t>(entry->EndAddress - entry->BeginAddress);
-	}
 
-	// No unwind entry of its own: a leaf function (no frame, no calls) needs none,
-	// so the tables say nothing. MSVC pads between functions with int3, and no
-	// function body contains two in a row, so the first pair marks the end. Capped,
-	// so a function that is not followed by padding still gets a bounded scan.
-	const unsigned char* code = static_cast<const unsigned char*>(fn);
-	constexpr std::size_t kCap = 0x300;
-	for (std::size_t i = 0; i + 1 < kCap; ++i)
+namespace
+{
+
+struct Section
+{
+	const unsigned char* begin;
+	std::size_t size;
+	bool executable;
+};
+
+// Mapped, non-discardable sections of the image. Discardable ones (.reloc, INIT)
+// may already be unmapped, and reading them would fault.
+std::vector<Section> ImageSections(const void* base)
+{
+	std::vector<Section> sections;
+	const auto* image = static_cast<const unsigned char*>(base);
+	const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE)
 	{
-		if (code[i] == 0xCC && code[i + 1] == 0xCC)
+		return sections;
+	}
+	const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(image + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE)
+	{
+		return sections;
+	}
+	const IMAGE_SECTION_HEADER* header = IMAGE_FIRST_SECTION(nt);
+	for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i)
+	{
+		const DWORD flags = header[i].Characteristics;
+		if ((flags & IMAGE_SCN_MEM_READ) == 0 || (flags & IMAGE_SCN_MEM_DISCARDABLE) != 0)
 		{
-			return i;
+			continue;
+		}
+		const std::size_t length = header[i].Misc.VirtualSize;
+		if (length != 0)
+		{
+			sections.push_back({image + header[i].VirtualAddress, length,
+				(flags & IMAGE_SCN_MEM_EXECUTE) != 0});
 		}
 	}
-	return kCap;
-#else
-	(void)fn;
-	return 0;
-#endif
+	return sections;
 }
+
+// Where the function containing `address` starts, from the unwind tables, or
+// nullptr. Only a function with no frame and no calls lacks an entry; one that
+// names a string for a call to use does not qualify.
+const unsigned char* FunctionStart(const void* address)
+{
+	DWORD64 image_base = 0;
+	const RUNTIME_FUNCTION* entry =
+		::RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(address), &image_base, nullptr);
+	if (entry == nullptr)
+	{
+		return nullptr;
+	}
+	return reinterpret_cast<const unsigned char*>(image_base + entry->BeginAddress);
+}
+
+} // namespace
+
+bool FunctionsReferencingString(const void* base, std::size_t size, const char* text,
+	std::vector<const void*>& out)
+{
+	(void)size;
+	const std::size_t text_length = std::strlen(text) + 1; // include the NUL
+	const std::vector<Section> sections = ImageSections(base);
+
+	// 1. The string as a whole C string: the byte before it must be a NUL, so the
+	//    tail of a longer string does not count.
+	std::vector<const unsigned char*> strings;
+	for (const Section& section : sections)
+	{
+		if (section.executable || section.size <= text_length)
+		{
+			continue;
+		}
+		for (std::size_t i = 1; i + text_length <= section.size; ++i)
+		{
+			if (section.begin[i - 1] == 0 && section.begin[i] == static_cast<unsigned char>(text[0]) &&
+			    std::memcmp(section.begin + i, text, text_length) == 0)
+			{
+				strings.push_back(section.begin + i);
+			}
+		}
+	}
+
+	// 2. The instructions that point at it, 3. the function each one belongs to.
+	std::vector<const void*> starts;
+	for (const Section& section : sections)
+	{
+		if (!section.executable)
+		{
+			continue;
+		}
+		for (std::size_t i = 0; i + 7 <= section.size; ++i)
+		{
+			const unsigned char* code = section.begin + i;
+			// lea r64, [rip+disp32]
+			if ((code[0] != 0x48 && code[0] != 0x4C) || code[1] != 0x8D || (code[2] & 0xC7) != 0x05)
+			{
+				continue;
+			}
+			std::int32_t disp = 0;
+			std::memcpy(&disp, code + 3, sizeof(disp));
+			const unsigned char* target = code + 7 + disp;
+			bool hit = false;
+			for (const unsigned char* candidate : strings)
+			{
+				hit = hit || candidate == target;
+			}
+			if (!hit)
+			{
+				continue;
+			}
+			const unsigned char* start = FunctionStart(code);
+			if (start != nullptr)
+			{
+				starts.push_back(start);
+			}
+		}
+	}
+
+	out = starts;
+	return true;
+}
+
+#else
+
+bool FunctionsReferencingString(const void*, std::size_t, const char*, std::vector<const void*>&)
+{
+	return false;
+}
+
+#endif
 
 [[noreturn]] void Terminate(int code)
 {
