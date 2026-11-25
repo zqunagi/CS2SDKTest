@@ -18,6 +18,9 @@
 #include "suites/GameTypesSuite.h"
 #include "suites/SerializedEntitiesSuite.h"
 #include "suites/Tier0PlatformSuite.h"
+#include "suites/SchemaDiffSuite.h"
+#include "suites/FileSystemSuite.h"
+#include "suites/KeyValues3Suite.h"
 #else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
@@ -62,10 +65,11 @@ TestRunner TestRunner::CreateDefault()
 	// exist; registration order is the order they appear in a log.
 #ifdef CS2SDKTEST_PRELOAD
 	// The preload build carries only suites that need neither hooks nor Metamod.
-	// Batch 1 of phase 2; the rest are added a batch at a time, each one run on
+	// Batches 1 and 2 of phase 2; the rest are added a batch at a time, each one run on
 	// a server before the next goes in. Same relative order as the full list.
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new SchemaDiffSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new EngineServiceMgrSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new StringTableSuite()));
@@ -79,6 +83,8 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new SerializedEntitiesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0PlatformSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new KeyValues3Suite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
 #else
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));

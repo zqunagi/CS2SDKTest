@@ -54,6 +54,9 @@ set(CS2SDKTEST_PRELOAD_SOURCES
   src/suites/GameTypesSuite.cpp
   src/suites/SerializedEntitiesSuite.cpp
   src/suites/Tier0PlatformSuite.cpp
+  src/suites/SchemaDiffSuite.cpp
+  src/suites/FileSystemSuite.cpp
+  src/suites/KeyValues3Suite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 
