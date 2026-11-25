@@ -1,0 +1,4 @@
+/* Exports nothing. See cmake/Preload.cmake for why. */
+{
+  local: *;
+};
