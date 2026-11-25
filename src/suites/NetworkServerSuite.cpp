@@ -26,22 +26,9 @@
 
 #include "core/Log.h"
 #include "hook/HookArg.h"
-#include "hook/HookRecorder.h"
 #include "testkit/PrivateField.h"
 #include "testkit/StructInspector.h"
 #include "testkit/UtlVectorGuard.h"
-
-// The SH_DECL_HOOK block used to live here; under KHook the hook templates are
-// declared as members in the header instead, bound to the SDK member pointers
-// in the constructor at the bottom of this file. All five are on
-// INetworkServerService and none on the game server, which is the whole design
-// of this suite's hook half - see the header. StartChangeLevel and
-// PreserveSteamID exist on *both* interfaces, but each KHook::Virtual carries
-// its own member pointer, so binding the service's pair does not collide with
-// anything. SetFinalSimulationTickThisFrame dropped off the list when the
-// s2sdk rework removed it from the interface - the per-frame liveness probe
-// duty now falls to SetGameLoadStarted being the next thing to fire on a level
-// change, and to the sweep's own tick cross-checks.
 
 namespace cs2st
 {
@@ -62,21 +49,6 @@ CS2ST_PRIVATE_FIELD(GameSessionConfigKeyValues, GameSessionConfigOwner,
 
 namespace
 {
-
-// ---- hook ids ---------------------------------------------------------------
-
-constexpr const char* kStartChangeLevel =
-	"INetworkServerService::StartChangeLevel";
-constexpr const char* kSetGameLoadStarted =
-	"INetworkServerService::SetGameLoadStarted";
-constexpr const char* kSetGameLoadFailed =
-	"INetworkServerService::SetGameLoadFailed";
-constexpr const char* kDisconnectGameNow =
-	"INetworkServerService::DisconnectGameNow";
-constexpr const char* kPreserveSteamID =
-	"INetworkServerService::PreserveSteamID";
-
-constexpr int kHookedMethodCount = 5;
 
 // ---- probe constants --------------------------------------------------------
 
@@ -441,8 +413,7 @@ bool NetworkServerSuite::Acquire(TestContext& context)
 		NETWORKSERVERSERVICE_INTERFACE_VERSION);
 
 	// Nothing else here. The game server needs an engine call to fetch, and
-	// this function also runs on the hook-install path, which has no fault
-	// guard around it.
+	// that belongs inside ExerciseCalls, where the fault guard is armed.
 	return true;
 }
 
@@ -653,8 +624,7 @@ void NetworkServerSuite::ResolveGameServer(TestContext& context)
 		if (game_server_ != previous_game_server_)
 		{
 			// Not a failure - it is the documented-by-behaviour fact that the
-			// engine rebuilds this object, measured instead of assumed. It is
-			// also the reason no hook in this suite is attached to it.
+			// engine rebuilds this object, measured instead of assumed.
 			context.Detail("-> %p (was %p on the previous sweep: the engine "
 			               "replaced the game server, as it does on level change)",
 				static_cast<void*>(game_server_),
@@ -784,20 +754,20 @@ void NetworkServerSuite::ExerciseServerService(TestContext& context)
 		"registers load prerequisites; the configuration type is now defined, "
 		"but registering prerequisites into a live load is not this suite's to attempt");
 	context.SkipCall("INetworkServerService::DisconnectGameNow",
-		"disconnects the running game; hooked instead");
+		"disconnects the running game");
 	context.SkipCall("INetworkServerService::PrintSpawnGroupStatus",
 		"writes an unbounded dump to the game console rather than returning it");
 	context.SkipCall("INetworkServerService::SetGameLoadFailed",
-		"marks the level load as failed; hooked instead");
+		"marks the level load as failed");
 	context.SkipCall("INetworkServerService::SetGameLoadStarted",
-		"moves the load state machine; hooked instead");
+		"moves the load state machine");
 	context.SkipCall("INetworkServerService::StartChangeLevel",
-		"begins a map change; hooked instead");
+		"begins a map change");
 	context.SkipCall("INetworkServerService::FinishChangeLevel",
 		"completes a map change; the engine calls it against its own "
 		"changelevel state, which this suite has none of");
 	context.SkipCall("INetworkServerService::PreserveSteamID",
-		"changes how the next session's identity is assigned; hooked instead");
+		"changes how the next session's identity is assigned");
 	context.SkipCall("INetworkServerService::IsSaveRestoreAllowed",
 		"the rework-typed overload takes a CUtlString* reason out-parameter; "
 		"the INetworkGameServer row below records why even a null one is not "
@@ -1837,206 +1807,5 @@ void NetworkServerSuite::NoteSideEffectingCalls(TestContext& context)
 	context.SkipCall("INetworkGameServer::PrepareSendClientUpdatesAsync",
 		"drives the client update pass");
 }
-
-// -----------------------------------------------------------------------------
-//  Install / remove
-//
-//  Every hook is on INetworkServerService, and that is the design rather than
-//  an omission. CNetworkGameServerBase is rebuilt when the level changes, so a
-//  hook on it stops firing at the exact moment the interesting thing happens -
-//  and a hook that has stopped firing looks identical to a method the engine no
-//  longer calls, which is the one confusion this whole plugin exists to avoid.
-//  The service is a process-lifetime singleton, and between them these five
-//  cover the level-load lifecycle the sweep cannot see.
-// -----------------------------------------------------------------------------
-
-int NetworkServerSuite::InstallHooks(TestContext& context)
-{
-	if (service_ == nullptr || hooks_installed_)
-	{
-		return 0;
-	}
-
-	HookRecorder& recorder = HookRecorder::Get();
-
-	// Declared before installing, so a hook that never fires still shows up in
-	// the dump as `never`. After a CS2 update that row is the finding.
-	recorder.Declare(kStartChangeLevel, Id());
-	recorder.Declare(kSetGameLoadStarted, Id());
-	recorder.Declare(kSetGameLoadFailed, Id());
-	recorder.Declare(kDisconnectGameNow, Id());
-	recorder.Declare(kPreserveSteamID, Id());
-
-	// Each hook object carries its pre and post handler from the constructor;
-	// Add installs the detour on the service instance, Remove takes it off.
-	// KHook::Virtual::Add returns void - a failed attach surfaces later as a
-	// Declare() row that never fires, which the recorder's dump already shows.
-	hook_StartChangeLevel_.Add(service_);
-	hook_SetGameLoadStarted_.Add(service_);
-	hook_SetGameLoadFailed_.Add(service_);
-	hook_DisconnectGameNow_.Add(service_);
-	hook_PreserveSteamID_.Add(service_);
-
-	hooks_installed_ = true;
-
-	context.Note("StartChangeLevel carries the map and landmark as arguments "
-	             "since the s2sdk rework, so the hook log now shows where the "
-	             "change is headed");
-	CS2ST_LOG_INFO("%s: the rest only fire on a level change or a disconnect - "
-	               "change the map, then dump\n", Id());
-	return kHookedMethodCount;
-}
-
-void NetworkServerSuite::RemoveHooks(TestContext& context)
-{
-	if (service_ == nullptr || !hooks_installed_)
-	{
-		return;
-	}
-
-	// Remove detaches from the live instance; the hook objects themselves stay
-	// bound and are re-Add()ed if the suite is installed again.
-	hook_StartChangeLevel_.Remove(service_);
-	hook_SetGameLoadStarted_.Remove(service_);
-	hook_SetGameLoadFailed_.Remove(service_);
-	hook_DisconnectGameNow_.Remove(service_);
-	hook_PreserveSteamID_.Remove(service_);
-
-	hooks_installed_ = false;
-	(void)context;
-}
-
-// -----------------------------------------------------------------------------
-//  Hook handlers
-//
-//  These run in the engine's own frame, where CallGuard is not armed. POD
-//  parameters need no vetting; the string arguments StartChangeLevel grew in
-//  the s2sdk rework go through SafeStringArg before any %s sees them, per the
-//  no-unvetted-dereference rule in HookArg.h - which is part of why these five
-//  were the ones chosen.
-//
-//  Every one answers Action::Ignore, the KHook equivalent of MRES_IGNORED:
-//  observe, never steer. The KHook::Virtual members are bound to these in the
-//  constructor at the bottom of this file.
-// -----------------------------------------------------------------------------
-
-KHook::Return<void> NetworkServerSuite::Pre_StartChangeLevel(INetworkServerService*,
-                                                             const char* pszMap,
-                                                             const char* pszLandmark,
-                                                             void* pUnknown)
-{
-	// Vetted before the format call, never straight off the argument: a wrong
-	// signature here is a float or a bool in the register, and touching it raw
-	// faults inside the callback that exists to report exactly that.
-	char map_scratch[64];
-	char landmark_scratch[64];
-	CS2ST_HOOK_ENTER_ARGS(kStartChangeLevel,
-		"map=\"%.63s\" landmark=\"%.63s\" unknown=%p",
-		SafeStringArg(pszMap, map_scratch),
-		SafeStringArg(pszLandmark, landmark_scratch),
-		pUnknown);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Post_StartChangeLevel(INetworkServerService*,
-                                                              const char* /*pszMap*/,
-                                                              const char* /*pszLandmark*/,
-                                                              void* /*pUnknown*/)
-{
-	CS2ST_HOOK_LEAVE(kStartChangeLevel);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Pre_SetGameLoadStarted(INetworkServerService*)
-{
-	CS2ST_HOOK_ENTER(kSetGameLoadStarted);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Post_SetGameLoadStarted(INetworkServerService*)
-{
-	CS2ST_HOOK_LEAVE(kSetGameLoadStarted);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Pre_SetGameLoadFailed(INetworkServerService*, bool bFailed)
-{
-	CS2ST_HOOK_ENTER_ARGS(kSetGameLoadFailed, "failed=%d", bFailed ? 1 : 0);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Post_SetGameLoadFailed(INetworkServerService*, bool)
-{
-	CS2ST_HOOK_LEAVE(kSetGameLoadFailed);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Pre_DisconnectGameNow(INetworkServerService*, ENetworkDisconnectionReason nReason)
-{
-	// Typed as the enum since the 2026-10 SDK (was a bare int); the protobuf
-	// validator is still the honest way to judge it - the same check
-	// Source2GameClientsSuite runs on ClientDisconnect, against the real value
-	// set rather than a guessed range.
-	const bool known = ENetworkDisconnectionReason_IsValid(static_cast<int>(nReason));
-	CS2ST_HOOK_ENTER_ARGS(kDisconnectGameNow, "reason=%d%s", static_cast<int>(nReason),
-		known ? "" : " NOT-A-VALID-REASON");
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Post_DisconnectGameNow(INetworkServerService*, ENetworkDisconnectionReason)
-{
-	CS2ST_HOOK_LEAVE(kDisconnectGameNow);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Pre_PreserveSteamID(INetworkServerService*)
-{
-	CS2ST_HOOK_ENTER(kPreserveSteamID);
-	return { KHook::Action::Ignore };
-}
-
-KHook::Return<void> NetworkServerSuite::Post_PreserveSteamID(INetworkServerService*)
-{
-	CS2ST_HOOK_LEAVE(kPreserveSteamID);
-	return { KHook::Action::Ignore };
-}
-
-// -----------------------------------------------------------------------------
-//  Hook binding
-//
-//  The KHook::Virtual constructor resolves the vtable slot from the member
-//  pointer at static-init time (the MFP's own bits name the slot), so this
-//  list is the plugin's ABI contract with the SDK: the day a hook stops
-//  firing after an update, these lines are what to re-check first.
-// -----------------------------------------------------------------------------
-
-// convar.h ends with `#pragma warning(default : 4355)`, which re-enables the warning
-// for the rest of the translation unit and overrides the /wd4355 on the command
-// line. Passing `this` as the hook context is intentional (stored, not used).
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4355)
-#endif
-NetworkServerSuite::NetworkServerSuite() :
-	hook_StartChangeLevel_(&INetworkServerService::StartChangeLevel, this,
-		&NetworkServerSuite::Pre_StartChangeLevel,
-		&NetworkServerSuite::Post_StartChangeLevel),
-	hook_SetGameLoadStarted_(&INetworkServerService::SetGameLoadStarted, this,
-		&NetworkServerSuite::Pre_SetGameLoadStarted,
-		&NetworkServerSuite::Post_SetGameLoadStarted),
-	hook_SetGameLoadFailed_(&INetworkServerService::SetGameLoadFailed, this,
-		&NetworkServerSuite::Pre_SetGameLoadFailed,
-		&NetworkServerSuite::Post_SetGameLoadFailed),
-	hook_DisconnectGameNow_(&INetworkServerService::DisconnectGameNow, this,
-		&NetworkServerSuite::Pre_DisconnectGameNow,
-		&NetworkServerSuite::Post_DisconnectGameNow),
-	hook_PreserveSteamID_(&INetworkServerService::PreserveSteamID, this,
-		&NetworkServerSuite::Pre_PreserveSteamID,
-		&NetworkServerSuite::Post_PreserveSteamID)
-{
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 } // namespace cs2st

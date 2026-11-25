@@ -61,6 +61,7 @@ set(CS2SDKTEST_PRELOAD_SOURCES
   src/suites/NetworkMessagesSuite.cpp
   src/suites/GameEntitySystemSuite.cpp
   src/suites/GamedataSuite.cpp
+  src/suites/NetworkServerSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 
