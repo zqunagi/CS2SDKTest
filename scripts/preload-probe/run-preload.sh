@@ -16,7 +16,7 @@ SO="$(readlink -f "$SO")"
 CS2_DIR="${CS2_DIR:-/root/cs2-ds}"
 OUT_DIR="${OUT_DIR:-/tmp/cs2sdktest-preload}"
 RUN_SECONDS="${RUN_SECONDS:-240}"
-DELAY="${DELAY:-30}"
+DELAY="${DELAY:-10}"
 LAUNCH_ARGS="${LAUNCH_ARGS:--dedicated +hostport 10001 +game_type 0 +game_mode 1 +map de_dust2 +sv_hibernate_when_empty 0 +sv_cheats 0 +bot_quota 1 +mp_warmup_pausetimer 1 +mp_freezetime 0 +mp_autoteambalance 0 +mp_limitteams 0 -insecure}"
 
 rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"

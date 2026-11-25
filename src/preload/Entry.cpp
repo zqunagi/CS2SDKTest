@@ -15,7 +15,7 @@
  *
  *   CST_AUTORUN=1          required; without it the library does nothing
  *   CST_AUTORUN_SUITE=id   one suite instead of all of them
- *   CST_AUTORUN_DELAY=n    seconds of simulating map before the sweep (default 30)
+ *   CST_AUTORUN_DELAY=n    seconds of simulating map before the sweep (default 10)
  *   CST_AUTORUN_QUIT=0     leave the server running afterwards
  */
 
@@ -76,7 +76,7 @@ GameFrameFn g_original = nullptr;
 std::atomic<State> g_state{State::kWaiting};
 
 std::string g_only;
-int g_delay_seconds = 30;
+int g_delay_seconds = 10;
 bool g_quit_when_done = true;
 
 bool g_clock_started = false;
