@@ -2,10 +2,12 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <vector>
 
+#include "core/Log.h"
 #include "core/Platform.h"
 
 #if CS2ST_WINDOWS
@@ -223,13 +225,13 @@ std::string EnsureExtension(const std::string& name, const std::string& extensio
 	return name + extension;
 }
 
-std::string PluginBinaryPath()
+std::string LibraryPath()
 {
 #if CS2ST_WINDOWS
 	HMODULE self = nullptr;
 	if (::GetModuleHandleExA(
 			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-			reinterpret_cast<LPCSTR>(&PluginBinaryPath),
+			reinterpret_cast<LPCSTR>(&LibraryPath),
 			&self) == 0 || self == nullptr)
 	{
 		return std::string();
@@ -245,7 +247,7 @@ std::string PluginBinaryPath()
 	return std::string(buffer.data(), length);
 #else
 	Dl_info info;
-	if (::dladdr(reinterpret_cast<const void*>(&PluginBinaryPath), &info) == 0 ||
+	if (::dladdr(reinterpret_cast<const void*>(&LibraryPath), &info) == 0 ||
 		info.dli_fname == nullptr)
 	{
 		return std::string();
@@ -254,25 +256,49 @@ std::string PluginBinaryPath()
 #endif
 }
 
-std::string LogDirectory()
+std::string GameDirectory()
 {
-	const std::string binary = PluginBinaryPath();
-	if (binary.empty())
+	const char* override_dir = std::getenv("CST_GAME_DIR");
+	if (override_dir != nullptr && override_dir[0] != '\0')
 	{
-		// Falling back to the working directory keeps the commands usable on a
-		// layout we did not anticipate; the run always prints the full path of
-		// the log it opened, so where it went is never a mystery.
-		return "logs";
+		return override_dir;
 	}
 
-	// <mod>/addons/<alias>/bin/<binary>  ->  <mod>/addons/<alias>/logs
-	const std::string bin_dir = DirectoryName(binary);
-	const std::string plugin_dir = DirectoryName(bin_dir);
-	if (plugin_dir.empty())
+	// <csgo>/bin/linuxsteamrt64/<library>  ->  <csgo>
+	const std::string binary = LibraryPath();
+	const std::string arch_dir = DirectoryName(binary);      // .../bin/linuxsteamrt64
+	const std::string bin_dir = DirectoryName(arch_dir);     // .../bin
+	const std::string game_dir = DirectoryName(bin_dir);     // <csgo>
+	if (arch_dir.empty() || bin_dir.empty() || game_dir.empty()
+		|| BaseName(arch_dir) != "linuxsteamrt64" || BaseName(bin_dir) != "bin")
 	{
-		return "logs";
+		// dladdr reports the path the library was given, so a relative LD_PRELOAD
+		// value lands here too. Saying so beats quietly writing to the wrong place,
+		// and once is enough: every consumer asks again.
+		static bool warned = false;
+		if (!warned)
+		{
+			warned = true;
+			CS2ST_LOG_WARN("game directory: cannot be worked out from '%s' (the library "
+			               "is expected under <csgo>/bin/linuxsteamrt64, given as an absolute "
+			               "path); set CST_GAME_DIR, using the working directory for now\n",
+				binary.c_str());
+		}
+		return std::string();
 	}
-	return Join(plugin_dir, "logs");
+	return game_dir;
+}
+
+std::string LogDirectory()
+{
+	const std::string game_dir = GameDirectory();
+	return game_dir.empty() ? std::string("logs") : Join(game_dir, "logs");
+}
+
+std::string ConfigDirectory()
+{
+	const std::string game_dir = GameDirectory();
+	return game_dir.empty() ? std::string("configs") : Join(game_dir, "configs");
 }
 
 std::string TimestampForFileName()

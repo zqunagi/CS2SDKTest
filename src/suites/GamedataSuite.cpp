@@ -155,24 +155,10 @@ bool ReadTextFile(const std::string& path, std::string& out)
 	return ok;
 }
 
-/**
- * Directory gamedata.toml lives in: <mod>/addons/<alias>/configs, derived from
- * this plugin's own binary the same way LogDirectory() derives its logs path.
- */
+/** Where gamedata.toml lives: <csgo>/configs/gamedata.toml. */
 std::string ConfigsGamedataPath()
 {
-	const std::string binary = fs::PluginBinaryPath();
-	if (binary.empty())
-	{
-		return fs::Join("configs", "gamedata.toml");
-	}
-
-	const std::string plugin_dir = fs::DirectoryName(fs::DirectoryName(binary));
-	if (plugin_dir.empty())
-	{
-		return fs::Join("configs", "gamedata.toml");
-	}
-	return fs::Join(fs::Join(plugin_dir, "configs"), "gamedata.toml");
+	return fs::Join(fs::ConfigDirectory(), "gamedata.toml");
 }
 
 /** Reads the pointer-sized slot `offset` bytes into `object`. */

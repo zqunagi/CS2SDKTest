@@ -74,7 +74,6 @@ set(CS2SDKTEST_AUTHOR       "unagi")
 set(CS2SDKTEST_URL          "https://github.com/zqunagi/CS2SDKTest")
 set(CS2SDKTEST_LICENSE      "MIT")
 set(CS2SDKTEST_LOGTAG       "SDKTEST")
-set(CS2SDKTEST_ALIAS        "cs2sdktest")
 
 # -----------------------------------------------------------------------------
 #  Dependencies
@@ -91,6 +90,23 @@ cs2sdktest_resolve_git_revision("${CMAKE_CURRENT_SOURCE_DIR}" CS2SDKTEST_GIT_REV
 cs2sdktest_resolve_git_commit("${CMAKE_CURRENT_SOURCE_DIR}" CS2SDKTEST_GIT_COMMIT)
 cs2sdktest_resolve_sdk_revision("${CS2SDKTEST_S2SDK_DIR}" CS2SDKTEST_SDK_REVISION)
 cs2sdktest_full_version("${PROJECT_VERSION}" "${CS2SDKTEST_GIT_REVISION}" CS2SDKTEST_FULL_VERSION)
+
+# -----------------------------------------------------------------------------
+#  Package layout
+#
+#  The package is the contents of the server's game/csgo directory, so it is
+#  unzipped straight into <server>/game/csgo:
+#
+#    bin/linuxsteamrt64/cs2sdktest.so    the library
+#    configs/gamedata.toml               its data file
+#    configs/cs2sdktest-meta.json        which build this is, for a run that died
+#                                        before the library wrote anything
+#
+#  Run logs and results are not part of the package: the library writes them to
+#  <csgo>/logs at run time (see fs::GameDirectory).
+# -----------------------------------------------------------------------------
+set(CS2SDKTEST_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package")
+set(CS2SDKTEST_PACKAGE_BIN_DIR "${CS2SDKTEST_PACKAGE_DIR}/bin/linuxsteamrt64")
 
 # -----------------------------------------------------------------------------
 #  Generated sources
@@ -113,14 +129,13 @@ configure_file(
   @ONLY
 )
 
-# meta.json travels in the package next to the library. Whoever runs the package
-# (the runner) can then say which build it was even when the process died before
-# the library wrote anything itself: the engine going down first leaves no
-# results file to take the version from.
+# The build metadata travels in the package. Whoever runs the package (the runner) can
+# then say which build it was even when the process died before the library
+# wrote anything itself: the engine going down first leaves no results file to
+# take the version from.
 set(CS2SDKTEST_PROJECT_NAME "${PROJECT_NAME}")
 set(CS2SDKTEST_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
-set(CS2SDKTEST_META_FILE
-  "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/meta.json")
+set(CS2SDKTEST_META_FILE "${CS2SDKTEST_PACKAGE_DIR}/configs/cs2sdktest-meta.json")
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/meta.json.in"
   "${CS2SDKTEST_META_FILE}"
@@ -151,11 +166,10 @@ if(CS2SDKTEST_WITH_PROTOBUF)
   cs2sdktest_generate_protobuf(CS2SDKTEST_PROTO_SOURCES ${CS2SDKTEST_PROTO_FILES})
 endif()
 
-# GamedataSuite reads this from <dir>/configs, two levels above the library, so the
-# package layout and the installed layout both have to carry it.
+# GamedataSuite reads this from <csgo>/configs, so the package carries it there.
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
-  "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/configs/gamedata.toml"
+  "${CS2SDKTEST_PACKAGE_DIR}/configs/gamedata.toml"
   COPYONLY
 )
 
@@ -346,7 +360,7 @@ set_target_properties(cs2sdktest PROPERTIES
   PREFIX ""
   OUTPUT_NAME "cs2sdktest"
   SUFFIX ".so"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package/addons/${CS2SDKTEST_ALIAS}/bin"
+  LIBRARY_OUTPUT_DIRECTORY "${CS2SDKTEST_PACKAGE_BIN_DIR}"
 )
 
 target_compile_options(cs2sdktest PRIVATE -Wall -Wextra)
@@ -393,10 +407,10 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "src"
 #  Packaging / installation
 # -----------------------------------------------------------------------------
 install(TARGETS cs2sdktest
-  LIBRARY DESTINATION "addons/${CS2SDKTEST_ALIAS}/bin"
+  LIBRARY DESTINATION "bin/linuxsteamrt64"
 )
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
-  DESTINATION "addons/${CS2SDKTEST_ALIAS}/configs"
+  DESTINATION "configs"
 )
 
 message(STATUS "cs2sdktest ${CS2SDKTEST_FULL_VERSION} (${CS2SDKTEST_PLATFORM})")

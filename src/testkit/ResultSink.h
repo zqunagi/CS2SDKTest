@@ -35,8 +35,8 @@ public:
 	static ResultSink& Get();
 
 	/**
-	 * Overrides the output directory. Empty restores the default, the plugin's
-	 * log directory. Takes effect at the next Open().
+	 * Overrides the output directory. Empty restores the default: CST_RESULT_DIR
+	 * when set, otherwise <csgo>/logs. Takes effect at the next Open().
 	 */
 	void SetDirectory(const std::string& directory) { directory_override_ = directory; }
 

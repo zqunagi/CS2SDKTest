@@ -2,7 +2,7 @@
  * Small filesystem helpers.
  *
  * Deliberately built on stdio and the raw OS calls rather than <filesystem>:
- * the plugin is compiled with _GLIBCXX_USE_CXX11_ABI=0 to match the SDK's
+ * this library is compiled with _GLIBCXX_USE_CXX11_ABI=0 to match the SDK's
  * prebuilt libraries, and std::filesystem is exactly the kind of heavily
  * ABI-entangled component that makes that mismatch show up as a link error on
  * some toolchains and a crash on others.
@@ -44,15 +44,30 @@ bool IsSafeFileName(const std::string& name, std::string& error);
 /** Appends `extension` (including the dot) when the name does not have it. */
 std::string EnsureExtension(const std::string& name, const std::string& extension);
 
-/** Absolute path of this plugin's own binary, or "" if it cannot be resolved. */
-std::string PluginBinaryPath();
+/** Absolute path of this library's own binary, or "" if it cannot be resolved. */
+std::string LibraryPath();
 
 /**
- * Directory run logs are written to: <mod>/addons/<alias>/logs, derived from
- * the plugin's own location so it works the same on a dedicated server and a
- * local test install.
+ * The game's mod directory, <server>/game/csgo, which everything this library
+ * reads or writes lives under:
+ *
+ *     <csgo>/bin/linuxsteamrt64/cs2sdktest.so     the library
+ *     <csgo>/configs/gamedata.toml                its data file
+ *     <csgo>/logs/                                its run logs
+ *
+ * CST_GAME_DIR names it outright. Otherwise it is worked out from where the
+ * library was loaded from, three directories up, and only trusted when the
+ * library really sits in a bin/linuxsteamrt64 directory; anything else gives
+ * "" so a caller falls back to the working directory instead of writing into
+ * a directory two levels off.
  */
+std::string GameDirectory();
+
+/** <csgo>/logs, or "logs" (relative to the working directory) when the game directory is unknown. */
 std::string LogDirectory();
+
+/** <csgo>/configs, or "configs" (relative to the working directory) when the game directory is unknown. */
+std::string ConfigDirectory();
 
 /** "20260907-141032", for building a default log file name. */
 std::string TimestampForFileName();

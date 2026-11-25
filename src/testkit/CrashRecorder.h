@@ -37,8 +37,8 @@ class CrashRecorder
 {
 public:
 	/**
-	 * Installs the handlers. crash.json goes to CST_RESULT_DIR when set, the
-	 * plugin's log directory otherwise; a stale one from an earlier run is
+	 * Installs the handlers. crash.json goes to CST_RESULT_DIR when set, <csgo>/logs
+	 * otherwise; a stale one from an earlier run is
 	 * removed. Safe to call twice.
 	 */
 	static bool Install();
