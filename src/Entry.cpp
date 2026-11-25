@@ -1,5 +1,5 @@
 /**
- * The library's entry: no Metamod, no KHook, no gameinfo.gi.
+ * The library's entry point.
  *
  * The library is injected with LD_PRELOAD. Its constructor runs inside the
  * cs2 process before the engine has loaded anything, so all it does there is
@@ -433,7 +433,7 @@ bool RunningInCs2()
 
 // LD_PRELOAD puts this library into every process the launcher starts; only the
 // game itself is of interest, and only when the operator asked for an autorun.
-__attribute__((constructor)) static void CS2SDKTestPreloadInit()
+__attribute__((constructor)) static void CS2SDKTestInit()
 {
 	using namespace cs2st;
 
@@ -464,7 +464,7 @@ __attribute__((constructor)) static void CS2SDKTestPreloadInit()
 
 	// Same shape as the Metamod build's line, so the runner's stage detection
 	// finds it either way.
-	CS2ST_LOG_INFO("%s %s loaded (preload, no Metamod)\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION);
+	CS2ST_LOG_INFO("%s %s loaded\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION);
 	CS2ST_LOG_INFO("built against SDK '%s' (SOURCE_ENGINE=%d)\n", PLUGIN_SDK_ENGINE, PLUGIN_SDK_ENGINE_CODE);
 
 	std::thread(WorkerMain).detach();

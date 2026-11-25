@@ -1,7 +1,7 @@
-# Run after linking cs2sdktest_preload: fails if the object exports a symbol.
-# Usage: cmake -DSO=<path to .so> -P CheckPreloadExports.cmake
+# Run after linking cs2sdktest: fails if the object exports a symbol.
+# Usage: cmake -DSO=<path to .so> -P CheckExports.cmake
 if(NOT SO OR NOT EXISTS "${SO}")
-  message(FATAL_ERROR "CheckPreloadExports: '${SO}' does not exist")
+  message(FATAL_ERROR "CheckExports: '${SO}' does not exist")
 endif()
 
 find_program(_NM nm)

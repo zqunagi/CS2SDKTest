@@ -32,7 +32,7 @@ endif()
 #  Engine identity
 #
 #  SOURCE_ENGINE / SE_CS2 come from hl2sdk-manifests/manifests/cs2.json
-#  ("code": 25). Metamod headers switch on these, so the value must match the
+#  ("code": 25). The SDK headers switch on these, so the value must match the
 #  upstream manifest exactly.
 # -----------------------------------------------------------------------------
 set(S2SDK_ENGINE_NAME "cs2")
@@ -74,92 +74,42 @@ target_compile_definitions(s2sdk_headers INTERFACE
   PLATFORM_64BITS
 )
 
-if(MSVC)
-  # Every prebuilt lib Valve ships (tier0, interfaces, mathlib, libprotobuf) is
-  # built against the *release* static CRT. Anything else produces
-  # "RuntimeLibrary mismatch" plus a wall of LNK2005 duplicate symbols out of
-  # libcpmt/msvcprt, so this is fixed rather than following the build type:
-  # there is no debug-CRT build of those libs to match against. The
-  # _ALLOW_*_MISMATCH and _HAS_ITERATOR_DEBUGGING defines below exist for
-  # exactly this arrangement.
-  # include() runs in the caller's scope, so a plain set() reaches the targets
-  # defined in CMakeLists.txt afterwards.
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
-
-  target_compile_definitions(s2sdk_headers INTERFACE
-    COMPILER_MSVC
-    COMPILER_MSVC64
-    WIN32
-    WIN64
-    _CRT_SECURE_NO_DEPRECATE
-    _CRT_NONSTDC_NO_DEPRECATE
-    _CRT_SECURE_NO_WARNINGS
-    _HAS_ITERATOR_DEBUGGING=0
-    _ALLOW_RUNTIME_LIBRARY_MISMATCH
-    _ALLOW_ITERATOR_DEBUG_LEVEL_MISMATCH
-    _ALLOW_MSC_VER_MISMATCH
-  )
-  target_compile_options(s2sdk_headers INTERFACE
-    /permissive-      # the SDK relies on some MSVC-isms but compiles clean here
-    /Zc:__cplusplus
-    /wd4005           # macro redefinition (SDK redefines several CRT names)
-    /wd4996           # deprecated CRT calls inside the SDK
-    /wd4267 /wd4244   # size_t/int narrowing, pervasive in the SDK
-    /wd4355           # 'this' used in base member initializer list
-    # public/tier0/memdbgon.h redirects malloc/free to tier0 only while
-    # _INC_CRTDBG is still undefined (Release). Whether it is depends on which
-    # header a translation unit happens to include first: <condition_variable>
-    # and friends pull in crtdbg.h and switch the redirect off, entitysystem.cpp
-    # does not. keyvalues3.h's SetVecBasedObj is an inline template, so the
-    # linker keeps one of the two instantiations - the tier0-allocating one -
-    # while KeyValues3::Free (keyvalues3.cpp) frees with this module's own CRT:
-    # a cross-heap free, c0000374 on CEntityKeyValues::Release. Including
-    # crtdbg.h first everywhere turns the redirect off in every unit, so
-    # allocation and free stay on this module's heap (USE_MEMOVERRIDE is off).
-    /FIcrtdbg.h
-  )
-  target_link_libraries(s2sdk_headers INTERFACE legacy_stdio_definitions.lib)
-  # Valve ships the .lib files without their .pdb; LNK4099 on every one of them
-  # is noise, not a finding.
-  target_link_options(s2sdk_headers INTERFACE /ignore:4099)
-else()
-  # POSIX must be defined or public/tier0/platform.h hits its #error branch.
-  target_compile_definitions(s2sdk_headers INTERFACE
-    COMPILER_GCC
-    POSIX
-    _LINUX
-    LINUX
-    GNUC
-    _DLL_EXT=.so
-    # The SDK's prebuilt libs are built against the pre-C++11 std::string ABI.
-    _GLIBCXX_USE_CXX11_ABI=0
-    # CRT name shims the SDK sources expect on POSIX.
-    stricmp=strcasecmp
-    _stricmp=strcasecmp
-    strnicmp=strncasecmp
-    _strnicmp=strncasecmp
-    strcmpi=strcasecmp
-    _vsnprintf=vsnprintf
-    _alloca=alloca
-    _finite=finite
-  )
-  target_compile_options(s2sdk_headers INTERFACE
-    -fPIC
-    -fno-strict-aliasing
-    -march=nocona -mmmx -msse -msse2
-    # offsetof() on the SDK's non-standard-layout classes is exactly what this
-    # project does for a living, so this warning must be off, not just quiet.
-    -Wno-invalid-offsetof
-    -Wno-unknown-pragmas
-    -Wno-overloaded-virtual
-    -Wno-non-virtual-dtor
-    -Wno-unused
-    -Wno-sign-compare
-    -Wno-register
-    -Wno-narrowing
-    -Wno-delete-non-virtual-dtor
-  )
-endif()
+# POSIX must be defined or public/tier0/platform.h hits its #error branch.
+target_compile_definitions(s2sdk_headers INTERFACE
+  COMPILER_GCC
+  POSIX
+  _LINUX
+  LINUX
+  GNUC
+  _DLL_EXT=.so
+  # The SDK's prebuilt libs are built against the pre-C++11 std::string ABI.
+  _GLIBCXX_USE_CXX11_ABI=0
+  # CRT name shims the SDK sources expect on POSIX.
+  stricmp=strcasecmp
+  _stricmp=strcasecmp
+  strnicmp=strncasecmp
+  _strnicmp=strncasecmp
+  strcmpi=strcasecmp
+  _vsnprintf=vsnprintf
+  _alloca=alloca
+  _finite=finite
+)
+target_compile_options(s2sdk_headers INTERFACE
+  -fPIC
+  -fno-strict-aliasing
+  -march=nocona -mmmx -msse -msse2
+  # offsetof() on the SDK's non-standard-layout classes is exactly what this
+  # project does for a living, so this warning must be off, not just quiet.
+  -Wno-invalid-offsetof
+  -Wno-unknown-pragmas
+  -Wno-overloaded-virtual
+  -Wno-non-virtual-dtor
+  -Wno-unused
+  -Wno-sign-compare
+  -Wno-register
+  -Wno-narrowing
+  -Wno-delete-non-virtual-dtor
+)
 
 # -----------------------------------------------------------------------------
 #  s2sdk::tier1
@@ -182,19 +132,17 @@ add_library(s2sdk_tier1 STATIC ${_s2sdk_tier1_sources})
 add_library(s2sdk::tier1 ALIAS s2sdk_tier1)
 
 # Foreign sources, compiled but not maintained here; silenced the same way
-# CMakeLists.txt silences the entity2 .cpp files and the protoc output. On
-# Linux bitbuf.cpp's `g_ExtraMasks[32] = ~0ul` warns - unsigned long is 64-bit
-# there and the truncation to uint32 is exactly the all-ones mask it wants.
-if(NOT MSVC)
-  set_source_files_properties(${_s2sdk_tier1_sources} PROPERTIES
-    COMPILE_OPTIONS "-w"
-  )
-endif()
+# CMakeLists.txt silences the entity2 .cpp files and the protoc output.
+# bitbuf.cpp's `g_ExtraMasks[32] = ~0ul` warns - unsigned long is 64-bit here
+# and the truncation to uint32 is exactly the all-ones mask it wants.
+set_source_files_properties(${_s2sdk_tier1_sources} PROPERTIES
+  COMPILE_OPTIONS "-w"
+)
 
 set_target_properties(s2sdk_tier1 PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   # AMBuildScript in s2sdk builds everything as C++20 now; keep the tier1
-  # translation units this plugin compiles under the same standard.
+  # translation units this library compiles under the same standard.
   CXX_STANDARD 20
   CXX_STANDARD_REQUIRED ON
   FOLDER "third_party"
@@ -220,47 +168,28 @@ function(_s2sdk_require_lib out_var relative_path)
   set(${out_var} "${_full}" PARENT_SCOPE)
 endfunction()
 
-if(WIN32)
-  _s2sdk_require_lib(_lib_tier0      "lib/public/win64/tier0.lib")
-  _s2sdk_require_lib(_lib_interfaces "lib/public/win64/interfaces.lib")
-  _s2sdk_require_lib(_lib_mathlib    "lib/public/win64/mathlib.lib")
+_s2sdk_require_lib(_lib_tier0      "lib/linux64/libtier0.so")
+_s2sdk_require_lib(_lib_interfaces "lib/linux64/interfaces.a")
+_s2sdk_require_lib(_lib_mathlib    "lib/linux64/mathlib.a")
 
-  target_link_libraries(s2sdk_libs INTERFACE
-    "${_lib_tier0}"
-    "${_lib_interfaces}"
-    "${_lib_mathlib}"
-  )
+# The static archives must follow our own objects on the link line, hence
+# the explicit ordering here rather than a bare target_link_libraries set.
+target_link_libraries(s2sdk_libs INTERFACE
+  "${_lib_tier0}"
+  "${_lib_interfaces}"
+  "${_lib_mathlib}"
+  m
+  dl
+)
 
-  if(CS2SDKTEST_WITH_PROTOBUF)
-    _s2sdk_require_lib(_lib_protobuf "lib/public/win64/2015/libprotobuf.lib")
-    target_link_libraries(s2sdk_libs INTERFACE "${_lib_protobuf}")
-  endif()
-
-  set(S2SDK_RUNTIME_DEPENDENCIES "" CACHE INTERNAL "")
-else()
-  _s2sdk_require_lib(_lib_tier0      "lib/linux64/libtier0.so")
-  _s2sdk_require_lib(_lib_interfaces "lib/linux64/interfaces.a")
-  _s2sdk_require_lib(_lib_mathlib    "lib/linux64/mathlib.a")
-
-  # The static archives must follow our own objects on the link line, hence
-  # the explicit ordering here rather than a bare target_link_libraries set.
-  target_link_libraries(s2sdk_libs INTERFACE
-    "${_lib_tier0}"
-    "${_lib_interfaces}"
-    "${_lib_mathlib}"
-    m
-    dl
-  )
-
-  if(CS2SDKTEST_WITH_PROTOBUF)
-    _s2sdk_require_lib(_lib_protobuf "lib/linux64/release/libprotobuf.a")
-    target_link_libraries(s2sdk_libs INTERFACE "${_lib_protobuf}")
-  endif()
-
-  # libtier0.so has to sit next to the plugin binary at runtime; the game ships
-  # its own copy, so this is only a build-tree convenience.
-  set(S2SDK_RUNTIME_DEPENDENCIES "${_lib_tier0}" CACHE INTERNAL "")
+if(CS2SDKTEST_WITH_PROTOBUF)
+  _s2sdk_require_lib(_lib_protobuf "lib/linux64/release/libprotobuf.a")
+  target_link_libraries(s2sdk_libs INTERFACE "${_lib_protobuf}")
 endif()
+
+# libtier0.so has to sit next to the library at runtime; the game ships its
+# own copy, so this is only a build-tree convenience.
+set(S2SDK_RUNTIME_DEPENDENCIES "${_lib_tier0}" CACHE INTERNAL "")
 
 # -----------------------------------------------------------------------------
 #  Umbrella target

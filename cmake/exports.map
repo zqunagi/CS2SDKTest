@@ -1,0 +1,4 @@
+/* Exports nothing. See the symbol-hygiene comment on the cs2sdktest target. */
+{
+  local: *;
+};

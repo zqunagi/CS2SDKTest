@@ -167,7 +167,7 @@ void ProbeGlobalChanged(ConVarRefAbstract* ref, CSplitScreenSlot slot,
 //
 // Declared at file scope so their constructors run when this shared object is
 // mapped, which queues them in tier1's registration list; ConVar_Register then
-// drains that queue through ICvar::RegisterConVar (the preload entry calls it in
+// drains that queue through ICvar::RegisterConVar (Entry.cpp calls it in
 // the first simulating frame). That is the SDK's own path for a plugin to
 // declare a convar, and taking it means the rest of this file has values it
 // chose itself to compare the engine against.

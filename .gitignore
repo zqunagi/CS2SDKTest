@@ -63,4 +63,4 @@ Thumbs.db
 
 # ---- Local schema dumps (SchemaDiffSuite output; unredacted, never published) ----
 schema-dump*.json
-!cmake/preload.map
+!cmake/exports.map
