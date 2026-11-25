@@ -59,6 +59,7 @@ set(CS2SDKTEST_PRELOAD_SOURCES
   src/suites/KeyValues3Suite.cpp
   src/suites/FlattenedSerializersSuite.cpp
   src/suites/NetworkMessagesSuite.cpp
+  src/suites/GameEntitySystemSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 

@@ -14,7 +14,7 @@ class CEntityInstance;
 namespace cs2st
 {
 
-class GameEntitySystemSuite : public ITestSuite, public IEntityListener
+class GameEntitySystemSuite : public ITestSuite
 {
 public:
 	const char* Id() const override { return "entity"; }
@@ -26,20 +26,6 @@ public:
 
 	bool Acquire(TestContext& context) override;
 	void ExerciseCalls(TestContext& context) override;
-
-	int InstallHooks(TestContext& context) override;
-	void RemoveHooks(TestContext& context) override;
-	bool HooksInstalled() const override { return listener_registered_; }
-
-	// ---- IEntityListener ---------------------------------------------------
-	//
-	// The engine walks m_entityListeners for real work, so these must behave
-	// exactly like the empty defaults they override: record and return.
-
-	void OnEntityCreated(CEntityInstance* entity) override;
-	void OnEntitySpawned(CEntityInstance* entity) override;
-	void OnEntityDeleted(CEntityInstance* entity) override;
-	void OnEntityParentChanged(CEntityInstance* entity, CEntityInstance* new_parent) override;
 
 private:
 	// ---- locating the entity system ----------------------------------------
@@ -79,10 +65,6 @@ private:
 
 	void NoteSideEffectingCalls(TestContext& context);
 
-	/** Shared body of the four listener callbacks. */
-	void RecordEntityEvent(const char* hook_id, CEntityInstance* entity,
-	                       CEntityInstance* other);
-
 	// ---- state -------------------------------------------------------------
 
 	/**
@@ -98,10 +80,8 @@ private:
 	std::size_t entity_system_offset_ = static_cast<std::size_t>(-1);
 
 	/**
-	 * The identity round trips agreed, so reading one hop past a pointer the
-	 * engine hands a hook is justified rather than reckless. Set by
-	 * ExerciseIdentityLookups; consulted by the listener callbacks and by
-	 * InstallHooks.
+	 * The identity round trips agreed, so reading one hop past an entity pointer
+	 * is justified rather than reckless. Set by ExerciseIdentityLookups.
 	 */
 	bool identity_layout_verified_ = false;
 
@@ -119,9 +99,6 @@ private:
 
 	/** How many identities the linked-list walk reached (capped). */
 	int active_entity_count_ = 0;
-
-	/** AddListenerEntity has been called and not yet undone. */
-	bool listener_registered_ = false;
 };
 
 } // namespace cs2st

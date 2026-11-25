@@ -18,22 +18,12 @@
 #include "core/Log.h"
 #include "data/GameModules.h"
 #include "hook/HookArg.h"
-#include "hook/HookRecorder.h"
 #include "testkit/StructInspector.h"
 
 namespace cs2st
 {
 namespace
 {
-
-// ---- hook ids ---------------------------------------------------------------
-
-constexpr const char* kOnEntityCreated       = "IEntityListener::OnEntityCreated";
-constexpr const char* kOnEntitySpawned       = "IEntityListener::OnEntitySpawned";
-constexpr const char* kOnEntityDeleted       = "IEntityListener::OnEntityDeleted";
-constexpr const char* kOnEntityParentChanged = "IEntityListener::OnEntityParentChanged";
-
-constexpr int kDeclaredHookCount = 4;
 
 // ---- the offset the whole ecosystem depends on ------------------------------
 
@@ -2147,9 +2137,8 @@ void GameEntitySystemSuite::InspectGameEntitySystemLayout(TestContext& context)
 	inspect.HexDump(64, 256);
 
 	CS2ST_CALL(context, "CGameEntitySystem::m_entityListeners (bounds)", {
-		// The vector InstallHooks writes into. Checked here so the hooks path
-		// has something to refuse on, and checked by type: a count and the
-		// buffer it counts cannot contradict each other.
+		// The vector AddListenerEntity would write into. Checked by type: a
+		// count and the buffer it counts cannot contradict each other.
 		const int count = entity_system_->m_entityListeners.Count();
 		const void* base = entity_system_->m_entityListeners.Base();
 		context.Detail("@0x%zx -> %d listener(s), base %p",
@@ -2615,163 +2604,10 @@ void GameEntitySystemSuite::NoteSideEffectingCalls(TestContext& context)
 
 	context.SkipCall("CGameEntitySystem::~CGameEntitySystem", "would destroy the entity system");
 	context.SkipCall("CGameEntitySystem::AddListenerEntity",
-		"writes into the game's own listener vector; exercised from InstallHooks "
-		"instead, and only after a call sweep has validated the layout");
+		"writes into the game's own listener vector; the Metamod build exercised it "
+		"from InstallHooks, which this build does not have");
 	context.SkipCall("CGameEntitySystem::RemoveListenerEntity",
-		"the inverse of the above; exercised from RemoveHooks");
-}
-
-// -----------------------------------------------------------------------------
-//  Hooks - IEntityListener
-// -----------------------------------------------------------------------------
-
-int GameEntitySystemSuite::InstallHooks(TestContext& context)
-{
-	(void)context;
-
-	if (listener_registered_)
-	{
-		return 0;
-	}
-
-	// The one place this plugin writes into the game. Everything else it does
-	// is a read, and AddListenerEntity appends to a CUtlVector at an offset
-	// 8400 bytes into an object whose layout is exactly what is under test - so
-	// it only runs once a call sweep has said that layout holds.
-	if (entity_system_ == nullptr || !identity_layout_verified_)
-	{
-		CS2ST_LOG_WARN("%s: refusing to install - run 'cst run %s' first so the "
-		               "entity system is located and its layout checked; "
-		               "AddListenerEntity writes into the game's own memory\n",
-			Id(), Id());
-		return 0;
-	}
-
-	const int existing = entity_system_->m_entityListeners.Count();
-	if (existing < 0 || existing > 64)
-	{
-		CS2ST_LOG_WARN("%s: refusing to install - m_entityListeners reports %d entries, "
-		               "which is not a listener count; the offset has moved\n",
-			Id(), existing);
-		return 0;
-	}
-
-	HookRecorder& recorder = HookRecorder::Get();
-
-	// Declared before registering, so a callback that never fires still appears
-	// in the dump as `never`. After a CS2 update that row is the finding.
-	recorder.Declare(kOnEntityCreated, Id());
-	recorder.Declare(kOnEntitySpawned, Id());
-	recorder.Declare(kOnEntityDeleted, Id());
-	recorder.Declare(kOnEntityParentChanged, Id());
-
-	entity_system_->AddListenerEntity(this);
-
-	const int after = entity_system_->m_entityListeners.Count();
-	if (after != existing + 1
-		|| entity_system_->m_entityListeners[after - 1] != static_cast<IEntityListener*>(this))
-	{
-		// The write already happened; all that is left is to say so loudly and
-		// try to undo it.
-		CS2ST_LOG_ERROR("%s: AddListenerEntity did not land where the SDK says it should "
-		                "(%d listeners before, %d after) - removing again\n",
-			Id(), existing, after);
-		entity_system_->RemoveListenerEntity(this);
-		return 0;
-	}
-
-	listener_registered_ = true;
-	CS2ST_LOG_INFO("%s: listening for entity events (%d listener(s) registered in total)\n",
-		Id(), after);
-	CS2ST_LOG_INFO("%s: the entity system is replaced when the level changes, which takes "
-	               "this listener with it - re-install after a map change\n", Id());
-
-	return kDeclaredHookCount;
-}
-
-void GameEntitySystemSuite::RemoveHooks(TestContext& context)
-{
-	(void)context;
-
-	if (!listener_registered_)
-	{
-		return;
-	}
-
-	if (entity_system_ != nullptr)
-	{
-		entity_system_->RemoveListenerEntity(this);
-	}
-
-	listener_registered_ = false;
-}
-
-void GameEntitySystemSuite::RecordEntityEvent(const char* hook_id, CEntityInstance* entity,
-                                              CEntityInstance* other)
-{
-	// No fault guard here. This runs in the engine's own frame, long after the
-	// call sweep's FaultGuardScope has gone, so a fault takes the server down
-	// rather than producing a CRASHED row. Vet everything, walk nothing that
-	// has not already been proven, and stay cheap.
-	if (!LooksLikeObjectPointer(entity))
-	{
-		CS2ST_HOOK_ENTER_ARGS(hook_id, "entity=%p NOT-A-POINTER",
-			static_cast<void*>(entity));
-		CS2ST_HOOK_LEAVE(hook_id);
-		return;
-	}
-
-	char scratch[64];
-	const char* designer = "<layout unverified>";
-
-	// One hop past the handed pointer, and only because ExerciseIdentityLookups
-	// proved that hop lands where the SDK says. Without a class name the event
-	// says an entity happened, which is most of the value gone - but not enough
-	// value to justify guessing.
-	if (identity_layout_verified_)
-	{
-		CEntityIdentity* identity = entity->m_pEntity;
-		designer = LooksLikeObjectPointer(identity)
-			? SafeStringArg(identity->GetClassname(), scratch)
-			: "<no identity>";
-	}
-
-	if (other != nullptr)
-	{
-		CS2ST_HOOK_ENTER_ARGS(hook_id, "entity=%p class=\"%.63s\" other=%p",
-			static_cast<void*>(entity), designer, static_cast<void*>(other));
-	}
-	else
-	{
-		CS2ST_HOOK_ENTER_ARGS(hook_id, "entity=%p class=\"%.63s\"",
-			static_cast<void*>(entity), designer);
-	}
-
-	// Entry and return are both recorded even though nothing can supersede us
-	// here: it keeps the dump's balance column meaning the same thing in every
-	// suite. What it proves here is only that our own handler ran to the end.
-	CS2ST_HOOK_LEAVE(hook_id);
-}
-
-void GameEntitySystemSuite::OnEntityCreated(CEntityInstance* entity)
-{
-	RecordEntityEvent(kOnEntityCreated, entity, nullptr);
-}
-
-void GameEntitySystemSuite::OnEntitySpawned(CEntityInstance* entity)
-{
-	RecordEntityEvent(kOnEntitySpawned, entity, nullptr);
-}
-
-void GameEntitySystemSuite::OnEntityDeleted(CEntityInstance* entity)
-{
-	RecordEntityEvent(kOnEntityDeleted, entity, nullptr);
-}
-
-void GameEntitySystemSuite::OnEntityParentChanged(CEntityInstance* entity,
-                                                  CEntityInstance* new_parent)
-{
-	RecordEntityEvent(kOnEntityParentChanged, entity, new_parent);
+		"the inverse of the above");
 }
 
 } // namespace cs2st

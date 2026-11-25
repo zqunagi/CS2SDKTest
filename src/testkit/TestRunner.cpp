@@ -66,12 +66,13 @@ TestRunner TestRunner::CreateDefault()
 	// One line per suite. Nothing else in the pipeline needs to know they
 	// exist; registration order is the order they appear in a log.
 #ifdef CS2SDKTEST_PRELOAD
-	// The preload build carries only suites that need neither hooks nor Metamod.
-	// Batches 1 to 3 of phase 2; the rest are added a batch at a time, each one run on
+	// The preload build carries only suites that have no hooks and need no Metamod.
+	// Phase 2 batches 1 to 3, then the suites whose hooks were removed; the rest are added a batch at a time, each one run on
 	// a server before the next goes in. Same relative order as the full list.
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaDiffSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitySystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new NetworkMessagesSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new EngineServiceMgrSuite()));
