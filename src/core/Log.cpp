@@ -20,7 +20,15 @@ namespace
 
 LogLevel g_min_level = LogLevel::kInfo;
 std::FILE* g_log_file = nullptr;
-std::string g_log_path;
+// A function-local static, not a global: on Linux the library's constructor runs
+// Start(), which opens the log, and that can happen before this file's own
+// globals are constructed (initialisation order across files follows the link
+// order, and Entry.cpp is linked first). First use constructs it.
+std::string& LogPathStorage()
+{
+	static std::string path;
+	return path;
+}
 
 bool g_console_color = true;
 bool g_file_color = false;
@@ -220,7 +228,7 @@ bool OpenSessionLog(const std::string& path, std::string& error)
 		return false;
 	}
 
-	g_log_path = path;
+	LogPathStorage() = path;
 	error.clear();
 	return true;
 }
@@ -232,12 +240,12 @@ void CloseSessionLog()
 		std::fclose(g_log_file);
 		g_log_file = nullptr;
 	}
-	g_log_path.clear();
+	LogPathStorage().clear();
 }
 
 const std::string& SessionLogPath()
 {
-	return g_log_path;
+	return LogPathStorage();
 }
 
 void LogMessage(LogLevel level, const char* format, ...)

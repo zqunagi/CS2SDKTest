@@ -87,7 +87,13 @@ enum class State : int
 GameFrameFn g_original = nullptr;
 std::atomic<State> g_state{State::kWaiting};
 
-std::string g_only;
+// Function-local for the same reason as the log path in Log.cpp: Start() can run
+// from a constructor, before this file's globals are constructed.
+std::string& Only()
+{
+	static std::string suite;
+	return suite;
+}
 int g_delay_seconds = 10;
 bool g_quit_when_done = true;
 
@@ -155,9 +161,9 @@ void Execute()
 {
 	static TestRunner runner = TestRunner::CreateDefault();
 
-	if (!g_only.empty() && runner.Find(g_only) == nullptr)
+	if (!Only().empty() && runner.Find(Only()) == nullptr)
 	{
-		CS2ST_LOG_ERROR("run: no test suite named '%s'\n", g_only.c_str());
+		CS2ST_LOG_ERROR("run: no test suite named '%s'\n", Only().c_str());
 		return;
 	}
 	if (runner.size() == 0)
@@ -167,7 +173,7 @@ void Execute()
 	}
 
 	CS2ST_LOG_INFO("run: starting call sweep\n");
-	RunCallSweep(runner, g_only, "run");
+	RunCallSweep(runner, Only(), "run");
 	CS2ST_LOG_INFO("run: sweep finished\n");
 }
 
@@ -272,39 +278,6 @@ bool InModule(const Module& module, const void* address)
 	return p >= base && p < base + module.size();
 }
 
-/**
- * Does the code at `fn` take the address of the C string "GameFrame"?
- *
- * Fallback for platforms that cannot say which function a reference belongs to
- * (Linux): a fixed window from the start of the slot's function. It has no idea
- * where the function ends, so a small function sitting just before GameFrame
- * would match too; the caller insists on exactly one match for that reason.
- * Windows does not use this: proc::FunctionsReferencingString works from the
- * string outwards and needs no window.
- */
-bool ReferencesGameFrameString(const void* fn, const Module& module)
-{
-	constexpr std::size_t kWindow = 0x300;
-	const unsigned char* code = static_cast<const unsigned char*>(fn);
-	for (std::size_t i = 0; i + 7 <= kWindow; ++i)
-	{
-		// lea r64, [rip+disp32]
-		if ((code[i] != 0x48 && code[i] != 0x4C) || code[i + 1] != 0x8D || (code[i + 2] & 0xC7) != 0x05)
-		{
-			continue;
-		}
-		int disp = 0;
-		std::memcpy(&disp, code + i + 3, sizeof(disp));
-		const char* target = reinterpret_cast<const char*>(code + i + 7) + disp;
-
-		if (InModule(module, target) && std::memcmp(target, "GameFrame", sizeof("GameFrame")) == 0)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
 enum class HookResult
 {
 	kNotYet,
@@ -356,32 +329,48 @@ HookResult TryPlaceHook()
 		return HookResult::kFailed;
 	}
 
-	// Windows: the functions that reference the string, then the slot that points at
-	// one of them. Elsewhere: look inside each slot's function.
+	// The slots of this class's table: where it ends is where a slot stops pointing
+	// into the module. They are also function starts the search can use.
+	std::vector<const void*> slots;
+	for (int i = 0; i < 128 && InModule(server, vtable[i]); ++i)
+	{
+		slots.push_back(vtable[i]);
+	}
+
+	// From the string outwards: the functions that name "GameFrame", then the slot
+	// that points at one of them. Nothing reads a function's body, so nothing
+	// guesses where a function ends.
 	std::vector<const void*> referencing;
-	const bool by_string = proc::FunctionsReferencingString(
-		server.base(), server.size(), "GameFrame", referencing);
+	if (!proc::FunctionsReferencingString(server.base(), server.size(), "GameFrame", slots, referencing))
+	{
+		CS2ST_LOG_ERROR("run: cannot read %s's unwind table to find the functions that "
+		                "reference \"GameFrame\"; not patching\n", server.name().c_str());
+		return HookResult::kFailed;
+	}
+
+	// Offsets from the module base, so a line here can be looked up in a disassembler.
+	std::string referencing_text;
+	for (const void* start : referencing)
+	{
+		char buffer[32];
+		std::snprintf(buffer, sizeof(buffer), "+0x%llx",
+			static_cast<unsigned long long>(static_cast<const unsigned char*>(start) -
+			                                static_cast<const unsigned char*>(server.base())));
+		referencing_text += (referencing_text.empty() ? "" : ", ") + std::string(buffer);
+	}
+	CS2ST_LOG_INFO("run: %d function(s) in %s reference \"GameFrame\": %s\n",
+		static_cast<int>(referencing.size()), server.name().c_str(), referencing_text.c_str());
 
 	int match = -1;
 	std::string matched;
 	int matches = 0;
-	for (int i = 0; i < 128; ++i)
+	const int scanned = static_cast<int>(slots.size());
+	for (int i = 0; i < scanned; ++i)
 	{
-		if (!InModule(server, vtable[i]))
-		{
-			break; // past the end of this class's table
-		}
 		bool references = false;
-		if (by_string)
+		for (const void* start : referencing)
 		{
-			for (const void* start : referencing)
-			{
-				references = references || start == vtable[i];
-			}
-		}
-		else
-		{
-			references = ReferencesGameFrameString(vtable[i], server);
+			references = references || start == vtable[i];
 		}
 		if (references)
 		{
@@ -393,8 +382,8 @@ HookResult TryPlaceHook()
 	if (matches != 1)
 	{
 		CS2ST_LOG_ERROR("run: %d vtable slot(s) reference \"GameFrame\" (%s), need exactly 1; "
-		                "not patching\n",
-			matches, matched.c_str());
+		                "%d slot(s) scanned, %d referencing function(s); not patching\n",
+			matches, matched.c_str(), scanned, static_cast<int>(referencing.size()));
 		return HookResult::kFailed;
 	}
 
@@ -440,7 +429,7 @@ void WorkerMain()
 	g_hook_placed.store(true);
 	CrashRecorder::SetPhase("run_armed");
 	CS2ST_LOG_INFO("run: armed (suite=%s, delay=%ds, quit=%s)\n",
-		g_only.empty() ? "all" : g_only.c_str(), g_delay_seconds, g_quit_when_done ? "yes" : "no");
+		Only().empty() ? "all" : Only().c_str(), g_delay_seconds, g_quit_when_done ? "yes" : "no");
 
 	// Watch for a game that never gets going. The sweep itself is not watched
 	// here: a hang inside it is the runner's timeout to report.
@@ -487,7 +476,7 @@ void Start()
 
 	if (const char* suite = EnvOrNull("CST_RUN_SUITE"))
 	{
-		g_only = suite;
+		Only() = suite;
 	}
 	if (const char* delay = EnvOrNull("CST_RUN_DELAY"))
 	{
