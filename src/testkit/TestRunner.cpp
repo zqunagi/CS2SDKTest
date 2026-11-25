@@ -4,6 +4,20 @@
 #include "hook/HookRecorder.h"
 #ifdef CS2SDKTEST_PRELOAD
 #include "suites/Tier0ContainerSuite.h"
+#include "suites/Source2EngineSuite.h"
+#include "suites/SchemaSystemSuite.h"
+#include "suites/ServerConfigSuite.h"
+#include "suites/EngineServiceMgrSuite.h"
+#include "suites/StringTableSuite.h"
+#include "suites/GameEntitiesSuite.h"
+#include "suites/HostStateMgrSuite.h"
+#include "suites/LoopModeSuite.h"
+#include "suites/NetChannelSuite.h"
+#include "suites/ResourceSystemSuite.h"
+#include "suites/LocalizeSuite.h"
+#include "suites/GameTypesSuite.h"
+#include "suites/SerializedEntitiesSuite.h"
+#include "suites/Tier0PlatformSuite.h"
 #else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
@@ -47,8 +61,23 @@ TestRunner TestRunner::CreateDefault()
 	// One line per suite. Nothing else in the pipeline needs to know they
 	// exist; registration order is the order they appear in a log.
 #ifdef CS2SDKTEST_PRELOAD
-	// Phase 1 of the preload build: one suite with no hooks and no Metamod, enough
-	// to prove the entry, the trigger and the symbol hygiene end to end.
+	// The preload build carries only suites that need neither hooks nor Metamod.
+	// Batch 1 of phase 2; the rest are added a batch at a time, each one run on
+	// a server before the next goes in. Same relative order as the full list.
+	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new ServerConfigSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new EngineServiceMgrSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new StringTableSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GameEntitiesSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new HostStateMgrSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new LoopModeSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new NetChannelSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new ResourceSystemSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new LocalizeSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new GameTypesSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new SerializedEntitiesSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new Tier0PlatformSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
 #else
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));

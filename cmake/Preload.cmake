@@ -5,8 +5,8 @@
 #  from CMakeLists.txt after the Metamod target is defined; Linux only, and
 #  only when CS2SDKTEST_BUILD_PRELOAD is ON.
 #
-#  Phase 1 compiles the shared kit plus a single suite, and nothing from
-#  metamod-source. The suite list grows by editing TestRunner::CreateDefault()
+#  Phase 1 compiled the shared kit plus a single suite; phase 2 adds suites in
+#  batches. Nothing here comes from metamod-source. The suite list grows by editing TestRunner::CreateDefault()
 #  under CS2SDKTEST_PRELOAD and the source list below, one batch at a time.
 # =============================================================================
 
@@ -40,6 +40,20 @@ set(CS2SDKTEST_PRELOAD_SOURCES
 
   src/hook/HookRecorder.cpp
 
+  src/suites/Source2EngineSuite.cpp
+  src/suites/SchemaSystemSuite.cpp
+  src/suites/ServerConfigSuite.cpp
+  src/suites/EngineServiceMgrSuite.cpp
+  src/suites/StringTableSuite.cpp
+  src/suites/GameEntitiesSuite.cpp
+  src/suites/HostStateMgrSuite.cpp
+  src/suites/LoopModeSuite.cpp
+  src/suites/NetChannelSuite.cpp
+  src/suites/ResourceSystemSuite.cpp
+  src/suites/LocalizeSuite.cpp
+  src/suites/GameTypesSuite.cpp
+  src/suites/SerializedEntitiesSuite.cpp
+  src/suites/Tier0PlatformSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 
