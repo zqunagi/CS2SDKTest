@@ -23,6 +23,7 @@
 #include "suites/KeyValues3Suite.h"
 #include "suites/FlattenedSerializersSuite.h"
 #include "suites/NetworkMessagesSuite.h"
+#include "suites/GameEntitySystemSuite.h"
 #else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
