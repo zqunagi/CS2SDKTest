@@ -2,7 +2,6 @@
 #define CS2SDKTEST_SUITES_SOURCE2GAMECLIENTSSUITE_H_
 
 #include <engine2/isource2server.h>
-#include <khook.hpp>
 
 #include "testkit/ITestSuite.h"
 
@@ -18,89 +17,11 @@ public:
 	const char* DisplayName() const override { return "ISource2GameClients (IServerGameClients)"; }
 	const char* Description() const override
 	{
-		return "Player lifecycle; the hooks whose argument signatures drift most";
+		return "Player lifecycle: connect, command, settings, voice and disconnect";
 	}
 
 	bool Acquire(TestContext& context) override;
 	void ExerciseCalls(TestContext& context) override;
-
-	int InstallHooks(TestContext& context) override;
-	void RemoveHooks(TestContext& context) override;
-	bool HooksInstalled() const override { return hooks_installed_; }
-
-	// ---- hook handlers -----------------------------------------------------
-	//
-	// KHook::Virtual binds these by member pointer in the constructor, so they
-	// can stay private. Every one answers Action::Ignore.
-	//
-	// Each hook fires pre and post: pre records the entry and the arguments,
-	// post records that the call came back. Unequal counts mean the original
-	// did not return, which is a different failure from "the engine stopped
-	// calling" and only the pair can tell them apart.
-	//
-	// Neither side ever returns anything but Ignore. ClientConnect's return
-	// value decides whether a player gets on the server; supersede it by
-	// accident and this diagnostic plugin becomes an outage - Ignore discards
-	// the `ret` field so the game's own answer stands.
-
-	KHook::Return<void> Pre_OnClientConnected(ISource2GameClients*, CPlayerSlot slot, const char* name, uint64 xuid,
-	                                          const char* network_id, const char* address, bool fake_player);
-	KHook::Return<void> Post_OnClientConnected(ISource2GameClients*, CPlayerSlot slot, const char* name, uint64 xuid,
-	                                           const char* network_id, const char* address, bool fake_player);
-
-	KHook::Return<bool> Pre_ClientConnect(ISource2GameClients*, CPlayerSlot slot, const char* name, uint64 xuid,
-	                                      const char* network_id, bool unk1, CBufferString* reject_reason);
-	KHook::Return<bool> Post_ClientConnect(ISource2GameClients*, CPlayerSlot slot, const char* name, uint64 xuid,
-	                                       const char* network_id, bool unk1, CBufferString* reject_reason);
-
-	KHook::Return<void> Pre_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name, ClientPutInServerType_t type, uint64 xuid);
-	KHook::Return<void> Post_ClientPutInServer(ISource2GameClients*, CPlayerSlot slot, const char* name, ClientPutInServerType_t type, uint64 xuid);
-
-	KHook::Return<void> Pre_ClientActive(ISource2GameClients*, CPlayerSlot slot, bool load_game, const char* name, uint64 xuid);
-	KHook::Return<void> Post_ClientActive(ISource2GameClients*, CPlayerSlot slot, bool load_game, const char* name, uint64 xuid);
-
-	KHook::Return<void> Pre_ClientFullyConnect(ISource2GameClients*, CPlayerSlot slot);
-	KHook::Return<void> Post_ClientFullyConnect(ISource2GameClients*, CPlayerSlot slot);
-
-	KHook::Return<void> Pre_ClientDisconnect(ISource2GameClients*, CPlayerSlot slot, ENetworkDisconnectionReason reason,
-	                                         const char* name, uint64 xuid, const char* network_id);
-	KHook::Return<void> Post_ClientDisconnect(ISource2GameClients*, CPlayerSlot slot, ENetworkDisconnectionReason reason,
-	                                          const char* name, uint64 xuid, const char* network_id);
-
-	KHook::Return<void> Pre_ClientCommand(ISource2GameClients*, CPlayerSlot slot, const CCommand& args);
-	KHook::Return<void> Post_ClientCommand(ISource2GameClients*, CPlayerSlot slot, const CCommand& args);
-
-	KHook::Return<void> Pre_ClientSettingsChanged(ISource2GameClients*, CPlayerSlot slot);
-	KHook::Return<void> Post_ClientSettingsChanged(ISource2GameClients*, CPlayerSlot slot);
-
-	KHook::Return<void> Pre_ClientVoice(ISource2GameClients*, CPlayerSlot slot);
-	KHook::Return<void> Post_ClientVoice(ISource2GameClients*, CPlayerSlot slot);
-
-	KHook::Return<void> Pre_ClientCommandKeyValues(ISource2GameClients*, CPlayerSlot slot, KeyValues* kv);
-	KHook::Return<void> Post_ClientCommandKeyValues(ISource2GameClients*, CPlayerSlot slot, KeyValues* kv);
-
-	KHook::Return<void> Pre_ClientSvcUserMessage(ISource2GameClients*, CPlayerSlot slot, int type, uint32 size, const void* buffer);
-	KHook::Return<void> Post_ClientSvcUserMessage(ISource2GameClients*, CPlayerSlot slot, int type, uint32 size, const void* buffer);
-
-	// ---- the hooks themselves ------------------------------------------------
-	//
-	// One KHook::Virtual per virtual, bound in the constructor below; template
-	// parameters are the interface, the return type, then the SDK's argument
-	// list. ClientConnect returns bool, which is why its handlers return
-	// KHook::Return<bool>.
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, const char*, uint64, const char*, const char*, bool> hook_OnClientConnected_;
-	KHook::Virtual<ISource2GameClients, bool, CPlayerSlot, const char*, uint64, const char*, bool, CBufferString*> hook_ClientConnect_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, const char*, ClientPutInServerType_t, uint64> hook_ClientPutInServer_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, bool, const char*, uint64> hook_ClientActive_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot> hook_ClientFullyConnect_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, ENetworkDisconnectionReason, const char*, uint64, const char*> hook_ClientDisconnect_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, const CCommand&> hook_ClientCommand_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot> hook_ClientSettingsChanged_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot> hook_ClientVoice_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, KeyValues*> hook_ClientCommandKeyValues_;
-	KHook::Virtual<ISource2GameClients, void, CPlayerSlot, int, uint32, const void*> hook_ClientSvcUserMessage_;
-
-	Source2GameClientsSuite();
 
 private:
 	void ExerciseAppSystem(TestContext& context);
@@ -122,7 +43,6 @@ private:
 	 */
 	CGlobalVars* globals_ = nullptr;
 
-	bool hooks_installed_ = false;
 };
 
 } // namespace cs2st

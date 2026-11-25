@@ -64,6 +64,8 @@ set(CS2SDKTEST_PRELOAD_SOURCES
   src/suites/NetworkServerSuite.cpp
   src/suites/ConVarSuite.cpp
   src/suites/GameEventSuite.cpp
+  src/suites/Source2ServerSuite.cpp
+  src/suites/Source2GameClientsSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 

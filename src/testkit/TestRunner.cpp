@@ -27,6 +27,8 @@
 #include "suites/GamedataSuite.h"
 #include "suites/NetworkServerSuite.h"
 #include "suites/ConVarSuite.h"
+#include "suites/Source2ServerSuite.h"
+#include "suites/Source2GameClientsSuite.h"
 #include "suites/GameEventSuite.h"
 #else
 #include "suites/ConVarSuite.h"
@@ -71,10 +73,12 @@ TestRunner TestRunner::CreateDefault()
 	// One line per suite. Nothing else in the pipeline needs to know they
 	// exist; registration order is the order they appear in a log.
 #ifdef CS2SDKTEST_PRELOAD
-	// The preload build carries only suites that have no hooks and need no Metamod.
+	// The preload build carries every suite that has no hooks and needs no Metamod.
 	// Phase 2 batches 1 to 3, then the suites whose hooks were removed; the rest are added a batch at a time, each one run on
 	// a server before the next goes in. Same relative order as the full list.
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));
+	runner.Add(std::unique_ptr<ITestSuite>(new Source2GameClientsSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new ConVarSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new SchemaDiffSuite()));
