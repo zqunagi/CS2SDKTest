@@ -71,6 +71,9 @@ option(CS2SDKTEST_TIER1_KEYVALUES3
 # suite reports every serialization method as SKIP.
 option(CS2SDKTEST_TIER1_BITBUF
        "Also compile tier1/bitbuf.cpp into the plugin" ON)
+# Also build the Metamod-free LD_PRELOAD library (Linux only); see cmake/Preload.cmake.
+option(CS2SDKTEST_BUILD_PRELOAD
+       "Build cs2sdktest_preload, the LD_PRELOAD variant that needs no Metamod" OFF)
 option(CS2SDKTEST_WARNINGS_AS_ERRORS
        "Treat warnings in this project's own sources as errors" OFF)
 
@@ -185,6 +188,7 @@ set(CS2SDKTEST_SOURCES
   src/plugin/Plugin.cpp
   src/plugin/Commands.cpp
   src/plugin/Autorun.cpp
+  src/plugin/Sweep.cpp
 
   src/core/Log.cpp
   src/core/Module.cpp
@@ -236,7 +240,7 @@ set(CS2SDKTEST_SOURCES
 
 set(CS2SDKTEST_HEADERS
   src/plugin/Plugin.h
-  src/plugin/Commands.h
+  src/plugin/Sweep.h
   src/plugin/Autorun.h
 
   src/core/Platform.h
@@ -430,6 +434,8 @@ else()
     -static-libgcc
   )
 endif()
+
+include(Preload)
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "src"
   FILES ${CS2SDKTEST_SOURCES} ${CS2SDKTEST_HEADERS})

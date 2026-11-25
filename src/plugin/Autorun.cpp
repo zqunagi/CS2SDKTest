@@ -8,7 +8,7 @@
 #include <engine2/ivengineserver2.h>
 
 #include "core/Log.h"
-#include "plugin/Commands.h"
+#include "plugin/Sweep.h"
 #include "plugin/Plugin.h"
 #include "testkit/CrashRecorder.h"
 #include "testkit/TestContext.h"
@@ -154,7 +154,7 @@ void Autorun::Execute()
 	}
 
 	CS2ST_LOG_INFO("autorun: starting call sweep\n");
-	RunCallSweep(only_, "autorun");
+	RunCallSweep(runner, only_, "autorun");
 	CS2ST_LOG_INFO("autorun: sweep finished\n");
 }
 

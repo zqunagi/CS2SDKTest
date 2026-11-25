@@ -4,7 +4,9 @@
 #include <cstdio>
 #include <cstring>
 
+#ifndef CS2SDKTEST_PRELOAD
 #include <ISmmPlugin.h>
+#endif
 
 #include "core/FileSystemUtil.h"
 #include "version_gen.h"
@@ -15,9 +17,11 @@
 	#include <Windows.h>
 #endif
 
+#ifndef CS2SDKTEST_PRELOAD
 // g_SMAPI (and the KHook global) are defined once by PLUGIN_EXPOSE in
 // Plugin.cpp; every other translation unit only needs the declarations.
 PLUGIN_GLOBALVARS();
+#endif
 
 namespace cs2st
 {
@@ -97,6 +101,7 @@ void WriteToFile(const char* text)
 
 void WriteToConsole(const char* text)
 {
+#ifndef CS2SDKTEST_PRELOAD
 	if (g_SMAPI != nullptr)
 	{
 		// The text is already formatted; passing it as "%s" stops a '%' inside
@@ -104,6 +109,7 @@ void WriteToConsole(const char* text)
 		g_SMAPI->ConPrintf("%s", text);
 	}
 	else
+#endif
 	{
 		// Before Load() and after Unload() there is no Metamod to talk to.
 		std::fputs(text, stdout);

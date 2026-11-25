@@ -2,6 +2,9 @@
 
 #include "core/Log.h"
 #include "hook/HookRecorder.h"
+#ifdef CS2SDKTEST_PRELOAD
+#include "suites/Tier0ContainerSuite.h"
+#else
 #include "suites/ConVarSuite.h"
 #include "suites/GameEntitySystemSuite.h"
 #include "suites/GameEventSuite.h"
@@ -30,6 +33,7 @@
 #include "suites/Source2EngineSuite.h"
 #include "suites/Source2GameClientsSuite.h"
 #include "suites/Source2ServerSuite.h"
+#endif
 #include "testkit/CallGuard.h"
 #include "testkit/ResultSink.h"
 
@@ -42,6 +46,11 @@ TestRunner TestRunner::CreateDefault()
 
 	// One line per suite. Nothing else in the pipeline needs to know they
 	// exist; registration order is the order they appear in a log.
+#ifdef CS2SDKTEST_PRELOAD
+	// Phase 1 of the preload build: one suite with no hooks and no Metamod, enough
+	// to prove the entry, the trigger and the symbol hygiene end to end.
+	runner.Add(std::unique_ptr<ITestSuite>(new Tier0ContainerSuite()));
+#else
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2EngineSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2ServerSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new Source2GameClientsSuite()));
@@ -69,6 +78,7 @@ TestRunner TestRunner::CreateDefault()
 	runner.Add(std::unique_ptr<ITestSuite>(new FileSystemSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new GamedataSuite()));
 	runner.Add(std::unique_ptr<ITestSuite>(new MetamodListenerSuite()));
+#endif
 
 	return runner;
 }

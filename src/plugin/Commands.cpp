@@ -18,7 +18,7 @@
 #include "data/GameModules.h"
 #include "hook/HookRecorder.h"
 #include "plugin/Autorun.h"
-#include "plugin/Commands.h"
+#include "plugin/Sweep.h"
 #include "plugin/Plugin.h"
 #include "testkit/CallGuard.h"
 #include "testkit/TestContext.h"
@@ -117,63 +117,6 @@ void PrintTargets()
 	LogRaw("\n  %zu/%zu loaded\n\n", loaded, count);
 }
 
-/** Opens a log for the duration of one command when none is already open. */
-class ScopedRunLog
-{
-public:
-	explicit ScopedRunLog(const char* prefix)
-	{
-		if (!SessionLogPath().empty())
-		{
-			// A session log is already open; write into that instead of
-			// interrupting it, and leave it open afterwards.
-			return;
-		}
-
-		const std::string name =
-			std::string(prefix) + "-" + fs::TimestampForFileName() + ".log";
-		const std::string path = fs::Join(fs::LogDirectory(), name);
-
-		std::string error;
-		if (OpenSessionLog(path, error))
-		{
-			owned_ = true;
-		}
-		else
-		{
-			CS2ST_LOG_WARN("could not open log file: %s (console only)\n", error.c_str());
-		}
-	}
-
-	~ScopedRunLog()
-	{
-		if (owned_)
-		{
-			CS2ST_LOG_INFO("log written to %s\n", SessionLogPath().c_str());
-			CloseSessionLog();
-		}
-	}
-
-	ScopedRunLog(const ScopedRunLog&) = delete;
-	ScopedRunLog& operator=(const ScopedRunLog&) = delete;
-
-private:
-	bool owned_ = false;
-};
-
-void WriteLogHeader(const char* what)
-{
-	LogToFile("=== %s %s ===\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION);
-	LogToFile("what      : %s\n", what);
-	LogToFile("time      : %s\n", fs::TimestampUtc().c_str());
-	LogToFile("platform  : %s, SDK '%s' (SOURCE_ENGINE=%d), Metamod PLAPI %d\n",
-		PLUGIN_BUILD_PLATFORM, PLUGIN_SDK_ENGINE,
-		PLUGIN_SDK_ENGINE_CODE, PLUGIN_MM_PLAPI_VERSION);
-	LogToFile("build     : %s (%s)\n", PLUGIN_GIT_REVISION, PLUGIN_BUILD_TYPE);
-	LogToFile("guard     : %s\n", GuardDescription());
-	LogToFile("\n");
-}
-
 void CommandRun(const CCommand& args)
 {
 	TestRunner& runner = g_Plugin.tests();
@@ -191,7 +134,7 @@ void CommandRun(const CCommand& args)
 		return;
 	}
 
-	RunCallSweep(only, "run");
+	RunCallSweep(runner, only, "run");
 }
 
 void CommandHooks(const CCommand& args)
@@ -422,26 +365,6 @@ CON_COMMAND_F(cst,
 
 namespace cs2st
 {
-
-RunTally RunCallSweep(const std::string& only, const char* log_prefix)
-{
-	TestRunner& runner = g_Plugin.tests();
-
-	const std::string what =
-		only.empty() ? std::string("call sweep (all suites)") : "call sweep: " + only;
-
-	ScopedRunLog log(log_prefix);
-	WriteLogHeader(what.c_str());
-
-	TestContext context;
-	const RunTally tally = runner.RunCalls(context, only);
-
-	LogRaw("\n  %zu call(s): %zu ok, %zu crashed, %zu failed, %zu suspect, "
-	       "%zu unavailable, %zu skipped\n\n",
-		tally.Total(), tally.ok, tally.crashed, tally.failed, tally.suspect,
-		tally.unavailable, tally.skipped);
-	return tally;
-}
 
 void UnregisterCommands()
 {
