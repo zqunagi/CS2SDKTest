@@ -21,6 +21,7 @@
 	#define CS2ST_PLATFORM_NAME "windows"
 	#define CS2ST_LIB_PREFIX    ""
 	#define CS2ST_LIB_SUFFIX    ".dll"
+	#define CS2ST_BIN_DIR       "win64"
 	#define CS2ST_PATH_SEP      '\\'
 	#define CS2ST_PATH_SEP_STR  "\\"
 #elif defined(__linux__)
@@ -29,6 +30,7 @@
 	#define CS2ST_PLATFORM_NAME "linux"
 	#define CS2ST_LIB_PREFIX    "lib"
 	#define CS2ST_LIB_SUFFIX    ".so"
+	#define CS2ST_BIN_DIR       "linuxsteamrt64"
 	#define CS2ST_PATH_SEP      '/'
 	#define CS2ST_PATH_SEP_STR  "/"
 #else

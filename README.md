@@ -32,7 +32,7 @@ Tests are organized into suites, one per interface, and cover two kinds of check
 
 ## Quick Start
 
-You need a CS2 dedicated server on Linux. Below, `<server>` is the directory that contains `game/`, and `<csgo>` is `<server>/game/csgo`.
+You need a CS2 dedicated server, on Linux or Windows. Below, `<server>` is the directory that contains `game/`, and `<csgo>` is `<server>/game/csgo`.
 
 1. Download `cs2sdktest-linux-x64-<tag>.zip` from [Releases](https://github.com/zqunagi/CS2SDKTest/releases), or [build](#build) it yourself.
 2. Unzip it into `<csgo>`. The package is laid out relative to that directory:
@@ -54,11 +54,19 @@ unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
 bash <server>/game/csgo/bin/linuxsteamrt64/cst_run.sh
 ```
 
+**Windows**: download `cs2sdktest-windows-x64-<tag>.zip`, unzip it into `<csgo>` the same way, and run `cst_run.exe`. Windows has no `LD_PRELOAD`, so it uses [Microsoft Detours](https://github.com/microsoft/Detours) instead: it creates `cs2.exe` suspended, adds `cs2sdktest.dll` to the new process's import table, and lets it run. The library is therefore in the process before the engine has loaded anything, as with `LD_PRELOAD`. `cs2.exe` itself is not modified.
+
+```bat
+<server>\game\csgo\bin\win64\cst_run.exe
+```
+
 The server's console output stays on your terminal, and anything you type goes to the engine's console as usual. See [`cst_run.sh` options](#cst_runsh-options) for what you can change.
 
 4. Read the results in `<csgo>/logs/`.
 
-## `cst_run.sh` options
+## `cst_run.sh` / `cst_run.exe` options
+
+The two take the same options (on Windows `--server-dir` is worked out from where `cst_run.exe` is).
 
 All optional; without them the defaults apply.
 
@@ -83,7 +91,7 @@ The script refuses to start if a `cs2` from the same server is already running. 
 
 ## Environment variables
 
-`cst_run.sh` sets these from its options. You can also set them yourself and start `cs2` by hand with `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` (the path must be absolute: the library works out `<csgo>` from where it was loaded).
+`cst_run.sh` and `cst_run.exe` set these from their options. On Linux you can also set them yourself and start `cs2` by hand with `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` (the path must be absolute: the library works out `<csgo>` from where it was loaded). On Windows, start the server with `cst_run.exe`, which does the injection.
 
 | Variable | Description |
 |---|---|
@@ -106,7 +114,7 @@ Everything is written to `<csgo>/logs/` (or `CST_RESULT_DIR`):
 | `schema-dump.json` | The engine's schema as dumped by `SchemaDiffSuite`. Local only and unredacted: do not publish it |
 | `crash.json` | Written when the process dies on SIGSEGV, SIGBUS, SIGILL, SIGFPE or SIGABRT: the signal, the fault address, how far the run had got, the call in flight and a backtrace. The signal then continues to the engine's own handler, so exit codes and dumps are unchanged |
 
-Faults inside a test call are caught and reported as `CRASHED`; `crash.json` covers everything outside one, such as a crash while the map loads.
+Faults inside a test call are caught and reported as `CRASHED`; `crash.json` covers everything outside one, such as a crash while the map loads. `crash.json` is only produced on Linux for now: on Windows a crash outside a test call does not write it.
 
 `configs/cs2sdktest-meta.json` (version, s2sdk commit, platform) lets whoever runs the package identify the build even if the library never got to write anything.
 
@@ -114,7 +122,7 @@ After a new Release or a game update, the automated test results are published t
 
 ## Build
 
-**Requirements**: Linux x64, CMake ≥ 3.21, clang or gcc.
+**Requirements**: CMake ≥ 3.21; clang or gcc on Linux x64, Visual Studio 2022 on Windows x64.
 
 ```bash
 git clone --recursive https://github.com/zqunagi/CS2SDKTest.git
@@ -125,7 +133,14 @@ cmake --build --preset linux-x64-release
 
 > If Ninja is not installed, use the `linux-x64-make-release` preset.
 
-The build is Linux only. The result is in `build/<preset>/package/`, already laid out as above:
+On Windows:
+
+```bat
+cmake --preset windows-x64
+cmake --build --preset windows-x64-release
+```
+
+Configuring downloads Microsoft Detours (`v4.0.1`) and builds it with the project; for an offline build, point `-DCS2SDKTEST_DETOURS_DIR=<Detours source directory>` at a local copy. The result is in `build/<preset>/package/`, already laid out as above:
 
 ```
 package/
@@ -137,7 +152,9 @@ package/
     └── cs2sdktest-meta.json
 ```
 
-The library exports no symbols, and the build fails if it does. That is deliberate: `LD_PRELOAD` puts it ahead of every other library in the process, so an exported name such as `CreateInterface` would replace the engine's own.
+The Windows package has `bin/win64/cs2sdktest.dll` and `bin/win64/cst_run.exe` in place of the Linux files, and the rest is the same.
+
+On Linux the library exports no symbols, and the build fails if it does. That is deliberate: `LD_PRELOAD` puts it ahead of every other library in the process, so an exported name such as `CreateInterface` would replace the engine's own. A Windows DLL's exports are resolved per module, so that cannot happen there; it exports a single empty function at ordinal 1, because Detours requires ordinal 1 to exist when it adds the DLL to an import table.
 
 ## License
 

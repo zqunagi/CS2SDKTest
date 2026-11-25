@@ -32,17 +32,10 @@ CS2SDKTest 是一个 cs2 插件，用于验证 [s2sdk](https://github.com/allied
 
 ## 快速开始
 
-需要一台 Linux 上的 CS2 专用服务器。下文 `<server>` 指包含 `game/` 的目录，`<csgo>` 指 `<server>/game/csgo`。
+需要一台 CS2 专用服务器（Linux 或 Windows）。下文 `<server>` 指包含 `game/` 的目录，`<csgo>` 指 `<server>/game/csgo`。
 
 1. 从 [Releases](https://github.com/zqunagi/CS2SDKTest/releases) 下载 `cs2sdktest-linux-x64-<tag>.zip`，或参照[构建](#构建)自行编译。
-2. 解压到 `<csgo>`。包内的目录结构是相对于该目录的：
-
-```
-bin/linuxsteamrt64/libcs2sdktest.so
-bin/linuxsteamrt64/cst_run.sh
-configs/gamedata.toml
-configs/cs2sdktest-meta.json
-```
+2. 解压到 `<csgo>`。
 
 ```bash
 unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
@@ -51,16 +44,19 @@ unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
 3. 运行包里自带的脚本。它会预加载动态库并启动服务器，地图就绪后开始测试，测完服务器自行退出：
 
 ```bash
+chmod +x <server>/game/csgo/bin/linuxsteamrt64/cst_run.sh
 bash <server>/game/csgo/bin/linuxsteamrt64/cst_run.sh
 ```
 
-服务器的控制台输出会直接显示在你的终端上，你输入的内容也会照常交给引擎的控制台。可调整的内容见 [`cst_run.sh` 选项](#cst_runsh-选项)。
+**Windows**：下载 `cs2sdktest-windows-x64-<tag>.zip`，同样解压到 `<csgo>`，然后运行 `cst_run.exe`。Windows 没有 `LD_PRELOAD`，它改用 [Microsoft Detours](https://github.com/microsoft/Detours)：以挂起状态创建 `cs2.exe`，把 `cs2sdktest.dll` 加进新进程的导入表，再恢复运行，所以动态库仍然在引擎加载任何东西之前就进入了进程。`cs2.exe` 本身不会被修改。
 
-4. 在 `<csgo>/logs/` 查看结果。
+```bat
+<server>\game\csgo\bin\win64\cst_run.exe
+```
 
-## `cst_run.sh` 选项
+## `cst_run.sh` / `cst_run.exe` 选项
 
-均为可选；不指定时使用默认值。
+两者选项相同（Windows 上 `--server-dir` 根据 `cst_run.exe` 的位置推算）。
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
@@ -83,7 +79,7 @@ bash cst_run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
 
 ## 环境变量
 
-`cst_run.sh` 会根据选项设置这些变量。你也可以自己设置，然后手动以 `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` 启动 `cs2`（路径必须是绝对路径：动态库会根据自己被加载的位置推算出 `<csgo>`）。
+`cst_run.sh` 和 `cst_run.exe` 会根据选项设置这些变量。在 Linux 上你也可以自己设置，然后手动以 `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` 启动 `cs2`（路径必须是绝对路径：动态库会根据自己被加载的位置推算出 `<csgo>`）。Windows 上请用 `cst_run.exe` 启动，由它完成注入。
 
 | 环境变量 | 说明 |
 |---|---|
@@ -106,7 +102,7 @@ bash cst_run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
 | `schema-dump.json` | `SchemaDiffSuite` 导出的引擎 schema。仅限本地，且未脱敏：不要公开 |
 | `crash.json` | 进程因 SIGSEGV、SIGBUS、SIGILL、SIGFPE 或 SIGABRT 死亡时写出：信号、出错地址、运行到了哪一步、正在执行的调用以及回溯。随后信号继续交给引擎自己的处理器，所以退出码和转储不变 |
 
-测试调用内部的错误会被捕获并报告为 `CRASHED`；`crash.json` 覆盖其余所有情况，例如地图加载期间的崩溃。
+测试调用内部的错误会被捕获并报告为 `CRASHED`；`crash.json` 覆盖其余所有情况，例如地图加载期间的崩溃。`crash.json` 目前只在 Linux 上生成，Windows 上进程在测试调用之外崩溃时不会写它。
 
 `configs/cs2sdktest-meta.json`（版本、s2sdk 提交、平台）让运行这个包的人即使在动态库没来得及写任何东西时，也能确认这是哪一个构建。
 
@@ -114,7 +110,7 @@ bash cst_run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
 
 ## 构建
 
-**环境要求**：Linux x64，CMake ≥ 3.21，clang 或 gcc。
+**环境要求**：CMake ≥ 3.21；Linux x64 用 clang 或 gcc，Windows x64 用 Visual Studio 2022。
 
 ```bash
 git clone --recursive https://github.com/zqunagi/CS2SDKTest.git
@@ -125,7 +121,14 @@ cmake --build --preset linux-x64-release
 
 > 未安装 Ninja 时，使用 `linux-x64-make-release` 预设。
 
-只支持 Linux。产物位于 `build/<preset>/package/`，目录结构已经按上面的样子组织好：
+Windows 上：
+
+```bat
+cmake --preset windows-x64
+cmake --build --preset windows-x64-release
+```
+
+配置时会自动下载 Microsoft Detours（`v4.0.1`）并随工程一起编译；离线构建时用 `-DCS2SDKTEST_DETOURS_DIR=<Detours 源码目录>` 指向本地副本。产物位于 `build/<preset>/package/`，目录结构已经按上面的样子组织好：
 
 ```
 package/
@@ -137,7 +140,9 @@ package/
     └── cs2sdktest-meta.json
 ```
 
-动态库不导出任何符号，导出了构建就会失败。这是有意为之：`LD_PRELOAD` 会让它排在进程里所有库的前面，如果它导出了 `CreateInterface` 之类的名字，就会顶替引擎自己的同名函数。
+Windows 的包里是 `bin/win64/cs2sdktest.dll` 和 `bin/win64/cst_run.exe`，其余相同。
+
+Linux 上动态库不导出任何符号，导出了构建就会失败。这是有意为之：`LD_PRELOAD` 会让它排在进程里所有库的前面，如果它导出了 `CreateInterface` 之类的名字，就会顶替引擎自己的同名函数。Windows 的 DLL 按模块解析导出，不存在这个问题；它只导出一个按序号 1 导出的空函数，因为 Detours 把 DLL 加进导入表时要求序号 1 存在。
 
 ## 许可
 

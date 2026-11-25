@@ -1,9 +1,12 @@
 /**
  * The library's entry point.
  *
- * The library is injected with LD_PRELOAD. Its constructor runs inside the
- * cs2 process before the engine has loaded anything, so all it does there is
- * start a worker thread. The worker waits for libserver.so, finds
+ * The library is injected into the cs2 process before the engine has loaded
+ * anything: with LD_PRELOAD on Linux, and on Windows by cst_run.exe, which
+ * starts cs2.exe suspended with this DLL added to its import table (Microsoft
+ * Detours). Either way Start() runs inside the process at that point, so all it
+ * does there is start a worker thread. The worker waits for the server module
+ * (libserver.so / server.dll), finds
  * ISource2Server::GameFrame in the interface's vtable by what the function
  * does (it references the string "GameFrame") rather than by SDK slot number,
  * and swaps that one slot for ours. From then on the sweep is started from the
@@ -27,11 +30,13 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <vector>
 
-#include <dlfcn.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
+#include "core/Platform.h"
+
+#if CS2ST_POSIX
+	#include <unistd.h>
+#endif
 
 #include <appframework/iappsystem.h>
 #include <engine2/ivengineserver2.h>
@@ -39,7 +44,11 @@
 #include <tier0/convar.h>
 #include <tier0/icvar.h>
 
+#include "Entry.h"
+#include "core/FileSystemUtil.h"
 #include "core/Log.h"
+#include "core/Module.h"
+#include "core/Process.h"
 #include "plugin/Sweep.h"
 #include "testkit/CrashRecorder.h"
 #include "testkit/TestContext.h"
@@ -91,9 +100,9 @@ bool g_cvar_ready = false;
 
 [[noreturn]] void ExitNow(int code)
 {
-	std::fflush(stdout);
-	std::fflush(stderr);
-	::_exit(code);
+	// Terminate() does not flush: this also writes out the session log.
+	std::fflush(nullptr);
+	proc::Terminate(code);
 }
 
 // -----------------------------------------------------------------------------
@@ -255,11 +264,32 @@ void HookedGameFrame(void* self, bool simulating, bool first_tick, bool last_tic
 //  Finding and patching the GameFrame slot
 // -----------------------------------------------------------------------------
 
-/** Does the code at `fn` take the address of the C string "GameFrame"? */
-bool ReferencesGameFrameString(const void* fn, const void* module_base)
+/** Is `address` inside the mapped image of `module`? */
+bool InModule(const Module& module, const void* address)
 {
+	const auto* base = static_cast<const unsigned char*>(module.base());
+	const auto* p = static_cast<const unsigned char*>(address);
+	return p >= base && p < base + module.size();
+}
+
+/**
+ * Does the function at `fn` take the address of the C string "GameFrame"?
+ *
+ * The scan has to stay inside the function. Functions sit back to back, so a
+ * fixed-size window from the start of a small neighbour reaches into the next
+ * function and finds ITS reference: in the Windows server.dll five other slots of
+ * this vtable sit within 0x300 bytes before GameFrame and all matched. Where the
+ * image says how long the function is (the unwind tables on Windows) that is the
+ * limit; where it does not (Linux), the window is the fallback.
+ */
+bool ReferencesGameFrameString(const void* fn, const Module& module)
+{
+	constexpr std::size_t kFallbackWindow = 0x300;
+	const std::size_t known_size = proc::FunctionSize(fn);
+	const std::size_t limit = known_size != 0 ? known_size : kFallbackWindow;
+
 	const unsigned char* code = static_cast<const unsigned char*>(fn);
-	for (int i = 0; i < 0x300; ++i)
+	for (std::size_t i = 0; i + 7 <= limit; ++i)
 	{
 		// lea r64, [rip+disp32]
 		if ((code[i] != 0x48 && code[i] != 0x4C) || code[i + 1] != 0x8D || (code[i + 2] & 0xC7) != 0x05)
@@ -270,9 +300,7 @@ bool ReferencesGameFrameString(const void* fn, const void* module_base)
 		std::memcpy(&disp, code + i + 3, sizeof(disp));
 		const char* target = reinterpret_cast<const char*>(code + i + 7) + disp;
 
-		Dl_info info;
-		if (::dladdr(target, &info) != 0 && info.dli_fbase == module_base &&
-		    std::memcmp(target, "GameFrame", sizeof("GameFrame")) == 0)
+		if (InModule(module, target) && std::memcmp(target, "GameFrame", sizeof("GameFrame")) == 0)
 		{
 			return true;
 		}
@@ -289,16 +317,30 @@ enum class HookResult
 
 HookResult TryPlaceHook()
 {
-	void* handle = ::dlopen("libserver.so", RTLD_NOW | RTLD_NOLOAD);
-	if (handle == nullptr)
+	const Module server = Module::Find("server");
+	if (!server.IsValid())
 	{
 		return HookResult::kNotYet;
 	}
+	// Module::Find answers with Metamod's loader (also built as server) when the
+	// game's own copy is not mapped yet, and Metamod's is mapped first. It is the
+	// wrong module to hook, and failing on it would end the run; wait for the real one.
+	const std::string& server_path = server.path();
+	if (server_path.find("/addons/") != std::string::npos ||
+	    server_path.find("\\addons\\") != std::string::npos)
+	{
+		return HookResult::kNotYet;
+	}
+	if (server.base() == nullptr || server.size() == 0)
+	{
+		CS2ST_LOG_ERROR("run: cannot work out where %s is mapped\n", server.name().c_str());
+		return HookResult::kFailed;
+	}
 
-	auto create = reinterpret_cast<CreateInterfaceFn>(::dlsym(handle, "CreateInterface"));
+	const CreateInterfaceFn create = server.factory();
 	if (create == nullptr)
 	{
-		CS2ST_LOG_ERROR("run: libserver.so has no CreateInterface export\n");
+		CS2ST_LOG_ERROR("run: %s has no CreateInterface export\n", server.name().c_str());
 		return HookResult::kFailed;
 	}
 
@@ -311,48 +353,44 @@ HookResult TryPlaceHook()
 	}
 
 	void** vtable = *static_cast<void***>(iface);
-	Dl_info module;
-	if (::dladdr(vtable[0], &module) == 0)
+	if (!InModule(server, vtable[0]))
 	{
-		CS2ST_LOG_ERROR("run: vtable slot 0 is not inside a known module\n");
+		CS2ST_LOG_ERROR("run: vtable slot 0 is not inside %s\n", server.name().c_str());
 		return HookResult::kFailed;
 	}
 
 	int match = -1;
+	std::string matched;
 	int matches = 0;
 	for (int i = 0; i < 128; ++i)
 	{
-		Dl_info where;
-		if (::dladdr(vtable[i], &where) == 0 || where.dli_fbase != module.dli_fbase)
+		if (!InModule(server, vtable[i]))
 		{
 			break; // past the end of this class's table
 		}
-		if (ReferencesGameFrameString(vtable[i], module.dli_fbase))
+		if (ReferencesGameFrameString(vtable[i], server))
 		{
 			match = i;
 			++matches;
+			matched += (matched.empty() ? "" : ", ") + std::to_string(i);
 		}
 	}
 	if (matches != 1)
 	{
-		CS2ST_LOG_ERROR("run: %d vtable slot(s) reference \"GameFrame\", need exactly 1; "
-		                "not patching\n", matches);
+		CS2ST_LOG_ERROR("run: %d vtable slot(s) reference \"GameFrame\" (%s), need exactly 1; "
+		                "not patching\n",
+			matches, matched.c_str());
 		return HookResult::kFailed;
 	}
 
 	void** slot = &vtable[match];
-	const long page_size = ::sysconf(_SC_PAGESIZE);
-	void* page = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(slot) &
-	                                     ~static_cast<std::uintptr_t>(page_size - 1));
-	if (::mprotect(page, static_cast<std::size_t>(page_size), PROT_READ | PROT_WRITE) != 0)
+	g_original = reinterpret_cast<GameFrameFn>(*slot);
+	if (!proc::PatchPointerSlot(slot, reinterpret_cast<void*>(&HookedGameFrame)))
 	{
-		CS2ST_LOG_ERROR("run: mprotect on the vtable page failed\n");
+		g_original = nullptr;
+		CS2ST_LOG_ERROR("run: could not make the vtable page writable\n");
 		return HookResult::kFailed;
 	}
-
-	g_original = reinterpret_cast<GameFrameFn>(*slot);
-	__atomic_store_n(slot, reinterpret_cast<void*>(&HookedGameFrame), __ATOMIC_SEQ_CST);
-	::mprotect(page, static_cast<std::size_t>(page_size), PROT_READ);
 
 	CS2ST_LOG_INFO("run: GameFrame is vtable slot %d of %s\n", match, kServerInterface);
 	return HookResult::kPlaced;
@@ -378,7 +416,7 @@ void WorkerMain()
 		}
 		if (waited >= kHookWaitSeconds)
 		{
-			CS2ST_LOG_ERROR("run: libserver.so did not appear within %ds, exiting\n", kHookWaitSeconds);
+			CS2ST_LOG_ERROR("run: the server module did not appear within %ds, exiting\n", kHookWaitSeconds);
 			ExitNow(3);
 		}
 		std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -415,30 +453,19 @@ void WorkerMain()
 	}
 }
 
-bool RunningInCs2()
-{
-	char path[512];
-	const ssize_t length = ::readlink("/proc/self/exe", path, sizeof(path) - 1);
-	if (length <= 0)
-	{
-		return false;
-	}
-	path[length] = '\0';
-	const std::size_t size = static_cast<std::size_t>(length);
-	return size >= 4 && std::strcmp(path + size - 4, "/cs2") == 0;
-}
-
 } // namespace
 } // namespace cs2st
 
-// LD_PRELOAD puts this library into every process the launcher starts; only the
-// game itself is of interest, and only when the operator asked for a run.
-__attribute__((constructor)) static void CS2SDKTestInit()
+namespace cs2st
 {
-	using namespace cs2st;
 
+// Runs in whatever process loaded the library: LD_PRELOAD puts it into every
+// process the launcher starts, and cst_run.exe only ever injects it into cs2.exe.
+// Only the game itself is of interest, and only when the operator asked for a run.
+void Start()
+{
 	const char* enabled = EnvOrNull("CST_RUN");
-	if (enabled == nullptr || std::strcmp(enabled, "1") != 0 || !RunningInCs2())
+	if (enabled == nullptr || std::strcmp(enabled, "1") != 0 || !proc::IsExecutable("cs2"))
 	{
 		return;
 	}
@@ -458,6 +485,22 @@ __attribute__((constructor)) static void CS2SDKTestInit()
 	}
 
 	InitLogging();
+
+	// Open the run log now rather than when the sweep starts (ScopedRunLog writes
+	// into a session log that is already open). The dedicated server has a console
+	// window of its own on Windows that closes with the process, so a run that
+	// ends before the sweep, the case this exists for, would otherwise leave
+	// nothing to read.
+	{
+		const std::string log_path =
+			fs::Join(fs::LogDirectory(), "run-" + fs::TimestampForFileName() + ".log");
+		std::string log_error;
+		if (!OpenSessionLog(log_path, log_error))
+		{
+			CS2ST_LOG_WARN("run: could not open the run log: %s (console only)\n", log_error.c_str());
+		}
+	}
+
 	CrashRecorder::SetPhase("plugin_load");
 	CrashRecorder::Install();
 	CrashRecorder::SetPhase("plugin_loaded");
@@ -469,3 +512,13 @@ __attribute__((constructor)) static void CS2SDKTestInit()
 
 	std::thread(WorkerMain).detach();
 }
+
+} // namespace cs2st
+
+#if CS2ST_POSIX
+// On Windows the entry point is DllMain (DllMain.cpp).
+__attribute__((constructor)) static void CS2SDKTestInit()
+{
+	cs2st::Start();
+}
+#endif

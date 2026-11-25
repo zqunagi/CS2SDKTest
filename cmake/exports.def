@@ -1,0 +1,7 @@
+; Windows counterpart of exports.map.
+;
+; Detours puts this DLL into cs2.exe's import table by ordinal, and ordinal 1
+; has to exist. NONAME keeps it out of the name table, so nothing can resolve
+; it by name. The DLL exports nothing else: it is not looked up by anyone.
+EXPORTS
+    CstDetoursOrdinal1 @1 NONAME

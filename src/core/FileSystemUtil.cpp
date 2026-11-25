@@ -264,23 +264,23 @@ std::string GameDirectory()
 		return override_dir;
 	}
 
-	// <csgo>/bin/linuxsteamrt64/<library>  ->  <csgo>
+	// <csgo>/bin/<linuxsteamrt64|win64>/<library>  ->  <csgo>
 	const std::string binary = LibraryPath();
-	const std::string arch_dir = DirectoryName(binary);      // .../bin/linuxsteamrt64
+	const std::string arch_dir = DirectoryName(binary);      // .../bin/<CS2ST_BIN_DIR>
 	const std::string bin_dir = DirectoryName(arch_dir);     // .../bin
 	const std::string game_dir = DirectoryName(bin_dir);     // <csgo>
 	if (arch_dir.empty() || bin_dir.empty() || game_dir.empty()
-		|| BaseName(arch_dir) != "linuxsteamrt64" || BaseName(bin_dir) != "bin")
+		|| BaseName(arch_dir) != CS2ST_BIN_DIR || BaseName(bin_dir) != "bin")
 	{
-		// dladdr reports the path the library was given, so a relative LD_PRELOAD
-		// value lands here too. Saying so beats quietly writing to the wrong place,
-		// and once is enough: every consumer asks again.
+		// On Linux dladdr reports the path the library was given, so a relative
+		// LD_PRELOAD value lands here too. Saying so beats quietly writing to the
+		// wrong place, and once is enough: every consumer asks again.
 		static bool warned = false;
 		if (!warned)
 		{
 			warned = true;
 			CS2ST_LOG_WARN("game directory: cannot be worked out from '%s' (the library "
-			               "is expected under <csgo>/bin/linuxsteamrt64, given as an absolute "
+			               "is expected under <csgo>/bin/" CS2ST_BIN_DIR ", given as an absolute "
 			               "path); set CST_GAME_DIR, using the working directory for now\n",
 				binary.c_str());
 		}

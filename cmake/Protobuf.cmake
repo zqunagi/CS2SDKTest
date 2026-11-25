@@ -21,7 +21,13 @@ endif()
 
 set(CS2SDKTEST_PROTOBUF_TEMPLATE_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
-set(CS2SDKTEST_PROTOC "${S2SDK_ROOT}/devtools/bin/linux/protoc")
+if(WIN32)
+  set(_protoc_relative "devtools/bin/protoc.exe")
+else()
+  set(_protoc_relative "devtools/bin/linux/protoc")
+endif()
+
+set(CS2SDKTEST_PROTOC "${S2SDK_ROOT}/${_protoc_relative}")
 if(NOT EXISTS "${CS2SDKTEST_PROTOC}")
   message(FATAL_ERROR
     "s2sdk does not ship a protoc at '${CS2SDKTEST_PROTOC}'.\n"
