@@ -16,7 +16,7 @@
 
 ## Overview
 
-CS2SDKTest is a shared library that is loaded into a Counter-Strike 2 dedicated server with `LD_PRELOAD`, and verifies the usability and compatibility of [s2sdk](https://github.com/alliedmodders/s2sdk) in a real game server environment. It needs no Metamod, no plugin framework, and no edit to `gameinfo.gi`, so a game update that breaks those cannot stop the tests from starting.
+CS2SDKTest is a CS2 plugin that verifies the usability and compatibility of [s2sdk](https://github.com/alliedmodders/s2sdk) in a real game server environment.
 
 Tests are organized into suites, one per interface, and cover two kinds of checks:
 
@@ -25,20 +25,10 @@ Tests are organized into suites, one per interface, and cover two kinds of check
 | **Call** | Calls the interface methods and validates return values | `OK` / `FAIL` / `CRASHED` / `SKIP` / `N/A` |
 | **Layout** | Reads real struct memory and verifies field offsets and sizes | `OK` / `FAIL` |
 
-Nothing is hooked or left installed in the game: a run is a single sweep that writes its results and then quits the server.
-
 > [!WARNING]
 > **Results are not guaranteed to be fully accurate.** Some interface behavior has no reference to compare against, or depends on runtime state, so results may contain false positives or false negatives. A `FAIL` / `CRASHED` does not necessarily mean s2sdk is defective; it may come from a bug in the test case itself, an unmet precondition, or differences in the test environment. Likewise, `OK` does not prove an interface is fully correct. When a result looks abnormal, confirm the root cause **manually** against the disassembly or the engine binary before drawing conclusions.
 >
 > **Most test cases were written by AI.** They have not been reviewed one by one, so the calls, arguments, assertions, and expected values may be wrong. Do not treat them as an authoritative description of interface behavior.
-
-## How it runs
-
-1. The library is preloaded into the `cs2` process. Its constructor does nothing but start a worker thread, and only when `CST_AUTORUN=1` is set and the process is `cs2`.
-2. The worker waits for `libserver.so` and finds `ISource2Server::GameFrame` in the interface's vtable by what the function does (it references the string `"GameFrame"`), not by a slot number from the SDK headers, so a shifted slot cannot make it patch the wrong function. It replaces that one vtable slot with its own.
-3. In the first frame where the map is simulating, on the engine's main thread, it sets up the cvar system, waits `CST_AUTORUN_DELAY` seconds, runs every suite once, writes the results, and sends `quit`.
-
-If the hook cannot be placed (the string is not found, or matches more than one slot), `libserver.so` never appears, or no map starts simulating, it says why on the console and exits instead of idling until a timeout.
 
 ## Quick Start
 
@@ -48,7 +38,8 @@ You need a CS2 dedicated server on Linux. Below, `<server>` is the directory tha
 2. Unzip it into `<csgo>`. The package is laid out relative to that directory:
 
 ```
-bin/linuxsteamrt64/cs2sdktest.so
+bin/linuxsteamrt64/libcs2sdktest.so
+bin/linuxsteamrt64/run.sh
 configs/gamedata.toml
 configs/cs2sdktest-meta.json
 ```
@@ -57,29 +48,49 @@ configs/cs2sdktest-meta.json
 unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
 ```
 
-3. Start the server with the library preloaded. **The path must be absolute**: the library works out `<csgo>` from where it was loaded, and a relative path would defeat that.
+3. Run the script that comes with it. It starts the server with the library preloaded, the tests run once the map is up, and the server quits by itself when they are done:
 
 ```bash
-cd <server>/game/bin/linuxsteamrt64
-export LD_LIBRARY_PATH="$PWD${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-LD_PRELOAD=<server>/game/csgo/bin/linuxsteamrt64/cs2sdktest.so CST_AUTORUN=1 \
-  ./cs2 -dedicated +hostport 10001 +game_type 0 +game_mode 1 +map de_dust2 \
-  +sv_hibernate_when_empty 0 +sv_cheats 0 +bot_quota 1 +mp_warmup_pausetimer 1 \
-  +mp_freezetime 0 +mp_autoteambalance 0 +mp_limitteams 0 -insecure
+bash <server>/game/csgo/bin/linuxsteamrt64/run.sh
 ```
 
-4. When the server has quit on its own, read the results in `<csgo>/logs/`.
+The server's console output stays on your terminal, and anything you type goes to the engine's console as usual. See [`run.sh` options](#runsh-options) for what you can change.
 
-Without `CST_AUTORUN=1` the library does nothing, so it is safe to leave in a launch script.
+4. Read the results in `<csgo>/logs/`.
+
+## `run.sh` options
+
+All optional; without them the defaults apply.
+
+| Option | Description | Default |
+|---|---|---|
+| `--delay <seconds>` | Wait this long after the map starts simulating before the tests start | `10` |
+| `--suite <name>` | Run only this suite | all |
+| `--keep-running` | Keep the server running after the tests finish | quits |
+| `--map <name>` | Map to start on | `de_dust2` |
+| `--port <n>` | Host port | `10001` |
+| `--server-dir <dir>` | The server directory (the one that contains `game/`) | worked out from the script's location |
+| `--build-id <id>` | The game's Steam build id, copied into `results.json` | none |
+| `--result-dir <dir>` | Write the result files here instead of `<csgo>/logs` | `<csgo>/logs` |
+| `-- <args>` | Everything after `--` is appended to the `cs2` command line | none |
+| `-h`, `--help` | Show the options | |
+
+```bash
+bash run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
+```
+
+The script refuses to start if a `cs2` from the same server is already running. Its exit status is `cs2`'s.
 
 ## Environment variables
 
+`run.sh` sets these from its options. You can also set them yourself and start `cs2` by hand with `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` (the path must be absolute: the library works out `<csgo>` from where it was loaded).
+
 | Variable | Description |
 |---|---|
-| `CST_AUTORUN=1` | Required. Without it the library is inert. |
-| `CST_AUTORUN_SUITE=<name>` | Run only the specified suite |
-| `CST_AUTORUN_DELAY=<seconds>` | Wait this long after the map starts simulating before the sweep (0–600, default 10) |
-| `CST_AUTORUN_QUIT=0` | Keep the server running after the tests finish (it quits by default) |
+| `CST_RUN=1` | Required. Without it the library is inert, so it is safe to leave preloaded. |
+| `CST_RUN_SUITE=<name>` | Run only the specified suite |
+| `CST_RUN_DELAY=<seconds>` | Wait this long after the map starts simulating before the tests (0–600, default 10) |
+| `CST_RUN_QUIT=0` | Keep the server running after the tests finish (it quits by default) |
 | `CST_GAME_DIR=<csgo>` | The game directory, if it cannot be worked out from where the library was loaded |
 | `CST_RESULT_DIR=<dir>` | Write `results.json`, `results.jsonl`, `crash.json` and `schema-dump.json` here instead of `<csgo>/logs` |
 | `CST_BUILD_ID=<id>` | The game's Steam build id, copied into `results.json` (the library cannot see it from inside the process) |
@@ -90,7 +101,7 @@ Everything is written to `<csgo>/logs/` (or `CST_RESULT_DIR`):
 
 | File | Content |
 |---|---|
-| `autorun-<time>.log` | The full run log, one line per call, flushed line by line |
+| `run-<time>.log` | The full run log, one line per call, flushed line by line |
 | `results.json` / `results.jsonl` | Every call with its outcome; the `.jsonl` is written as the run goes, so a run that dies still leaves what it got through |
 | `schema-dump.json` | The engine's schema as dumped by `SchemaDiffSuite`. Local only and unredacted: do not publish it |
 | `crash.json` | Written when the process dies on SIGSEGV, SIGBUS, SIGILL, SIGFPE or SIGABRT: the signal, the fault address, how far the run had got, the call in flight and a backtrace. The signal then continues to the engine's own handler, so exit codes and dumps are unchanged |
@@ -118,7 +129,9 @@ The build is Linux only. The result is in `build/<preset>/package/`, already lai
 
 ```
 package/
-├── bin/linuxsteamrt64/cs2sdktest.so
+├── bin/linuxsteamrt64/
+│   ├── libcs2sdktest.so
+│   └── run.sh
 └── configs/
     ├── gamedata.toml
     └── cs2sdktest-meta.json

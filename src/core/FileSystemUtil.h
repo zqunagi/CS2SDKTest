@@ -51,7 +51,7 @@ std::string LibraryPath();
  * The game's mod directory, <server>/game/csgo, which everything this library
  * reads or writes lives under:
  *
- *     <csgo>/bin/linuxsteamrt64/cs2sdktest.so     the library
+ *     <csgo>/bin/linuxsteamrt64/libcs2sdktest.so  the library
  *     <csgo>/configs/gamedata.toml                its data file
  *     <csgo>/logs/                                its run logs
  *

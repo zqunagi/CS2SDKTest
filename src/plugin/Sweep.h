@@ -1,6 +1,5 @@
 /**
- * The call sweep, and the run log around it: autorun's entry point into the
- * test runner.
+ * The call sweep, and the run log around it: the entry point into the test runner.
  */
 
 #ifndef CS2SDKTEST_PLUGIN_SWEEP_H_

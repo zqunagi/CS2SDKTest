@@ -13,10 +13,10 @@
  * or the game never reaches a simulating map, the reason goes to the console
  * and the process exits, instead of idling until the runner's timeout.
  *
- *   CST_AUTORUN=1          required; without it the library does nothing
- *   CST_AUTORUN_SUITE=id   one suite instead of all of them
- *   CST_AUTORUN_DELAY=n    seconds of simulating map before the sweep (default 10)
- *   CST_AUTORUN_QUIT=0     leave the server running afterwards
+ *   CST_RUN=1         required; without it the library does nothing
+ *   CST_RUN_SUITE=id  one suite instead of all of them
+ *   CST_RUN_DELAY=n   seconds of simulating map before the sweep (default 10)
+ *   CST_RUN_QUIT=0    leave the server running afterwards
  */
 
 #include <atomic>
@@ -124,7 +124,7 @@ void ReleaseCvarSystem()
 	ConVar_Unregister();
 	g_pCVar = nullptr;
 	g_cvar_ready = false;
-	CS2ST_LOG_INFO("autorun: probe convars unregistered, g_pCVar released\n");
+	CS2ST_LOG_INFO("run: probe convars unregistered, g_pCVar released\n");
 }
 
 void Quit()
@@ -135,10 +135,10 @@ void Quit()
 	CrashRecorder::SetPhase("quitting");
 	if (engine == nullptr)
 	{
-		CS2ST_LOG_WARN("autorun: IVEngineServer2 not available, the server will not quit by itself\n");
+		CS2ST_LOG_WARN("run: IVEngineServer2 not available, the server will not quit by itself\n");
 		return;
 	}
-	CS2ST_LOG_INFO("autorun: quitting\n");
+	CS2ST_LOG_INFO("run: quitting\n");
 	engine->ServerCommand("quit\n");
 }
 
@@ -148,18 +148,18 @@ void Execute()
 
 	if (!g_only.empty() && runner.Find(g_only) == nullptr)
 	{
-		CS2ST_LOG_ERROR("autorun: no test suite named '%s'\n", g_only.c_str());
+		CS2ST_LOG_ERROR("run: no test suite named '%s'\n", g_only.c_str());
 		return;
 	}
 	if (runner.size() == 0)
 	{
-		CS2ST_LOG_WARN("autorun: no test suites registered in this build\n");
+		CS2ST_LOG_WARN("run: no test suites registered in this build\n");
 		return;
 	}
 
-	CS2ST_LOG_INFO("autorun: starting call sweep\n");
-	RunCallSweep(runner, g_only, "autorun");
-	CS2ST_LOG_INFO("autorun: sweep finished\n");
+	CS2ST_LOG_INFO("run: starting call sweep\n");
+	RunCallSweep(runner, g_only, "run");
+	CS2ST_LOG_INFO("run: sweep finished\n");
 }
 
 // -----------------------------------------------------------------------------
@@ -194,7 +194,7 @@ bool InitCvarSystem()
 	}
 	if (icvar == nullptr)
 	{
-		CS2ST_LOG_ERROR("autorun: ICvar (%s) not available; the probe convars cannot be registered\n",
+		CS2ST_LOG_ERROR("run: ICvar (%s) not available; the probe convars cannot be registered\n",
 			CVAR_INTERFACE_VERSION);
 		return false;
 	}
@@ -202,7 +202,7 @@ bool InitCvarSystem()
 	g_pCVar = icvar;
 	ConVar_Register(FCVAR_RELEASE | FCVAR_GAMEDLL);
 	g_cvar_ready = true;
-	CS2ST_LOG_INFO("autorun: cvar system ready (ICvar at %p), probe convars registered\n",
+	CS2ST_LOG_INFO("run: cvar system ready (ICvar at %p), probe convars registered\n",
 		static_cast<void*>(icvar));
 	return true;
 }
@@ -223,7 +223,7 @@ void OnFrame(bool simulating)
 		// the main thread. The sweep is a delay away, so registration is long done.
 		InitCvarSystem();
 		CrashRecorder::SetPhase("map_simulating");
-		CS2ST_LOG_INFO("autorun: map is simulating, sweeping in %ds\n", g_delay_seconds);
+		CS2ST_LOG_INFO("run: map is simulating, sweeping in %ds\n", g_delay_seconds);
 	}
 	if (now - g_clock_start < std::chrono::seconds(g_delay_seconds))
 	{
@@ -298,7 +298,7 @@ HookResult TryPlaceHook()
 	auto create = reinterpret_cast<CreateInterfaceFn>(::dlsym(handle, "CreateInterface"));
 	if (create == nullptr)
 	{
-		CS2ST_LOG_ERROR("autorun: libserver.so has no CreateInterface export\n");
+		CS2ST_LOG_ERROR("run: libserver.so has no CreateInterface export\n");
 		return HookResult::kFailed;
 	}
 
@@ -306,7 +306,7 @@ HookResult TryPlaceHook()
 	void* iface = create(kServerInterface, &code);
 	if (iface == nullptr)
 	{
-		CS2ST_LOG_ERROR("autorun: CreateInterface(%s) returned null (rc=%d)\n", kServerInterface, code);
+		CS2ST_LOG_ERROR("run: CreateInterface(%s) returned null (rc=%d)\n", kServerInterface, code);
 		return HookResult::kFailed;
 	}
 
@@ -314,7 +314,7 @@ HookResult TryPlaceHook()
 	Dl_info module;
 	if (::dladdr(vtable[0], &module) == 0)
 	{
-		CS2ST_LOG_ERROR("autorun: vtable slot 0 is not inside a known module\n");
+		CS2ST_LOG_ERROR("run: vtable slot 0 is not inside a known module\n");
 		return HookResult::kFailed;
 	}
 
@@ -335,7 +335,7 @@ HookResult TryPlaceHook()
 	}
 	if (matches != 1)
 	{
-		CS2ST_LOG_ERROR("autorun: %d vtable slot(s) reference \"GameFrame\", need exactly 1; "
+		CS2ST_LOG_ERROR("run: %d vtable slot(s) reference \"GameFrame\", need exactly 1; "
 		                "not patching\n", matches);
 		return HookResult::kFailed;
 	}
@@ -346,7 +346,7 @@ HookResult TryPlaceHook()
 	                                     ~static_cast<std::uintptr_t>(page_size - 1));
 	if (::mprotect(page, static_cast<std::size_t>(page_size), PROT_READ | PROT_WRITE) != 0)
 	{
-		CS2ST_LOG_ERROR("autorun: mprotect on the vtable page failed\n");
+		CS2ST_LOG_ERROR("run: mprotect on the vtable page failed\n");
 		return HookResult::kFailed;
 	}
 
@@ -354,7 +354,7 @@ HookResult TryPlaceHook()
 	__atomic_store_n(slot, reinterpret_cast<void*>(&HookedGameFrame), __ATOMIC_SEQ_CST);
 	::mprotect(page, static_cast<std::size_t>(page_size), PROT_READ);
 
-	CS2ST_LOG_INFO("autorun: GameFrame is vtable slot %d of %s\n", match, kServerInterface);
+	CS2ST_LOG_INFO("run: GameFrame is vtable slot %d of %s\n", match, kServerInterface);
 	return HookResult::kPlaced;
 }
 
@@ -373,20 +373,20 @@ void WorkerMain()
 		}
 		if (result == HookResult::kFailed)
 		{
-			CS2ST_LOG_ERROR("autorun: hook not placed, exiting\n");
+			CS2ST_LOG_ERROR("run: hook not placed, exiting\n");
 			ExitNow(3);
 		}
 		if (waited >= kHookWaitSeconds)
 		{
-			CS2ST_LOG_ERROR("autorun: libserver.so did not appear within %ds, exiting\n", kHookWaitSeconds);
+			CS2ST_LOG_ERROR("run: libserver.so did not appear within %ds, exiting\n", kHookWaitSeconds);
 			ExitNow(3);
 		}
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 
 	g_hook_placed.store(true);
-	CrashRecorder::SetPhase("autorun_armed");
-	CS2ST_LOG_INFO("autorun: armed (suite=%s, delay=%ds, quit=%s)\n",
+	CrashRecorder::SetPhase("run_armed");
+	CS2ST_LOG_INFO("run: armed (suite=%s, delay=%ds, quit=%s)\n",
 		g_only.empty() ? "all" : g_only.c_str(), g_delay_seconds, g_quit_when_done ? "yes" : "no");
 
 	// Watch for a game that never gets going. The sweep itself is not watched
@@ -395,7 +395,7 @@ void WorkerMain()
 	{
 		if (waited >= g_delay_seconds + kSimulatingWaitSeconds)
 		{
-			CS2ST_LOG_ERROR("autorun: no simulating map after %ds, exiting\n", waited);
+			CS2ST_LOG_ERROR("run: no simulating map after %ds, exiting\n", waited);
 			ExitNow(4);
 		}
 		std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -410,7 +410,7 @@ void WorkerMain()
 	if (g_quit_when_done)
 	{
 		std::this_thread::sleep_for(std::chrono::seconds(kQuitGraceSeconds));
-		CS2ST_LOG_WARN("autorun: still running %ds after quit, exiting\n", kQuitGraceSeconds);
+		CS2ST_LOG_WARN("run: still running %ds after quit, exiting\n", kQuitGraceSeconds);
 		ExitNow(0);
 	}
 }
@@ -432,27 +432,27 @@ bool RunningInCs2()
 } // namespace cs2st
 
 // LD_PRELOAD puts this library into every process the launcher starts; only the
-// game itself is of interest, and only when the operator asked for an autorun.
+// game itself is of interest, and only when the operator asked for a run.
 __attribute__((constructor)) static void CS2SDKTestInit()
 {
 	using namespace cs2st;
 
-	const char* enabled = EnvOrNull("CST_AUTORUN");
+	const char* enabled = EnvOrNull("CST_RUN");
 	if (enabled == nullptr || std::strcmp(enabled, "1") != 0 || !RunningInCs2())
 	{
 		return;
 	}
 
-	if (const char* suite = EnvOrNull("CST_AUTORUN_SUITE"))
+	if (const char* suite = EnvOrNull("CST_RUN_SUITE"))
 	{
 		g_only = suite;
 	}
-	if (const char* delay = EnvOrNull("CST_AUTORUN_DELAY"))
+	if (const char* delay = EnvOrNull("CST_RUN_DELAY"))
 	{
 		const int parsed = std::atoi(delay);
 		g_delay_seconds = parsed < 0 ? 0 : (parsed > 600 ? 600 : parsed);
 	}
-	if (const char* quit = EnvOrNull("CST_AUTORUN_QUIT"))
+	if (const char* quit = EnvOrNull("CST_RUN_QUIT"))
 	{
 		g_quit_when_done = std::strcmp(quit, "0") != 0;
 	}

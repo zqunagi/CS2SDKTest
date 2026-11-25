@@ -97,10 +97,11 @@ cs2sdktest_full_version("${PROJECT_VERSION}" "${CS2SDKTEST_GIT_REVISION}" CS2SDK
 #  The package is the contents of the server's game/csgo directory, so it is
 #  unzipped straight into <server>/game/csgo:
 #
-#    bin/linuxsteamrt64/cs2sdktest.so    the library
-#    configs/gamedata.toml               its data file
-#    configs/cs2sdktest-meta.json        which build this is, for a run that died
-#                                        before the library wrote anything
+#    bin/linuxsteamrt64/libcs2sdktest.so  the library
+#    bin/linuxsteamrt64/run.sh            starts a server with the library preloaded
+#    configs/gamedata.toml                its data file
+#    configs/cs2sdktest-meta.json         which build this is, for a run that died
+#                                         before the library wrote anything
 #
 #  Run logs and results are not part of the package: the library writes them to
 #  <csgo>/logs at run time (see fs::GameDirectory).
@@ -172,6 +173,18 @@ configure_file(
   "${CS2SDKTEST_PACKAGE_DIR}/configs/gamedata.toml"
   COPYONLY
 )
+
+# The launcher sits next to the library: it finds the server from there, and the
+# library finds the game directory from the same place. Copied with the execute
+# bit spelled out rather than trusting the checkout to have kept it.
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run.sh"
+  DESTINATION "${CS2SDKTEST_PACKAGE_BIN_DIR}"
+  FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                   GROUP_READ GROUP_EXECUTE
+                   WORLD_READ WORLD_EXECUTE
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run.sh")
 
 # -----------------------------------------------------------------------------
 #  The library
@@ -357,9 +370,7 @@ set_target_properties(cs2sdktest PROPERTIES
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
   POSITION_INDEPENDENT_CODE ON
-  PREFIX ""
   OUTPUT_NAME "cs2sdktest"
-  SUFFIX ".so"
   LIBRARY_OUTPUT_DIRECTORY "${CS2SDKTEST_PACKAGE_BIN_DIR}"
 )
 
@@ -408,6 +419,9 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "src"
 # -----------------------------------------------------------------------------
 install(TARGETS cs2sdktest
   LIBRARY DESTINATION "bin/linuxsteamrt64"
+)
+install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run.sh"
+  DESTINATION "bin/linuxsteamrt64"
 )
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
   DESTINATION "configs"
