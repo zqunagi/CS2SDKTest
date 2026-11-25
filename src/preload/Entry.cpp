@@ -100,6 +100,33 @@ bool g_cvar_ready = false;
 //  Running the sweep (engine main thread, inside GameFrame)
 // -----------------------------------------------------------------------------
 
+/**
+ * Takes the probe convars and commands back out of ICvar, and lets go of g_pCVar.
+ *
+ * Each CConVar and ConCommand this build declares at file scope unregisters
+ * itself from its destructor, through g_pCVar. Those destructors run when the
+ * process exits, and by then the engine has already torn down the cvar system
+ * that g_pCVar points at: the first one to call into it faults inside
+ * libtier0. Doing the unregistering here, while the cvar system is alive, and
+ * then clearing g_pCVar, leaves the destructors with nothing to call. The SDK's
+ * unregister path is a no-op for a ref that is already invalid or when
+ * g_pCVar is null, so running it twice is harmless.
+ *
+ * Called once, from the main thread, after the sweep has finished with the
+ * convars and before the quit command is queued.
+ */
+void ReleaseCvarSystem()
+{
+	if (!g_cvar_ready)
+	{
+		return;
+	}
+	ConVar_Unregister();
+	g_pCVar = nullptr;
+	g_cvar_ready = false;
+	CS2ST_LOG_INFO("autorun: probe convars unregistered, g_pCVar released\n");
+}
+
 void Quit()
 {
 	TestContext context;
@@ -215,6 +242,7 @@ void OnFrame(bool simulating)
 
 	if (g_quit_when_done)
 	{
+		ReleaseCvarSystem();
 		Quit();
 	}
 }

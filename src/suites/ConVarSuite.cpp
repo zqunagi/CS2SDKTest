@@ -2750,12 +2750,32 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 
 	CS2ST_CALL(context, "ICvar::FindConCommand (this plugin's own commands)", {
 		const ConCommandRef probe = cvar_->FindConCommand("cs2sdktest_cmd", false);
-		const ConCommandRef meta = cvar_->FindConCommand("cst", false);
 
-		context.Detail("cs2sdktest_cmd: access=%u valid=%s | cst: valid=%s",
+		// A command the game itself registered, picked by walking the list for the
+		// first one that is not ours rather than by naming one: nothing here may
+		// depend on a guess about what a given build ships. The point of the row is
+		// that a by-name lookup finds what the walk finds.
+		char engine_name[96] = "";
+		for (ConCommandRef iter = cvar_->FindFirstConCommand();
+		     iter.IsValidRef();
+		     iter = cvar_->FindNextConCommand(iter))
+		{
+			const char* name = iter.GetName();
+			if (name != nullptr && name[0] != '\0'
+				&& std::strncmp(name, "cs2sdktest_", 11) != 0)
+			{
+				std::snprintf(engine_name, sizeof(engine_name), "%s", name);
+				break;
+			}
+		}
+		const ConCommandRef engine_cmd = engine_name[0] != '\0'
+			? cvar_->FindConCommand(engine_name, false) : ConCommandRef();
+
+		context.Detail("cs2sdktest_cmd: access=%u valid=%s | engine command \"%.63s\": valid=%s",
 			static_cast<unsigned>(probe.GetAccessIndex()),
 			probe.IsValidRef() ? "yes" : "no",
-			meta.IsValidRef() ? "yes" : "no");
+			engine_name[0] != '\0' ? engine_name : "<none found>",
+			engine_cmd.IsValidRef() ? "yes" : "no");
 
 		if (!probe.IsValidRef())
 		{
@@ -2768,10 +2788,15 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 				static_cast<unsigned>(probe.GetAccessIndex()),
 				static_cast<unsigned>(g_probe_command.GetAccessIndex()));
 		}
-		if (!meta.IsValidRef())
+		if (engine_name[0] == '\0')
 		{
-			context.Fail("cst is the command this plugin is driven by, so "
-			             "it is registered by definition");
+			context.Fail("the command list holds nothing but this plugin's own "
+			             "commands; the game registers hundreds");
+		}
+		else if (!engine_cmd.IsValidRef())
+		{
+			context.Fail("the walk found a command by name, and a by-name lookup of "
+			             "that same name did not");
 		}
 	});
 
@@ -2830,7 +2855,7 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 		int with_callback = 0;
 		int with_completion = 0;
 		bool saw_probe = false;
-		bool saw_meta = false;
+		int engine_owned = 0;
 
 		for (ConCommandRef iter = cvar_->FindFirstConCommand();
 		     iter.IsValidRef() && walked < kListWalkCap;
@@ -2854,16 +2879,16 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 			{
 				saw_probe = true;
 			}
-			else if (std::strcmp(name, "cst") == 0)
+			else if (std::strncmp(name, "cs2sdktest_", 11) != 0)
 			{
-				saw_meta = true;
+				++engine_owned;
 			}
 		}
 
 		context.Detail("-> %d commands (%d with a callback, %d with completion), "
-		               "cs2sdktest_cmd=%s cst=%s%s",
+		               "cs2sdktest_cmd=%s, %d registered by the game%s",
 			walked, with_callback, with_completion,
-			saw_probe ? "seen" : "missing", saw_meta ? "seen" : "missing",
+			saw_probe ? "seen" : "missing", engine_owned,
 			walked >= kListWalkCap ? " (capped)" : "");
 
 		if (walked >= kListWalkCap)
@@ -2871,9 +2896,14 @@ void ConVarSuite::ExerciseConCommandLookup(TestContext& context)
 			context.Fail("the walk hit its %d cap; FindNextConCommand may be "
 			             "cycling", kListWalkCap);
 		}
-		else if (!saw_probe || !saw_meta)
+		else if (!saw_probe)
 		{
 			context.Fail("the iteration missed a command this plugin registered");
+		}
+		else if (engine_owned == 0)
+		{
+			context.Fail("the iteration reached no command the game registered; "
+			             "it stopped at this plugin's own");
 		}
 	});
 
