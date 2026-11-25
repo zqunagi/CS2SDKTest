@@ -64,3 +64,6 @@ Thumbs.db
 # ---- Local schema dumps (SchemaDiffSuite output; unredacted, never published) ----
 schema-dump*.json
 !cmake/exports.map
+
+# ---- Local maintenance scripts (kept on this machine only) ----
+/scripts/check-schema-overlap.py
