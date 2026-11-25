@@ -39,7 +39,7 @@ CS2SDKTest 是一个 cs2 插件，用于验证 [s2sdk](https://github.com/allied
 
 ```
 bin/linuxsteamrt64/libcs2sdktest.so
-bin/linuxsteamrt64/run.sh
+bin/linuxsteamrt64/cst_run.sh
 configs/gamedata.toml
 configs/cs2sdktest-meta.json
 ```
@@ -51,14 +51,14 @@ unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
 3. 运行包里自带的脚本。它会预加载动态库并启动服务器，地图就绪后开始测试，测完服务器自行退出：
 
 ```bash
-bash <server>/game/csgo/bin/linuxsteamrt64/run.sh
+bash <server>/game/csgo/bin/linuxsteamrt64/cst_run.sh
 ```
 
-服务器的控制台输出会直接显示在你的终端上，你输入的内容也会照常交给引擎的控制台。可调整的内容见 [`run.sh` 选项](#runsh-选项)。
+服务器的控制台输出会直接显示在你的终端上，你输入的内容也会照常交给引擎的控制台。可调整的内容见 [`cst_run.sh` 选项](#cst_runsh-选项)。
 
 4. 在 `<csgo>/logs/` 查看结果。
 
-## `run.sh` 选项
+## `cst_run.sh` 选项
 
 均为可选；不指定时使用默认值。
 
@@ -76,14 +76,14 @@ bash <server>/game/csgo/bin/linuxsteamrt64/run.sh
 | `-h`、`--help` | 显示选项 | |
 
 ```bash
-bash run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
+bash cst_run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
 ```
 
 如果同一个服务器的 `cs2` 已经在运行，脚本会拒绝启动。脚本的退出码就是 `cs2` 的退出码。
 
 ## 环境变量
 
-`run.sh` 会根据选项设置这些变量。你也可以自己设置，然后手动以 `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` 启动 `cs2`（路径必须是绝对路径：动态库会根据自己被加载的位置推算出 `<csgo>`）。
+`cst_run.sh` 会根据选项设置这些变量。你也可以自己设置，然后手动以 `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` 启动 `cs2`（路径必须是绝对路径：动态库会根据自己被加载的位置推算出 `<csgo>`）。
 
 | 环境变量 | 说明 |
 |---|---|
@@ -131,7 +131,7 @@ cmake --build --preset linux-x64-release
 package/
 ├── bin/linuxsteamrt64/
 │   ├── libcs2sdktest.so
-│   └── run.sh
+│   └── cst_run.sh
 └── configs/
     ├── gamedata.toml
     └── cs2sdktest-meta.json

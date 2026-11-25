@@ -39,7 +39,7 @@ You need a CS2 dedicated server on Linux. Below, `<server>` is the directory tha
 
 ```
 bin/linuxsteamrt64/libcs2sdktest.so
-bin/linuxsteamrt64/run.sh
+bin/linuxsteamrt64/cst_run.sh
 configs/gamedata.toml
 configs/cs2sdktest-meta.json
 ```
@@ -51,14 +51,14 @@ unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
 3. Run the script that comes with it. It starts the server with the library preloaded, the tests run once the map is up, and the server quits by itself when they are done:
 
 ```bash
-bash <server>/game/csgo/bin/linuxsteamrt64/run.sh
+bash <server>/game/csgo/bin/linuxsteamrt64/cst_run.sh
 ```
 
-The server's console output stays on your terminal, and anything you type goes to the engine's console as usual. See [`run.sh` options](#runsh-options) for what you can change.
+The server's console output stays on your terminal, and anything you type goes to the engine's console as usual. See [`cst_run.sh` options](#cst_runsh-options) for what you can change.
 
 4. Read the results in `<csgo>/logs/`.
 
-## `run.sh` options
+## `cst_run.sh` options
 
 All optional; without them the defaults apply.
 
@@ -76,14 +76,14 @@ All optional; without them the defaults apply.
 | `-h`, `--help` | Show the options | |
 
 ```bash
-bash run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
+bash cst_run.sh --delay 30 --suite netserver --map de_mirage -- +sv_lan 1
 ```
 
 The script refuses to start if a `cs2` from the same server is already running. Its exit status is `cs2`'s.
 
 ## Environment variables
 
-`run.sh` sets these from its options. You can also set them yourself and start `cs2` by hand with `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` (the path must be absolute: the library works out `<csgo>` from where it was loaded).
+`cst_run.sh` sets these from its options. You can also set them yourself and start `cs2` by hand with `LD_PRELOAD=<csgo>/bin/linuxsteamrt64/libcs2sdktest.so` (the path must be absolute: the library works out `<csgo>` from where it was loaded).
 
 | Variable | Description |
 |---|---|
@@ -131,7 +131,7 @@ The build is Linux only. The result is in `build/<preset>/package/`, already lai
 package/
 ├── bin/linuxsteamrt64/
 │   ├── libcs2sdktest.so
-│   └── run.sh
+│   └── cst_run.sh
 └── configs/
     ├── gamedata.toml
     └── cs2sdktest-meta.json

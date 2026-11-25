@@ -6,7 +6,7 @@
 # else from there. The server's console output stays on your terminal, and
 # anything you type goes to the engine's console as usual.
 #
-#   bash run.sh [options] [-- <extra cs2 arguments>]
+#   bash cst_run.sh [options] [-- <extra cs2 arguments>]
 #
 # Options (all optional; the default in brackets):
 #   --delay N         seconds on a simulating map before the tests start  [10]
@@ -38,7 +38,7 @@ extra=()
 
 usage() { awk 'NR==1{next} /^set -u/{exit} {sub(/^# ?/,""); print}' "${BASH_SOURCE[0]}"; }
 
-need_value() { [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "run.sh: $1 needs a value" >&2; exit 2; }; }
+need_value() { [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "cst_run.sh: $1 needs a value" >&2; exit 2; }; }
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -52,28 +52,28 @@ while [ "$#" -gt 0 ]; do
 		--result-dir)  need_value "$@"; result_dir="$2"; shift 2 ;;
 		-h|--help)     usage; exit 0 ;;
 		--)            shift; extra=("$@"); break ;;
-		*)             echo "run.sh: unknown option '$1' (try --help)" >&2; exit 2 ;;
+		*)             echo "cst_run.sh: unknown option '$1' (try --help)" >&2; exit 2 ;;
 	esac
 done
 
-case "$delay" in ''|*[!0-9]*) [ -z "$delay" ] || { echo "run.sh: --delay must be a whole number of seconds" >&2; exit 2; } ;; esac
-case "$port"  in ''|*[!0-9]*) echo "run.sh: --port must be a number" >&2; exit 2 ;; esac
+case "$delay" in ''|*[!0-9]*) [ -z "$delay" ] || { echo "cst_run.sh: --delay must be a whole number of seconds" >&2; exit 2; } ;; esac
+case "$port"  in ''|*[!0-9]*) echo "cst_run.sh: --port must be a number" >&2; exit 2 ;; esac
 
 # <server>/game/csgo/bin/linuxsteamrt64  ->  <server>
 lib="$here/libcs2sdktest.so"
-[ -f "$lib" ] || { echo "run.sh: $lib not found; run this from the unpacked package under <csgo>/bin/linuxsteamrt64" >&2; exit 2; }
+[ -f "$lib" ] || { echo "cst_run.sh: $lib not found; run this from the unpacked package under <csgo>/bin/linuxsteamrt64" >&2; exit 2; }
 if [ -z "$server_dir" ]; then
 	server_dir="$(cd "$here/../../../.." && pwd)"
 fi
-server_dir="$(cd "$server_dir" 2>/dev/null && pwd)" || { echo "run.sh: --server-dir does not exist" >&2; exit 2; }
+server_dir="$(cd "$server_dir" 2>/dev/null && pwd)" || { echo "cst_run.sh: --server-dir does not exist" >&2; exit 2; }
 
 cs2_dir="$server_dir/game/bin/linuxsteamrt64"
-[ -x "$cs2_dir/cs2" ] || { echo "run.sh: no executable cs2 at $cs2_dir/cs2 (is $server_dir the directory that contains game/?)" >&2; exit 2; }
+[ -x "$cs2_dir/cs2" ] || { echo "cst_run.sh: no executable cs2 at $cs2_dir/cs2 (is $server_dir the directory that contains game/?)" >&2; exit 2; }
 
 # Never start a second server on top of one somebody is already running.
 for pid in $(pgrep -x cs2 2>/dev/null); do
 	if [ "$(readlink -f "/proc/$pid/exe" 2>/dev/null)" = "$(readlink -f "$cs2_dir/cs2")" ]; then
-		echo "run.sh: a cs2 from this server is already running (pid $pid)" >&2
+		echo "cst_run.sh: a cs2 from this server is already running (pid $pid)" >&2
 		exit 3
 	fi
 done
@@ -92,8 +92,8 @@ export CST_RUN=1
 
 cd "$cs2_dir" || exit 1
 
-echo "run.sh: preloading $lib"
-echo "run.sh: server $server_dir, map $map, port $port${delay:+, delay ${delay}s}${suite:+, suite $suite}"
+echo "cst_run.sh: preloading $lib"
+echo "cst_run.sh: server $server_dir, map $map, port $port${delay:+, delay ${delay}s}${suite:+, suite $suite}"
 
 # exec: cs2 replaces this shell, so its output is yours, Ctrl-C reaches it
 # directly, and its exit status is this script's. LD_PRELOAD is given as an
