@@ -24,6 +24,7 @@
 #include "core/Log.h"
 #include "core/Platform.h"
 #include "core/SignatureScan.h"
+#include "core/VtableIndex.h"
 #include "hook/HookArg.h"
 
 #if !CS2ST_WINDOWS
@@ -2259,7 +2260,7 @@ CEntityInstance* GamedataSuite::FindEntityByCppClassname(const char* cpp_class_n
 void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 {
 	context.Note("[vtables] slot indexes, one row per key (two compared against "
-	             "KHook::GetVtableIndex, eleven called for behaviour, one looked up in "
+	             "VtableIndexOf, eleven called for behaviour, one looked up in "
 	             "engine2's RTTI, one retired to SKIP)");
 
 	for (const std::string& table : data_.tables())
@@ -2286,7 +2287,7 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 			bool sdk_declared = false;
 			if (table == kCheckTransmitTable)
 			{
-				sdk_index = KHook::GetVtableIndex(&ISource2GameEntities::CheckTransmit);
+				sdk_index = VtableIndexOf(&ISource2GameEntities::CheckTransmit);
 				sdk_declared = true;
 			}
 			else if (table == kAddResourceTable)
@@ -2300,7 +2301,7 @@ void GamedataSuite::ExerciseVtableSlots(TestContext& context)
 				const auto single_arg =
 					static_cast<void (IEntityResourceManifest::*)(const char*)>(
 						&IEntityResourceManifest::AddResource);
-				sdk_index = KHook::GetVtableIndex(single_arg);
+				sdk_index = VtableIndexOf(single_arg);
 				sdk_declared = true;
 			}
 

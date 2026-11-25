@@ -5,8 +5,6 @@
 #include <map>
 #include <string>
 
-#include <khook.hpp>
-
 #include "core/Platform.h"
 #include "core/TomlData.h"
 #include "testkit/ITestSuite.h"
