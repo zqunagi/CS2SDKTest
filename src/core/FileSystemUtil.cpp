@@ -256,21 +256,19 @@ std::string LibraryPath()
 #endif
 }
 
-std::string GameDirectory()
+std::string HomeDirectory()
 {
-	const char* override_dir = std::getenv("CST_GAME_DIR");
+	const char* override_dir = std::getenv("CST_HOME");
 	if (override_dir != nullptr && override_dir[0] != '\0')
 	{
 		return override_dir;
 	}
 
-	// <csgo>/bin/<linuxsteamrt64|win64>/<library>  ->  <csgo>
+	// <home>/bin/<library>  ->  <home>
 	const std::string binary = LibraryPath();
-	const std::string arch_dir = DirectoryName(binary);      // .../bin/<CS2ST_BIN_DIR>
-	const std::string bin_dir = DirectoryName(arch_dir);     // .../bin
-	const std::string game_dir = DirectoryName(bin_dir);     // <csgo>
-	if (arch_dir.empty() || bin_dir.empty() || game_dir.empty()
-		|| BaseName(arch_dir) != CS2ST_BIN_DIR || BaseName(bin_dir) != "bin")
+	const std::string bin_dir = DirectoryName(binary);       // <home>/bin
+	const std::string home_dir = DirectoryName(bin_dir);     // <home>
+	if (bin_dir.empty() || home_dir.empty() || BaseName(bin_dir) != "bin")
 	{
 		// On Linux dladdr reports the path the library was given, so a relative
 		// LD_PRELOAD value lands here too. Saying so beats quietly writing to the
@@ -279,26 +277,26 @@ std::string GameDirectory()
 		if (!warned)
 		{
 			warned = true;
-			CS2ST_LOG_WARN("game directory: cannot be worked out from '%s' (the library "
-			               "is expected under <csgo>/bin/" CS2ST_BIN_DIR ", given as an absolute "
-			               "path); set CST_GAME_DIR, using the working directory for now\n",
+			CS2ST_LOG_WARN("home directory: cannot be worked out from '%s' (the library "
+			               "is expected under <home>/bin, given as an absolute "
+			               "path); set CST_HOME, using the working directory for now\n",
 				binary.c_str());
 		}
 		return std::string();
 	}
-	return game_dir;
+	return home_dir;
 }
 
 std::string LogDirectory()
 {
-	const std::string game_dir = GameDirectory();
-	return game_dir.empty() ? std::string("logs") : Join(game_dir, "logs");
+	const std::string home_dir = HomeDirectory();
+	return home_dir.empty() ? std::string("logs") : Join(home_dir, "logs");
 }
 
 std::string ConfigDirectory()
 {
-	const std::string game_dir = GameDirectory();
-	return game_dir.empty() ? std::string("configs") : Join(game_dir, "configs");
+	const std::string home_dir = HomeDirectory();
+	return home_dir.empty() ? std::string("configs") : Join(home_dir, "configs");
 }
 
 std::string TimestampForFileName()

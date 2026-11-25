@@ -155,7 +155,7 @@ bool ReadTextFile(const std::string& path, std::string& out)
 	return ok;
 }
 
-/** Where gamedata.toml lives: <csgo>/configs/gamedata.toml. */
+/** Where gamedata.toml lives: <home>/configs/gamedata.toml. */
 std::string ConfigsGamedataPath()
 {
 	return fs::Join(fs::ConfigDirectory(), "gamedata.toml");

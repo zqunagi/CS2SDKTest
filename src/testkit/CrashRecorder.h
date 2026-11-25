@@ -37,7 +37,7 @@ class CrashRecorder
 {
 public:
 	/**
-	 * Installs the handlers. crash.json goes to CST_RESULT_DIR when set, <csgo>/logs
+	 * Installs the handlers. crash.json goes to CST_RESULT_DIR when set, <home>/logs
 	 * otherwise; a stale one from an earlier run is
 	 * removed. Safe to call twice.
 	 */

@@ -48,25 +48,26 @@ std::string EnsureExtension(const std::string& name, const std::string& extensio
 std::string LibraryPath();
 
 /**
- * The game's mod directory, <server>/game/csgo, which everything this library
- * reads or writes lives under:
+ * This library's own directory, <server>/game/csgo/cs2sdktest, which everything
+ * it reads or writes lives under:
  *
- *     <csgo>/bin/linuxsteamrt64/libcs2sdktest.so  the library
- *     <csgo>/configs/gamedata.toml                its data file
- *     <csgo>/logs/                                its run logs
+ *     <home>/bin/libcs2sdktest.so      the library (Linux)
+ *     <home>/bin/cs2sdktest.dll        the library (Windows)
+ *     <home>/configs/gamedata.toml     its data file
+ *     <home>/logs/                     its run logs
  *
- * CST_GAME_DIR names it outright. Otherwise it is worked out from where the
- * library was loaded from, three directories up, and only trusted when the
- * library really sits in a bin/linuxsteamrt64 directory; anything else gives
- * "" so a caller falls back to the working directory instead of writing into
- * a directory two levels off.
+ * CST_HOME names it outright. Otherwise it is worked out from where the library
+ * was loaded from, two directories up, and only trusted when the library really
+ * sits in a directory called bin; anything else gives "" so a
+ * caller falls back to the working directory instead of writing into a directory
+ * two levels off.
  */
-std::string GameDirectory();
+std::string HomeDirectory();
 
-/** <csgo>/logs, or "logs" (relative to the working directory) when the game directory is unknown. */
+/** <home>/logs, or "logs" (relative to the working directory) when the home directory is unknown. */
 std::string LogDirectory();
 
-/** <csgo>/configs, or "configs" (relative to the working directory) when the game directory is unknown. */
+/** <home>/configs, or "configs" (relative to the working directory) when the home directory is unknown. */
 std::string ConfigDirectory();
 
 /** "20260907-141032", for building a default log file name. */

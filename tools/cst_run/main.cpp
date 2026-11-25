@@ -11,7 +11,7 @@
  * cs2.exe's own entry point, which is the moment LD_PRELOAD gives you. Nothing
  * on disk is modified: cs2.exe stays as Steam left it.
  *
- * Lives next to the library, in <csgo>\bin\win64, and finds everything else from
+ * Lives next to the library, in <csgo>\cs2sdktest\bin, and finds everything else from
  * there. The server's console output stays in this console, and anything you type
  * goes to the engine's console as usual.
  *
@@ -50,7 +50,7 @@ constexpr const char* kUsage =
 	"  --map NAME        map to start on                                     [de_dust2]\n"
 	"  --port N          host port                                           [10001]\n"
 	"  --build-id ID     the game's Steam build id, copied into results.json [none]\n"
-	"  --result-dir DIR  write results.json, ... here                        [<csgo>\\logs]\n"
+	"  --result-dir DIR  write results.json, ... here                        [<csgo>\\cs2sdktest\\logs]\n"
 	"  --                everything after this is appended to the cs2 command line\n"
 	"  -h, --help        this text\n";
 
@@ -346,13 +346,13 @@ int wmain(int argc, wchar_t** argv)
 		return exit_code;
 	}
 
-	// <server>\game\csgo\bin\win64\cst_run.exe  ->  <server>
+	// <server>\game\csgo\cs2sdktest\bin\cst_run.exe  ->  <server>
 	const std::wstring here = ParentOf(ThisExecutable(), 1);
 	const std::wstring library = FullPath(here + L"\\" + kLibraryName);
 	if (library.empty() || !FileExists(library))
 	{
 		return Fail(2, L"%ls not found next to cst_run.exe; run it from the unpacked package under "
-		               L"<csgo>\\bin\\win64", kLibraryName);
+		               L"<csgo>\\cs2sdktest\\bin", kLibraryName);
 	}
 
 	std::wstring server_dir = options.server_dir.empty() ? ParentOf(here, 4) : options.server_dir;

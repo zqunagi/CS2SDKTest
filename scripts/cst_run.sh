@@ -2,7 +2,7 @@
 # Runs the CS2SDKTest sweep against this server's CS2: preloads the library into
 # the dedicated server, lets it test every interface once, and exits.
 #
-# Lives next to the library, in <csgo>/bin/linuxsteamrt64, and finds everything
+# Lives next to the library, in <csgo>/cs2sdktest/bin, and finds everything
 # else from there. The server's console output stays on your terminal, and
 # anything you type goes to the engine's console as usual.
 #
@@ -16,7 +16,7 @@
 #   --map NAME        map to start on                                     [de_dust2]
 #   --port N          host port                                           [10001]
 #   --build-id ID     the game's Steam build id, copied into results.json [none]
-#   --result-dir DIR  write results.json, crash.json, ... here            [<csgo>/logs]
+#   --result-dir DIR  write results.json, crash.json, ... here            [<csgo>/cs2sdktest/logs]
 #   --                everything after this is appended to the cs2 command line
 #   -h, --help        this text
 #
@@ -59,9 +59,9 @@ done
 case "$delay" in ''|*[!0-9]*) [ -z "$delay" ] || { echo "cst_run.sh: --delay must be a whole number of seconds" >&2; exit 2; } ;; esac
 case "$port"  in ''|*[!0-9]*) echo "cst_run.sh: --port must be a number" >&2; exit 2 ;; esac
 
-# <server>/game/csgo/bin/linuxsteamrt64  ->  <server>
+# <server>/game/csgo/cs2sdktest/bin  ->  <server>
 lib="$here/libcs2sdktest.so"
-[ -f "$lib" ] || { echo "cst_run.sh: $lib not found; run this from the unpacked package under <csgo>/bin/linuxsteamrt64" >&2; exit 2; }
+[ -f "$lib" ] || { echo "cst_run.sh: $lib not found; run this from the unpacked package under <csgo>/cs2sdktest/bin" >&2; exit 2; }
 if [ -z "$server_dir" ]; then
 	server_dir="$(cd "$here/../../../.." && pwd)"
 fi

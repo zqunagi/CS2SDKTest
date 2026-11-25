@@ -89,14 +89,10 @@ if(WIN32)
   include(Detours)
 endif()
 
-# CS2SDKTEST_BIN_DIR is the name of the server's own bin subdirectory, which the
-# package mirrors; the library works out <csgo> from it (see fs::GameDirectory).
 if(WIN32)
   set(CS2SDKTEST_PLATFORM "windows")
-  set(CS2SDKTEST_BIN_DIR  "win64")
 else()
   set(CS2SDKTEST_PLATFORM "linux")
-  set(CS2SDKTEST_BIN_DIR  "linuxsteamrt64")
 endif()
 
 cs2sdktest_resolve_git_revision("${CMAKE_CURRENT_SOURCE_DIR}" CS2SDKTEST_GIT_REVISION)
@@ -108,21 +104,23 @@ cs2sdktest_full_version("${PROJECT_VERSION}" "${CS2SDKTEST_GIT_REVISION}" CS2SDK
 #  Package layout
 #
 #  The package is the contents of the server's game/csgo directory, so it is
-#  unzipped straight into <server>/game/csgo:
+#  unzipped straight into <server>/game/csgo. Everything sits under one directory,
+#  cs2sdktest (the library's "home"), sorted by kind:
 #
-#    bin/linuxsteamrt64/libcs2sdktest.so  the library (Linux)
-#    bin/linuxsteamrt64/cst_run.sh        starts a server with the library preloaded
-#    bin/win64/cs2sdktest.dll             the library (Windows)
-#    bin/win64/cst_run.exe                starts a server with the library injected
-#    configs/gamedata.toml                its data file
-#    configs/cs2sdktest-meta.json         which build this is, for a run that died
-#                                         before the library wrote anything
+#    cs2sdktest/bin/libcs2sdktest.so          the library (Linux)
+#    cs2sdktest/bin/cst_run.sh                starts a server with it preloaded
+#    cs2sdktest/bin/cs2sdktest.dll            the library (Windows)
+#    cs2sdktest/bin/cst_run.exe               starts a server with it injected
+#    cs2sdktest/configs/gamedata.toml         its data file
+#    cs2sdktest/configs/cs2sdktest-meta.json  which build this is, for a run that
+#                                             died before the library wrote anything
 #
 #  Run logs and results are not part of the package: the library writes them to
-#  <csgo>/logs at run time (see fs::GameDirectory).
+#  cs2sdktest/logs at run time (see fs::HomeDirectory).
 # -----------------------------------------------------------------------------
 set(CS2SDKTEST_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package")
-set(CS2SDKTEST_PACKAGE_BIN_DIR "${CS2SDKTEST_PACKAGE_DIR}/bin/${CS2SDKTEST_BIN_DIR}")
+set(CS2SDKTEST_HOME_DIR "${CS2SDKTEST_PACKAGE_DIR}/cs2sdktest")
+set(CS2SDKTEST_PACKAGE_BIN_DIR "${CS2SDKTEST_HOME_DIR}/bin")
 
 # -----------------------------------------------------------------------------
 #  Generated sources
@@ -151,7 +149,7 @@ configure_file(
 # take the version from.
 set(CS2SDKTEST_PROJECT_NAME "${PROJECT_NAME}")
 set(CS2SDKTEST_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
-set(CS2SDKTEST_META_FILE "${CS2SDKTEST_PACKAGE_DIR}/configs/cs2sdktest-meta.json")
+set(CS2SDKTEST_META_FILE "${CS2SDKTEST_HOME_DIR}/configs/cs2sdktest-meta.json")
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/templates/meta.json.in"
   "${CS2SDKTEST_META_FILE}"
@@ -182,16 +180,16 @@ if(CS2SDKTEST_WITH_PROTOBUF)
   cs2sdktest_generate_protobuf(CS2SDKTEST_PROTO_SOURCES ${CS2SDKTEST_PROTO_FILES})
 endif()
 
-# GamedataSuite reads this from <csgo>/configs, so the package carries it there.
+# GamedataSuite reads this from <home>/configs, so the package carries it there.
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
-  "${CS2SDKTEST_PACKAGE_DIR}/configs/gamedata.toml"
+  "${CS2SDKTEST_HOME_DIR}/configs/gamedata.toml"
   COPYONLY
 )
 
 if(NOT WIN32)
   # The launcher sits next to the library: it finds the server from there, and the
-  # library finds the game directory from the same place. Copied with the execute
+  # library finds its home directory from the same place. Copied with the execute
   # bit spelled out rather than trusting the checkout to have kept it.
   file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/scripts/cst_run.sh"
     DESTINATION "${CS2SDKTEST_PACKAGE_BIN_DIR}"
@@ -504,18 +502,18 @@ endif()
 #  Packaging / installation
 # -----------------------------------------------------------------------------
 install(TARGETS cs2sdktest
-  LIBRARY DESTINATION "bin/${CS2SDKTEST_BIN_DIR}"
-  RUNTIME DESTINATION "bin/${CS2SDKTEST_BIN_DIR}"
+  LIBRARY DESTINATION "cs2sdktest/bin"
+  RUNTIME DESTINATION "cs2sdktest/bin"
 )
 if(WIN32)
-  install(TARGETS cst_run RUNTIME DESTINATION "bin/${CS2SDKTEST_BIN_DIR}")
+  install(TARGETS cst_run RUNTIME DESTINATION "cs2sdktest/bin")
 else()
   install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/cst_run.sh"
-    DESTINATION "bin/${CS2SDKTEST_BIN_DIR}"
+    DESTINATION "cs2sdktest/bin"
   )
 endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/configs/gamedata.toml"
-  DESTINATION "configs"
+  DESTINATION "cs2sdktest/configs"
 )
 
 message(STATUS "cs2sdktest ${CS2SDKTEST_FULL_VERSION} (${CS2SDKTEST_PLATFORM})")
