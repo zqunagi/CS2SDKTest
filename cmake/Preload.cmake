@@ -57,6 +57,8 @@ set(CS2SDKTEST_PRELOAD_SOURCES
   src/suites/SchemaDiffSuite.cpp
   src/suites/FileSystemSuite.cpp
   src/suites/KeyValues3Suite.cpp
+  src/suites/FlattenedSerializersSuite.cpp
+  src/suites/NetworkMessagesSuite.cpp
   src/suites/Tier0ContainerSuite.cpp
 )
 
