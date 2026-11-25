@@ -3,7 +3,7 @@
 # CS2SDKTest
 
 [![Release](https://img.shields.io/github/v/release/zqunagi/CS2SDKTest?sort=semver)](https://github.com/zqunagi/CS2SDKTest/releases)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
+![Platform](https://img.shields.io/badge/platform-Linux-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 [Live results](https://zqunagi.github.io/CS2SDKTest/) · [Download Release](https://github.com/zqunagi/CS2SDKTest/releases)
@@ -16,109 +16,115 @@
 
 ## Overview
 
-CS2SDKTest is a [Metamod:Source](https://www.sourcemm.net/) plugin that verifies the usability and compatibility of [s2sdk](https://github.com/alliedmodders/s2sdk) in a real game server environment.
+CS2SDKTest is a shared library that is loaded into a Counter-Strike 2 dedicated server with `LD_PRELOAD`, and verifies the usability and compatibility of [s2sdk](https://github.com/alliedmodders/s2sdk) in a real game server environment. It needs no Metamod, no plugin framework, and no edit to `gameinfo.gi`, so a game update that breaks those cannot stop the tests from starting.
 
-Tests are organized into suites, one per interface, and cover three kinds of checks:
+Tests are organized into suites, one per interface, and cover two kinds of checks:
 
 | Category | What it does | Result |
 |---|---|---|
-| **Call** | Calls the interface methods and validates return values | `OK` / `FAIL` / `CRASHED` / `SKIP` |
-| **Hook** | Installs hooks; counts callback invocations and samples arguments | Invocation count; `never` if not triggered |
+| **Call** | Calls the interface methods and validates return values | `OK` / `FAIL` / `CRASHED` / `SKIP` / `N/A` |
 | **Layout** | Reads real struct memory and verifies field offsets and sizes | `OK` / `FAIL` |
+
+Nothing is hooked or left installed in the game: a run is a single sweep that writes its results and then quits the server.
 
 > [!WARNING]
 > **Results are not guaranteed to be fully accurate.** Some interface behavior has no reference to compare against, or depends on runtime state, so results may contain false positives or false negatives. A `FAIL` / `CRASHED` does not necessarily mean s2sdk is defective; it may come from a bug in the test case itself, an unmet precondition, or differences in the test environment. Likewise, `OK` does not prove an interface is fully correct. When a result looks abnormal, confirm the root cause **manually** against the disassembly or the engine binary before drawing conclusions.
 >
 > **Most test cases were written by AI.** They have not been reviewed one by one, so the calls, arguments, assertions, and expected values may be wrong. Do not treat them as an authoritative description of interface behavior.
 
+## How it runs
+
+1. The library is preloaded into the `cs2` process. Its constructor does nothing but start a worker thread, and only when `CST_AUTORUN=1` is set and the process is `cs2`.
+2. The worker waits for `libserver.so` and finds `ISource2Server::GameFrame` in the interface's vtable by what the function does (it references the string `"GameFrame"`), not by a slot number from the SDK headers, so a shifted slot cannot make it patch the wrong function. It replaces that one vtable slot with its own.
+3. In the first frame where the map is simulating, on the engine's main thread, it sets up the cvar system, waits `CST_AUTORUN_DELAY` seconds, runs every suite once, writes the results, and sends `quit`.
+
+If the hook cannot be placed (the string is not found, or matches more than one slot), `libserver.so` never appears, or no map starts simulating, it says why on the console and exits instead of idling until a timeout.
+
 ## Quick Start
 
-1. Download the archive for your platform from [Releases](https://github.com/zqunagi/CS2SDKTest/releases), or [build](#build) it yourself.
-2. Copy the `addons/` directory from the package into the server's `game/csgo/` directory.
-3. Start the server and run in the console:
+You need a CS2 dedicated server on Linux. Below, `<server>` is the directory that contains `game/`, and `<csgo>` is `<server>/game/csgo`.
+
+1. Download `cs2sdktest-linux-x64-<tag>.zip` from [Releases](https://github.com/zqunagi/CS2SDKTest/releases), or [build](#build) it yourself.
+2. Unzip it into `<csgo>`. The package is laid out relative to that directory:
 
 ```
-] cst run                # call tests
-] cst hooks install      # install hooks
-] cst hooks dump         # show trigger counts and argument samples
+bin/linuxsteamrt64/cs2sdktest.so
+configs/gamedata.toml
+configs/cs2sdktest-meta.json
 ```
 
-Logs are written to `<csgo>/addons/cs2sdktest/logs/`.
+```bash
+unzip -o cs2sdktest-linux-x64-<tag>.zip -d <server>/game/csgo
+```
 
-## Commands
+3. Start the server with the library preloaded. **The path must be absolute**: the library works out `<csgo>` from where it was loaded, and a relative path would defeat that.
 
-| Command | Description |
-|---|---|
-| `cst help` | Show usage |
-| `cst suites` | List the test suites included in this build |
-| `cst targets` | List game libraries and their load status |
-| `cst run [suite]` | Run the call tests and write the log |
+```bash
+cd <server>/game/bin/linuxsteamrt64
+export LD_LIBRARY_PATH="$PWD${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+LD_PRELOAD=<server>/game/csgo/bin/linuxsteamrt64/cs2sdktest.so CST_AUTORUN=1 \
+  ./cs2 -dedicated +hostport 10001 +game_type 0 +game_mode 1 +map de_dust2 \
+  +sv_hibernate_when_empty 0 +sv_cheats 0 +bot_quota 1 +mp_warmup_pausetimer 1 \
+  +mp_freezetime 0 +mp_autoteambalance 0 +mp_limitteams 0 -insecure
+```
 
-## Autorun
+4. When the server has quit on its own, read the results in `<csgo>/logs/`.
 
-When the environment variables below are set, the plugin runs all tests automatically after the server starts, for unattended runs and CI:
+Without `CST_AUTORUN=1` the library does nothing, so it is safe to leave in a launch script.
+
+## Environment variables
 
 | Variable | Description |
 |---|---|
-| `CST_AUTORUN=1` | Enable autorun |
+| `CST_AUTORUN=1` | Required. Without it the library is inert. |
 | `CST_AUTORUN_SUITE=<name>` | Run only the specified suite |
-| `CST_AUTORUN_DELAY=<seconds>` | Delay before running (0–600) |
-| `CST_AUTORUN_QUIT=0` | Keep the server running after the tests finish (it exits by default) |
+| `CST_AUTORUN_DELAY=<seconds>` | Wait this long after the map starts simulating before the sweep (0–600, default 10) |
+| `CST_AUTORUN_QUIT=0` | Keep the server running after the tests finish (it quits by default) |
+| `CST_GAME_DIR=<csgo>` | The game directory, if it cannot be worked out from where the library was loaded |
+| `CST_RESULT_DIR=<dir>` | Write `results.json`, `results.jsonl`, `crash.json` and `schema-dump.json` here instead of `<csgo>/logs` |
+| `CST_BUILD_ID=<id>` | The game's Steam build id, copied into `results.json` (the library cannot see it from inside the process) |
 
-With autorun enabled the plugin also installs a fatal-signal handler (Linux). If the process dies on SIGSEGV, SIGBUS, SIGILL, SIGFPE or SIGABRT, it writes `crash.json` next to `results.json` (`CST_RESULT_DIR`, or the log directory) with the signal, the fault address, how far the plugin had got, the call in flight and a backtrace, then lets the signal continue to the engine's own handler, so exit codes and dumps are unchanged. Faults inside a test call are still caught and reported as `CRASHED`; this covers everything outside one, such as a hook callback, another thread or a crash while the map loads.
+## Output
 
-The package also carries `addons/cs2sdktest/meta.json` (version, s2sdk commit, platform), so whoever runs it can identify the build even if the plugin never loaded.
+Everything is written to `<csgo>/logs/` (or `CST_RESULT_DIR`):
 
-Server launch parameters used for testing:
+| File | Content |
+|---|---|
+| `autorun-<time>.log` | The full run log, one line per call, flushed line by line |
+| `results.json` / `results.jsonl` | Every call with its outcome; the `.jsonl` is written as the run goes, so a run that dies still leaves what it got through |
+| `schema-dump.json` | The engine's schema as dumped by `SchemaDiffSuite`. Local only and unredacted: do not publish it |
+| `crash.json` | Written when the process dies on SIGSEGV, SIGBUS, SIGILL, SIGFPE or SIGABRT: the signal, the fault address, how far the run had got, the call in flight and a backtrace. The signal then continues to the engine's own handler, so exit codes and dumps are unchanged |
 
-```
--dedicated +hostport 10001 +game_type 0 +game_mode 1 +map de_dust2 +sv_hibernate_when_empty 0 +sv_cheats 0 +bot_quota 1 +mp_warmup_pausetimer 1 +mp_freezetime 0 +mp_autoteambalance 0 +mp_limitteams 0 -insecure
-```
+Faults inside a test call are caught and reported as `CRASHED`; `crash.json` covers everything outside one, such as a crash while the map loads.
+
+`configs/cs2sdktest-meta.json` (version, s2sdk commit, platform) lets whoever runs the package identify the build even if the library never got to write anything.
 
 After a new Release or a game update, the automated test results are published to the [results page](https://zqunagi.github.io/CS2SDKTest/).
 
 ## Build
 
-**Requirements**: CMake ≥ 3.21; Visual Studio 2022 (x64) on Windows, clang or gcc (x64) on Linux.
+**Requirements**: Linux x64, CMake ≥ 3.21, clang or gcc.
 
 ```bash
 git clone --recursive https://github.com/zqunagi/CS2SDKTest.git
 cd CS2SDKTest
-```
-
-**Windows**
-
-```bash
-cmake --preset windows-x64
-cmake --build --preset windows-x64-release
-```
-
-**Linux**
-
-```bash
 cmake --preset linux-x64-release
 cmake --build --preset linux-x64-release
 ```
 
-> If Ninja is not installed, use the `linux-x64-make-release` preset on Linux.
+> If Ninja is not installed, use the `linux-x64-make-release` preset.
 
-### Install and Deploy
-
-Build output is in `build/<preset>/package/`, already laid out in Metamod's directory structure:
+The build is Linux only. The result is in `build/<preset>/package/`, already laid out as above:
 
 ```
 package/
-└── addons/
-    ├── metamod/cs2sdktest.vdf
-    └── cs2sdktest/bin/cs2sdktest.{dll,so}
+├── bin/linuxsteamrt64/cs2sdktest.so
+└── configs/
+    ├── gamedata.toml
+    └── cs2sdktest-meta.json
 ```
 
-Copy the contents of `package/` into the server's `game/csgo/`, or set `CS2SDKTEST_GAME_DIR` at configure time and deploy directly with the `deploy` target:
-
-```bash
-cmake --preset linux-x64-release -D CS2SDKTEST_GAME_DIR=/srv/cs2/game/csgo
-cmake --build --preset linux-x64-release --target deploy
-```
+The library exports no symbols, and the build fails if it does. That is deliberate: `LD_PRELOAD` puts it ahead of every other library in the process, so an exported name such as `CreateInterface` would replace the engine's own.
 
 ## License
 
