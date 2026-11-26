@@ -19,12 +19,16 @@
  * handler before (the engine's breakpad, usually) and finally to the default
  * action, so exit codes, minidumps and core files are what they would have been.
  *
- * The handler runs in a signal context, so it uses nothing that allocates or
+ * The Linux handler runs in a signal context, so it uses nothing that allocates or
  * locks: fixed buffers, open/read/write, and a /proc/self/maps walk instead of
  * dladdr (which takes the loader lock the crashing thread may already hold).
  *
- * Linux only. On Windows Install() reports that it is not available; the
- * machine this runs on is a Linux dedicated server.
+ * On Windows the same file is written from a vectored exception handler (only for
+ * a fatal-class exception outside a CallGuard scope, where a sweep call's faults
+ * are caught on purpose) and from an unhandled-exception filter; "unhandled" in
+ * the file says which. The stack comes from the unwind tables. What no handler can
+ * see is a fast fail (abort(), a failed security check, __fastfail): the process is
+ * terminated by the kernel and nothing runs, so there is no crash.json for those.
  */
 
 #ifndef CS2SDKTEST_TESTKIT_CRASHRECORDER_H_
