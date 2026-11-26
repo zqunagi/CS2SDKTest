@@ -580,6 +580,8 @@ void Source2ServerSuite::NoteSideEffectingCalls(TestContext& context)
 		"replaces the engine's CGlobalVars pointer");
 	context.SkipCall("ISource2Server::GameCreateNetworkStringTables",
 		"creates string tables");
+	context.SkipCall("ISource2Server::GameResetStringTables",
+		"resets the game's string tables");
 	context.SkipCall("ISource2Server::WriteSignonMessages",
 		"writes into a network buffer");
 	context.SkipCall("ISource2Server::ApplyGameSettings",

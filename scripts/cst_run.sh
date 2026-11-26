@@ -95,12 +95,23 @@ cd "$cs2_dir" || exit 1
 echo "cst_run.sh: preloading $lib"
 echo "cst_run.sh: server $server_dir, map $map, port $port${delay:+, delay ${delay}s}${suite:+, suite $suite}"
 
-# exec: cs2 replaces this shell, so its output is yours, Ctrl-C reaches it
-# directly, and its exit status is this script's. LD_PRELOAD is given as an
-# absolute path: the library works out where the game directory is from where it
-# was loaded.
-exec env LD_PRELOAD="$lib" ./cs2 \
+# The engine reads its console from the terminal and switches echo off while it does.
+# When it is killed, crashes or leaves through _exit it never switches it back, and
+# the shell that follows looks frozen: Enter works, typed characters do not show.
+# So the terminal's settings are saved now and put back however this script ends.
+# Only when stdin is a terminal; under a runner there is nothing to restore.
+if [ -t 0 ]; then
+	saved_tty="$(stty -g 2>/dev/null)"
+	[ -n "$saved_tty" ] && trap 'stty "$saved_tty" 2>/dev/null' EXIT
+fi
+
+# Not exec any more, or the trap would never run. cs2 is still a foreground child of
+# this shell: its output is yours, Ctrl-C reaches it, and its exit status is this
+# script's. LD_PRELOAD is given as an absolute path: the library works out where its
+# home directory is from where it was loaded.
+env LD_PRELOAD="$lib" ./cs2 \
 	-dedicated +hostport "$port" +game_type 0 +game_mode 1 +map "$map" \
 	+sv_hibernate_when_empty 0 +sv_cheats 0 +bot_quota 1 +mp_warmup_pausetimer 1 \
 	+mp_freezetime 0 +mp_autoteambalance 0 +mp_limitteams 0 -insecure \
 	${extra[@]+"${extra[@]}"}
+exit $?
