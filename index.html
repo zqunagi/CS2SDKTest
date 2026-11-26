@@ -17,7 +17,7 @@ try{var th=localStorage.getItem('theme');document.documentElement.dataset.theme=
   color-scheme:dark;--nav-h:52px;
   --bg:#0d1117;--surface:#161b22;--raise:#1c2128;--line:#30363d;--line2:#21262d;
   --fg:#e6edf3;--mut:#8b949e;--dim:#6e7681;--acc:#58a6ff;
-  --ok:#3fb950;--fail:#f85149;--crash:#db61a2;--sus:#a371f7;--skip:#e3892b;--na:#6e7681;
+  --ok:#3fb950;--fail:#f85149;--crash:#db61a2;--sus:#e3892b;--skip:#7b88a8;--na:#6e7681;
   --scrim:rgba(1,4,9,.6);--pop:0 8px 24px rgba(1,4,9,.55);
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
@@ -27,7 +27,7 @@ try{var th=localStorage.getItem('theme');document.documentElement.dataset.theme=
   color-scheme:light;
   --bg:#f6f8fa;--surface:#fff;--raise:#f3f4f6;--line:#d0d7de;--line2:#e5e9ee;
   --fg:#1f2328;--mut:#59636e;--dim:#818b98;--acc:#0969da;
-  --ok:#1a7f37;--fail:#cf222e;--crash:#bf3989;--sus:#8250df;--skip:#b35900;--na:#8c959f;
+  --ok:#1a7f37;--fail:#cf222e;--crash:#bf3989;--sus:#b35900;--skip:#5d6b8a;--na:#8c959f;
   --scrim:rgba(31,35,40,.4);--pop:0 8px 24px rgba(31,35,40,.16);
 }
 *{box-sizing:border-box}
@@ -113,8 +113,8 @@ main{max-width:1360px;margin:0 auto;padding:22px 24px 72px}
 .banner.good>.ic{color:var(--ok)}
 .banner.note>.ic{color:var(--acc)}
 .banner b{font-weight:600}
-.banner.err{border-color:color-mix(in srgb,var(--skip) 55%,var(--line));background:color-mix(in srgb,var(--skip) 8%,var(--surface))}
-.banner.err>.ic{color:var(--skip)}
+.banner.err{border-color:color-mix(in srgb,var(--sus) 55%,var(--line));background:color-mix(in srgb,var(--sus) 8%,var(--surface))}
+.banner.err>.ic{color:var(--sus)}
 
 /* 统计卡片 */
 .stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:12px}
@@ -208,7 +208,7 @@ tr.if:focus-visible{outline-offset:-2px}
 .frac b{color:var(--fg);font-weight:500}
 .chg{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;white-space:nowrap}
 .chg .ic{width:13px;height:13px}
-.chg.regressed{color:var(--fail)}.chg.fixed{color:var(--ok)}.chg.changed{color:var(--skip)}.chg.added{color:var(--acc)}
+.chg.regressed{color:var(--fail)}.chg.fixed{color:var(--ok)}.chg.changed{color:var(--sus)}.chg.added{color:var(--acc)}
 .chg.none{color:var(--dim);font-weight:400}
 tr.sub td{background:color-mix(in srgb,var(--bg) 50%,var(--surface));height:34px;font-size:13px}
 tr.sub.in{animation:fade .22s var(--ease) both;animation-delay:calc(var(--i,0)*14ms)}
