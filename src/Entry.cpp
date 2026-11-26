@@ -459,10 +459,6 @@ void WorkerMain()
 }
 
 } // namespace
-} // namespace cs2st
-
-namespace cs2st
-{
 
 // Runs in whatever process loaded the library: LD_PRELOAD puts it into every
 // process the launcher starts, and cst_run.exe only ever injects it into cs2.exe.
