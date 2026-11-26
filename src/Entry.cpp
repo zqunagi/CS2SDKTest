@@ -178,17 +178,18 @@ void Execute()
 }
 
 // -----------------------------------------------------------------------------
-//  The SDK globals a Metamod plugin gets for free
+//  The SDK globals a plugin framework would set up
 // -----------------------------------------------------------------------------
 
 /**
  * Sets the SDK's g_pCVar and registers the convars and commands this build
  * declares at file scope (the ConVarSuite probe convars).
  *
- * A plugin framework would do this at load time. Here it only touches the SDK's
- * own registration queue and ICvar, so what it needs is a live ICvar and a
- * thread that is allowed to call it: this runs on the engine's main thread, in
- * the first simulating frame, which is the same context the sweep runs in.
+ * A plugin framework such as Metamod would do this when it loads the plugin. This
+ * library is preloaded or injected instead, so nothing does it for us. It only
+ * touches the SDK's own registration queue and ICvar, so what it needs is a live
+ * ICvar and a thread that is allowed to call it: this runs on the engine's main
+ * thread, in the first simulating frame, which is the same context the sweep runs in.
  *
  * The callbacks are null on purpose. ConVar_Register's own RegisterAll already
  * hands every queued convar to ICvar::RegisterConVar; the callbacks are only a
@@ -509,8 +510,7 @@ void Start()
 	CrashRecorder::Install();
 	CrashRecorder::SetPhase("plugin_loaded");
 
-	// Same shape as the Metamod build's line, so the runner's stage detection
-	// finds it either way.
+	// The runner's stage detection looks for this line: its pattern ends at "loaded".
 	CS2ST_LOG_INFO("%s %s loaded\n", PLUGIN_DISPLAY_NAME, PLUGIN_FULL_VERSION);
 	CS2ST_LOG_INFO("built against SDK '%s' (SOURCE_ENGINE=%d)\n", PLUGIN_SDK_ENGINE, PLUGIN_SDK_ENGINE_CODE);
 

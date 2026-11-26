@@ -447,11 +447,11 @@ void ServerConfigSuite::ExerciseConfigQueries(TestContext& context)
 	});
 
 	CS2ST_CALL(context, "ISource2ServerConfig::AllowDedicatedServers", {
-		// The most plugin-adjacent method on the interface: the Metamod loader
+		// A method with a consequence for plugin loaders: Metamod's loader
 		// intercepts this very interface's Connect() and consults this method
 		// (TEST_TARGETS.md item 11's whole reason for existing). On a
 		// dedicated server there is exactly one right answer for the public
-		// universe, and we know which world we are in - this plugin runs on
+		// universe, and we know which world we are in - this library runs on
 		// one, or the sweep would not be running under these conditions.
 		const bool allowed = config_->AllowDedicatedServers(k_EUniversePublic);
 		context.Detail("-> %s for k_EUniversePublic", allowed ? "true" : "false");

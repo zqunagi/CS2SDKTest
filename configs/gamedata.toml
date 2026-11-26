@@ -9,8 +9,8 @@
 # Conventions, so a reader never has to guess what a number means:
 #   [signatures.<key>]   byte pattern, hex, '?'/xx as wildcard, resolved by
 #                        scanning the module named by library
-#   [vtables.<key>]      vtable slot index on the named class (0-based, the
-#                        way KHook::GetVtableIndex counts)
+#   [vtables.<key>]      vtable slot index on the named class (0-based, as the
+#                        plugin ecosystem counts them)
 #   [offsets.<key>]      byte offset inside a struct or object
 # windows/linux give per-platform values; a shared value is written once in
 # the platform-neutral `value`/`pattern` key.
@@ -172,7 +172,7 @@ windows = "48 83 3D ? ? ? ? ? 0F 95 C0 C3 CC CC CC CC C2"
 linux   = "48 8D 05 ? ? ? ? 48 83 38 ? 0F 95 C0 C3"
 
 # ---------------------------------------------------------------------------
-# vtables - slot indexes, 0-based, counted the way KHook::GetVtableIndex does
+# vtables - slot indexes, 0-based, as the plugin ecosystem counts them
 # ---------------------------------------------------------------------------
 
 [vtables.CCSPlayerController_ChangeTeam]
