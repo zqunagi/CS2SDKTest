@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <engine2/gameshareddefs.h>
@@ -671,15 +672,19 @@ void FlattenedSerializersSuite::ExerciseLiveEntityWork(TestContext& context)
 	else
 	{
 		CS2ST_CALL(context, "IFlattenedSerializers::FindFieldPathByAddress (sweep of the object)", {
-			// The SDK says the result is the path of the networked field at pField,
-			// and a networked field is exactly what Encode packs. So aim at every
-			// 8-byte step of the start of the object: each address that resolves must
-			// resolve to a path Encode produced. Which addresses hit is the engine's
-			// answer and is only reported.
+			// The SDK says the result is the path of the networked field at pField.
+			// Aim at every 8-byte step of the start of the object. Encode only packs
+			// what the send proxies gathered this time, so a networked field may
+			// legitimately be missing from it: an address that resolves outside the
+			// Encode paths is checked by name with IsFieldNetworked instead. Which
+			// addresses hit is the engine's answer and is only reported.
 			int hits = 0;
 			int in_encoded = 0;
+			int outside_networked = 0;
+			int outside_other = 0;
 			int ignored_count = 0;
 			int listed = 0;
+			std::string stray;
 			for (std::size_t offset = 0; offset < kAddressSweepBytes; offset += 8)
 			{
 				bool ignored = false;
@@ -702,21 +707,34 @@ void FlattenedSerializersSuite::ExerciseLiveEntityWork(TestContext& context)
 				if (found)
 				{
 					++in_encoded;
+					continue;
 				}
-				else if (listed < kMaxListed)
+
+				CUtlString name_out;
+				const char* name = serializers_->GetFieldName(desc, path, nullptr, kMode, &name_out);
+				const bool named = name != nullptr && name[0] != '\0';
+				const bool networked = named && serializers_->IsFieldNetworked(desc, name);
+				++(networked ? outside_networked : outside_other);
+				// Detail keeps only its last call, so the stray offsets are collected
+				// here and put on the final line.
+				if (listed < kMaxListed)
 				{
 					++listed;
-					context.Detail("   +0x%zx resolves to depth %d, not among the %d Encode path(s)", offset,
-						path.GetDepth(), encoded_paths.Count());
+					char one[192];
+					std::snprintf(one, sizeof(one), "%s+0x%zx \"%s\" (depth %d, %s%s)", stray.empty() ? "" : ", ", offset,
+						named ? name : "", path.GetDepth(), networked ? "networked" : "not networked",
+						ignored ? ", offset ignored" : "");
+					stray += one;
 				}
 			}
-			context.Detail("-> %d of %zu address(es) resolved, %d among the Encode paths, %d ignored offset(s)", hits,
-				kAddressSweepBytes / 8, in_encoded, ignored_count);
-			if (hits > in_encoded)
+			context.Detail("-> %d of %zu address(es) resolved, %d among the Encode paths, %d outside them but networked, "
+			               "%d outside and not, %d ignored offset(s)%s%s",
+				hits, kAddressSweepBytes / 8, in_encoded, outside_networked, outside_other, ignored_count,
+				stray.empty() ? "" : "; outside Encode: ", stray.c_str());
+			if (outside_other > 0)
 			{
-				context.Suspect("%d resolved path(s) are not fields Encode packs; they may be ignored offsets "
-				                "the engine still names",
-					hits - in_encoded);
+				context.Suspect("%d resolved path(s) are neither packed by Encode nor reported as networked fields",
+					outside_other);
 			}
 		});
 	}
